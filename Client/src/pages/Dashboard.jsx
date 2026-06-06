@@ -86,15 +86,15 @@ export default function Dashboard() {
       <h2 className="section-heading">Active Accounts</h2>
       <div className="grid">
         {accounts.map(acc => (
-          <div key={acc.id} className="card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <p style={{ fontWeight: 600, color: '#374151' }}>{acc.bankName}</p>
-                <p style={{ fontSize: '13px', marginTop: '4px' }}>Account ending in {acc.accountNumber?.slice(-4) || '****'}</p>
+          <div key={acc.id} className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontWeight: 700, color: '#374151', fontSize: '15px' }}>{acc.bankName}</p>
+                <p style={{ fontSize: '13px', marginTop: '6px', color: '#9ca3af' }}>Account ending in {acc.accountNumber?.slice(-4) || '****'}</p>
               </div>
-              <div className="badge blue">Active</div>
+              <div className="badge blue" style={{ whiteSpace: 'nowrap' }}>Active</div>
             </div>
-            <h2 style={{ fontSize: '24px', marginTop: '16px' }}>₹{(Number(acc?.balance) || 0).toLocaleString('en-IN')}</h2>
+            <h2 style={{ fontSize: '24px', marginTop: '20px', marginBottom: 0 }}>₹{(Number(acc?.balance) || 0).toLocaleString('en-IN')}</h2>
           </div>
         ))}
       </div>
@@ -115,10 +115,10 @@ export default function Dashboard() {
             {transactions.slice(0, 10).map(tx => (
               <tr key={tx.id}>
                 <td>{new Date(tx.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                <td style={{ fontWeight: 500 }}>{tx.counterParty}</td>
+                <td style={{ fontWeight: 600 }}>{tx.counterParty}</td>
                 <td className="text-red">{tx.debit ? `₹${tx.debit.toLocaleString('en-IN')}` : "-"}</td>
                 <td className="text-green">{tx.credit ? `₹${tx.credit.toLocaleString('en-IN')}` : "-"}</td>
-                <td><span className="badge">Completed</span></td>
+                <td><span className="badge green">Completed</span></td>
               </tr>
             ))}
             {transactions.length === 0 && (

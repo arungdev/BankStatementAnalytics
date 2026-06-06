@@ -30,8 +30,8 @@ export default function Counterparties() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <h1 style={{ marginBottom: 0 }}>Counterparties</h1>
-        <div className="badge blue" style={{ padding: '8px 16px', fontSize: '14px' }}>
-          {data.length} Total
+        <div className="badge blue" style={{ padding: '10px 18px', fontSize: '13px', fontWeight: 700 }}>
+          {data.length} Total Counterparties
         </div>
       </div>
 
@@ -48,21 +48,21 @@ export default function Counterparties() {
           <tbody>
             {data.map(cp => (
               <tr key={cp.id}>
-                <td style={{ fontWeight: 600, color: "#111827" }}>{cp.friendlyName}</td>
+                <td style={{ fontWeight: 700, color: "#111827" }}>{cp.friendlyName}</td>
                 <td>
                   {cp.category ? (
-                    <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce' }}>
+                    <span className="badge purple" style={{ textTransform: 'capitalize' }}>
                       {cp.category}
                     </span>
                   ) : "-"}
                 </td>
-                <td style={{ fontFamily: 'monospace', color: '#4b5563' }}>{cp.upiIds?.join(", ") || "-"}</td>
-                <td><span className="badge blue">Active</span></td>
+                <td style={{ fontFamily: 'monospace', color: '#4b5563', fontSize: '13px' }}>{cp.upiIds?.join(", ") || "-"}</td>
+                <td><span className="badge green">Active</span></td>
               </tr>
             ))}
             {data.length === 0 && (
               <tr>
-                <td colSpan="4" style={{ textAlign: 'center', padding: '32px', color: '#6b7280' }}>
+                <td colSpan="4" style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af', fontStyle: 'italic' }}>
                   No counterparties found.
                 </td>
               </tr>
