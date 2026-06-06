@@ -2,6 +2,7 @@
 using NHibernate;
 using BankStatementAnalytics.Dtos;
 using BankStatementAnalytics.Models;
+using Common.Framework.Data;
 
 namespace BankStatementAnalytics.Data
 {

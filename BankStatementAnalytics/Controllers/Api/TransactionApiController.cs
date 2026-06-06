@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Models;
+using Common.Framework.Data;
 
 namespace BankStatementAnalytics.Controllers.Api
 {

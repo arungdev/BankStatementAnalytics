@@ -4,6 +4,7 @@ using BankStatementAnalytics.Dtos;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
 using BankStatementAnalytics.Services.Parser;
+using Common.Framework.Data;
 
 namespace BankStatementAnalytics.Controllers
 {

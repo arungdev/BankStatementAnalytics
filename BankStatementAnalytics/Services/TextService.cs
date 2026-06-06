@@ -1,6 +1,7 @@
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services.Parser;
+using Common.Framework.Data;
 
 namespace BankStatementAnalytics.Services
 {

@@ -3,6 +3,7 @@ using NHibernate.Linq;
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Dtos;
 using BankStatementAnalytics.Models;
+using Common.Framework.Data;
 
 namespace BankStatementAnalytics.Controllers
 {

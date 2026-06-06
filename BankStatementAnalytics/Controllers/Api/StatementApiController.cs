@@ -215,7 +215,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 UploadedAt = DateTime.UtcNow
             };
 
-            await Data.DbHelper.SaveAsync(upload);
+            await DbHelper.SaveAsync(upload);
 
             var tx = new Models.UploadTransaction
             {
@@ -225,10 +225,10 @@ namespace BankStatementAnalytics.Controllers.Api
                 CreatedAt = DateTime.UtcNow
             };
 
-            await Data.DbHelper.SaveAsync(tx);
+            await DbHelper.SaveAsync(tx);
 
             upload.TransactionId = tx.Id;
-            await Data.DbHelper.UpdateAsync(upload);
+            await DbHelper.UpdateAsync(upload);
 
             if (ext == ".txt")
             {
@@ -247,17 +247,17 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("upload/{id:guid}")]
         public async Task<IActionResult> DeleteUpload(Guid id)
         {
-            var upload = Data.DbHelper.GetById<Models.Upload>(id);
+            var upload = DbHelper.GetById<Models.Upload>(id);
             if (upload == null)
                 return NotFound();
 
             // delete linked transaction record
             if (upload.TransactionId.HasValue)
             {
-                var tx = Data.DbHelper.GetById<Models.UploadTransaction>(upload.TransactionId.Value);
+                var tx = DbHelper.GetById<Models.UploadTransaction>(upload.TransactionId.Value);
                 if (tx != null)
                 {
-                    await Data.DbHelper.DeleteAsync(tx);
+                    await DbHelper.DeleteAsync(tx);
                 }
             }
             
@@ -279,7 +279,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (System.IO.File.Exists(filePath))
                 System.IO.File.Delete(filePath);
 
-            await Data.DbHelper.DeleteAsync(upload);
+            await DbHelper.DeleteAsync(upload);
 
             return Ok(new { message = "Reverted" });
         }
