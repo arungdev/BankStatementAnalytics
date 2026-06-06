@@ -28,5 +28,21 @@ namespace BankStatementAnalytics.Controllers.Api
             var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
             return Ok(dto);
         }
+
+        // POST: api/accounts
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] Account account)
+        {
+            if (account == null)
+                return BadRequest();
+
+            // Mask account number before saving for safety
+            account.AccountNumber = Account.Mask(account.AccountNumber);
+
+            await DbHelper.SaveAsync(account);
+
+            var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
+            return CreatedAtAction(nameof(GetById), new { id = account.Id }, dto);
+        }
     }
 }

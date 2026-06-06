@@ -304,3 +304,29 @@ tr:hover td {
   color: #10b981;
   font-weight: 500;
 }
+
+.account-item {
+  background: #f9fafb;
+  padding: 10px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #4b5563;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.account-item:hover {
+  background: #eeeff4;
+  color: #111827;
+}
+
+.account-item.active {
+  background: #eef2ff;
+  color: #4f46e5;
+  border-color: #4f46e5;
+  font-weight: 600;
+}

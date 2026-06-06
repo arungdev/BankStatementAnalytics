@@ -8,6 +8,10 @@ namespace BankStatementAnalytics.Controllers
 {
     public class CounterPartyController : Controller
     {
+        public IActionResult Index()
+        {
+            return NotFound();
+        }
         // Controllers/CounterPartyController.cs
         public IActionResult Details(int id)
         {
@@ -50,6 +54,26 @@ namespace BankStatementAnalytics.Controllers
             };
 
             return View(dto);
+        }
+        public async Task<IActionResult> Create(CounterPartyDto dto)
+        {
+            var cp = new CounterParty
+            {
+                Name = dto.Name,
+                FriendlyName = dto.FriendlyName,
+                Category = dto.Category,
+                SubCategory = dto.SubCategory,
+                BankCode = dto.BankCode,
+                Notes = dto.Notes,
+                CreatedOn = System.DateTime.Now
+            };
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+            session.Save(cp);
+            await tx.CommitAsync();
+
+            return RedirectToAction("Index");
         }
     }
 }

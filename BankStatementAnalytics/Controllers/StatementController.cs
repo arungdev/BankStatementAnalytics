@@ -25,19 +25,13 @@ namespace BankStatementAnalytics.Controllers
         public IActionResult Index()
         {
             var accounts = DbHelper.GetAll<Account>();
-            return View(accounts);
+            return NotFound();
         }
 
         // CREATE ACCOUNT
         public IActionResult CreateAccount()
         {
-            ViewBag.Banks = new List<string>
-    {
-        "IOB",
-        "HDFC"
-    };
-
-            return View();
+            return NotFound();
         }
 
         [HttpPost]
@@ -46,7 +40,7 @@ namespace BankStatementAnalytics.Controllers
             // Mask account number before persisting to avoid storing full account numbers
             account.AccountNumber = Account.Mask(account.AccountNumber);
             await DbHelper.SaveAsync(account);
-            return RedirectToAction("Index");
+            return NoContent();
         }
 
         // DETAILS (TRANSACTIONS)
@@ -65,15 +59,14 @@ namespace BankStatementAnalytics.Controllers
             ViewBag.AccountName = account.MaskedAccountNumber;
             ViewBag.Bank = account.BankName;
 
-            return View(transactions);
+            return NotFound();
         }
 
         // UPLOAD PAGE
         [HttpGet]
         public IActionResult UploadForAccount(int id)
         {
-            ViewBag.AccountId = id;
-            return View();
+            return NotFound();
         }
 
         // UPLOAD + PARSE ONLY
