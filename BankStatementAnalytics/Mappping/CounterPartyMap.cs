@@ -1,0 +1,35 @@
+// Mapping/CounterPartyMap.cs
+using NHibernate.Mapping.ByCode;
+using NHibernate.Mapping.ByCode.Conformist;
+using BankStatementAnalytics.Models;
+
+namespace BankStatementAnalytics.Mapping
+{
+    public class CounterPartyMap : ClassMapping<CounterParty>
+    {
+        public CounterPartyMap()
+        {
+            Table("CounterParties");
+
+            Id(x => x.Id, m => m.Generator(Generators.Identity));
+
+            Property(x => x.Name, m => { m.Length(250); m.NotNullable(true); });
+            Property(x => x.FriendlyName, m => m.Length(250));
+            Property(x => x.Category, m => m.Length(100));
+            Property(x => x.SubCategory, m => m.Length(100));
+            Property(x => x.BankCode, m => m.Length(20));
+            Property(x => x.Notes, m => m.Length(500));
+            Property(x => x.CreatedOn);
+            Property(x => x.UpdatedOn);
+
+            // One-to-many: CounterParty → UPI IDs
+            Bag(x => x.UpiIds, m =>
+            {
+                m.Key(k => k.Column("CounterPartyId"));
+                m.Cascade(Cascade.All | Cascade.DeleteOrphans);
+                m.Lazy(CollectionLazy.NoLazy);  // always load with parent
+            },
+            r => r.OneToMany());
+        }
+    }
+}

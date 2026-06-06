@@ -1,0 +1,65 @@
+using BankStatementAnalytics.Data;
+using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services.Parser;
+
+namespace BankStatementAnalytics.Services
+{
+    public class TextService
+    {
+        private readonly IServiceProvider _serviceProvider;
+
+        public TextService(IServiceProvider serviceProvider)
+        {
+            _serviceProvider = serviceProvider;
+        }
+
+        public string ExtractText(string filePath, int accountId)
+        {
+            var text = File.ReadAllText(filePath);
+
+            // ── Get bank name from DB via accountId ──────────────────
+            var bank = GetBankName(accountId);
+
+            IBankParser parser = bank?.ToUpper() switch
+            {
+                "HDFC" => _serviceProvider.GetRequiredService<HdfcTransactionParser>(),
+                "IOB" => _serviceProvider.GetRequiredService<OpTransactionParser>(),
+                _ => FallbackDetect(text, filePath)
+            };
+
+            var transactions = parser.Parse(text, accountId);
+            DbHelper.SaveOrUpdateManyAsync(transactions).GetAwaiter().GetResult();
+
+            return text;
+        }
+
+        // ── Fetch BankName from Accounts table ───────────────────────
+        private static string? GetBankName(int accountId)
+        {
+            using var session = DbHelper.GetSession();
+            var account = session.Get<Account>((long)accountId);
+            return account?.BankName;
+        }
+
+        // ── Fallback: detect from file content if BankName is empty ──
+        private IBankParser FallbackDetect(string text, string filePath)
+        {
+            var head = text.Length > 500 ? text[..500] : text;
+
+            if (head.Contains("Narration") &&
+                head.Contains("Debit Amount") &&
+                head.Contains("Chq/Ref Number") &&
+                head.Contains("Closing Balance"))
+                return _serviceProvider.GetRequiredService<HdfcTransactionParser>();
+
+            if (head.Contains("TRF") ||
+                head.Contains("UPI/") ||
+                head.Contains("Statement for the period"))
+                return _serviceProvider.GetRequiredService<OpTransactionParser>();
+
+            throw new NotSupportedException(
+                $"Cannot detect bank format for file: {Path.GetFileName(filePath)}. " +
+                $"Please ensure the Account has a BankName set (HDFC or IOB).");
+        }
+    }
+}

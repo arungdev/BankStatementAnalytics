@@ -1,0 +1,77 @@
+@model List<BankStatementAnalytics.Models.IobTransaction>
+
+<h2>Transactions</h2>
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">
+        @TempData["Error"]
+    </div>
+}
+
+<!-- Upload Section -->
+<div class="card p-3 mb-3">
+    <h4>Upload Statement</h4>
+    <form asp-controller="Statement"
+          asp-action="UploadForAccount"
+          method="post"
+          enctype="multipart/form-data">
+
+        <input type="hidden" name="accountId" value="@ViewBag.AccountId" />
+        <input type="file" name="file" class="form-control" />
+        <br />
+        <button type="submit" class="btn btn-primary">Upload Statement</button>
+    </form>
+</div>
+
+<hr />
+
+<!-- Transactions Table -->
+<table class="table table-bordered table-striped table-sm">
+    <thead class="table-dark">
+        <a href="c:\users\arung\source\repos\BankStatementAnalytics\BankStatementAnalytics\views\statement\transactions.cshtml">c:\users\arung\source\repos\BankStatementAnalytics\BankStatementAnalytics\views\statement\transactions.cshtml</a>
+        <tr>
+            <th>Date</th>
+            <th>Counter Party</th>
+            <th>Category</th>
+            <th>Mode</th>
+            <th>UPI Ref</th>
+            <th>Debit</th>
+            <th>Credit</th>
+            <th>Balance</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var item in Model)
+        {
+            <tr class="@(item.TransactionType == "DR" ? "table-danger" : "table-success")">
+                <td>@item.TransactionDate.ToString("dd-MM-yyyy")</td>
+
+                <!-- CounterParty is now an object — use .Name -->
+                <td>@(item.CounterParty?.Name ?? "-")</td>
+
+                <!-- Category set by user later -->
+                <td>@(item.CounterParty?.Category ?? "-")</td>
+
+                <td>@item.Mode</td>
+                <td>@item.UpiReference</td>
+
+                <td class="text-danger">
+                    @(item.Debit > 0 ? item.Debit.ToString("N2") : "")
+                </td>
+                <td class="text-success">
+                    @(item.Credit > 0 ? item.Credit.ToString("N2") : "")
+                </td>
+                <td>@item.Balance.ToString("N2")</td>
+            </tr>
+        }
+    </tbody>
+    <tfoot class="table-secondary fw-bold">
+        <tr>
+            <td colspan="5" class="text-end">Total:</td>
+            <td class="text-danger">@Model.Sum(x => x.Debit).ToString("N2")</td>
+            <td class="text-success">@Model.Sum(x => x.Credit).ToString("N2")</td>
+            <td></td>
+        </tr>
+    </tfoot>
+</table>

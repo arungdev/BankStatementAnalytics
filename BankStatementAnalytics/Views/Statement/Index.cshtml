@@ -1,0 +1,20 @@
+@model List<BankStatementAnalytics.Models.Account>
+
+<h2>Accounts</h2>
+
+<a href="/Statement/CreateAccount" class="btn btn-primary">
+    + Create Account
+</a>
+
+<hr />
+
+<ul>
+    @foreach (var acc in Model)
+    {
+        <li>
+            <a href="/Statement/Details/@acc.Id">
+                @acc.AccountHolderName - @acc.AccountNumber
+            </a>
+        </li>
+    }
+</ul>

@@ -1,0 +1,29 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "BankStatementAnalytics", "BankStatementAnalytics", "{71552F90-DC1A-4657-7647-58ED78018F5C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankStatementAnalytics", "BankStatementAnalytics\BankStatementAnalytics.csproj", "{E2B087B6-8A14-BC20-FF40-568C0913C2CA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E2B087B6-8A14-BC20-FF40-568C0913C2CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2B087B6-8A14-BC20-FF40-568C0913C2CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2B087B6-8A14-BC20-FF40-568C0913C2CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2B087B6-8A14-BC20-FF40-568C0913C2CA}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{E2B087B6-8A14-BC20-FF40-568C0913C2CA} = {71552F90-DC1A-4657-7647-58ED78018F5C}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {83AE8F98-9C76-45EC-9917-8B2FB0A4F133}
+	EndGlobalSection
+EndGlobal
