@@ -1,0 +1,32 @@
+﻿# Build outputs
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userprefs
+
+# Rider
+.idea/
+
+# Uploads and local data
+Uploads/
+*.db
+*.sqlite
+*.log
+
+# Secrets
+appsettings.*.Local.json
+secrets.json
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# NuGet
+*.nupkg
+
+# JetBrains Rider
+.idea/
