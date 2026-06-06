@@ -13,7 +13,7 @@ namespace BankStatementAnalytics.Services
             _serviceProvider = serviceProvider;
         }
 
-        public string ExtractText(string filePath, int accountId)
+        public string ExtractText(string filePath, int accountId, Guid uploadId)
         {
             var text = File.ReadAllText(filePath);
 
@@ -27,7 +27,17 @@ namespace BankStatementAnalytics.Services
                 _ => FallbackDetect(text, filePath)
             };
 
-            var transactions = parser.Parse(text, accountId);
+            var transactions = parser.Parse(text, accountId).ToList();
+            
+            foreach(var tx in transactions)
+            {
+                if (tx is BaseTransaction baseTx)
+                {
+                    baseTx.UploadId = uploadId;
+                    baseTx.AccountId = accountId;
+                }
+            }
+
             DbHelper.SaveOrUpdateManyAsync(transactions).GetAwaiter().GetResult();
 
             return text;

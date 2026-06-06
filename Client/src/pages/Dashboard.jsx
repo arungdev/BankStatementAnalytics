@@ -19,11 +19,11 @@ export default function Dashboard() {
     setLoading(true);
     Promise.all([
       api.get("/statements/accounts"),
-      api.get(`/transactions?accountId=${selectedAccountId}`)
+      api.get(`/statements/${selectedAccountId}`)
     ])
       .then(([accRes, txRes]) => {
         setAccounts(accRes.data);
-        setTransactions(txRes.data);
+        setTransactions(txRes.data.transactions || []);
         setLoading(false);
       })
       .catch(err => {
@@ -105,17 +105,17 @@ export default function Dashboard() {
           <thead>
             <tr>
               <th>Date</th>
-              <th>Counterparty</th>
+              <th>Merchant</th>
               <th>Debit</th>
               <th>Credit</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {transactions.slice(0, 10).map(tx => (
-              <tr key={tx.id}>
+            {transactions.slice(0, 10).map((tx, index) => (
+              <tr key={tx.id || index}>
                 <td>{new Date(tx.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                <td style={{ fontWeight: 600 }}>{tx.counterParty}</td>
+                <td style={{ fontWeight: 600 }}>{tx.merchant}</td>
                 <td className="text-red">{tx.debit ? `₹${tx.debit.toLocaleString('en-IN')}` : "-"}</td>
                 <td className="text-green">{tx.credit ? `₹${tx.credit.toLocaleString('en-IN')}` : "-"}</td>
                 <td><span className="badge green">Completed</span></td>

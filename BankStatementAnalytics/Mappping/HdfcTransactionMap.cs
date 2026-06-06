@@ -41,6 +41,7 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.Balance);
 
             Property(x => x.ImportedOn);
+            Property(x => x.UploadId);
 
             // ── HDFC specific fields ─────────────────────────────────
             Property(x => x.Narration, m =>

@@ -1,0 +1,15 @@
+{
+  "uploads": [],
+  "accounts": [
+    {
+      "id": 1,
+      "accountNumber": "XXXXXXXX1234",
+      "bankName": "HDFC"
+    },
+    {
+      "id": 2,
+      "accountNumber": "XXXXXXXX5678",
+      "bankName": "ICICI"
+    }
+  ]
+}

@@ -38,6 +38,7 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.Balance);
 
             Property(x => x.ImportedOn);
+            Property(x => x.UploadId);
 
             // IOB Specific Fields
 

@@ -1,7 +1,7 @@
 // Models/CounterParty.cs
 namespace BankStatementAnalytics.Models
 {
-    public class CounterParty
+    public class Merchant
     {
         public virtual int Id { get; set; }
         public virtual string Name { get; set; } = string.Empty;
@@ -14,7 +14,10 @@ namespace BankStatementAnalytics.Models
         public virtual DateTime? UpdatedOn { get; set; }
 
         // One person can have many UPI IDs
-        public virtual IList<CounterPartyUpi> UpiIds { get; set; }
-            = new List<CounterPartyUpi>();
+        public virtual IList<MerchantUpi> UpiIds { get; set; }
+            = new List<MerchantUpi>();
+
+        // Names that were merged into this counterparty
+        public virtual IList<string> Aliases { get; set; } = new List<string>();
     }
 }

@@ -1,4 +1,4 @@
-﻿# Build outputs
+﻿﻿# Build outputs
 bin/
 obj/
 
@@ -30,3 +30,8 @@ Thumbs.db
 
 # JetBrains Rider
 .idea/
+
+# Node and React Client
+node_modules/
+dist/
+.env

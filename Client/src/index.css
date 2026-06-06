@@ -517,3 +517,51 @@ tr:hover td {
   color: var(--text-muted);
   font-weight: 500;
 }
+
+/* --- Upload Statement Page --- */
+.upload-page {
+  max-width: 880px;
+}
+
+.upload-form {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  padding: 20px;
+  border-radius: 12px;
+}
+
+.form-row { margin-bottom: 14px; }
+.form-label { display:block; font-size:13px; color:var(--text-muted); margin-bottom:8px; }
+.form-select, .form-file, .form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  font-size: 14px;
+  background: white;
+}
+.form-file { padding: 6px 8px; }
+.form-select:disabled { background:#f3f4f6; }
+.hint { font-size:12px; color:var(--text-muted); margin-top:6px; }
+
+.progress { height:10px; background:#f3f4f6; border-radius:6px; overflow:hidden; }
+.progress-bar { height:100%; background:var(--success); transition: width 0.2s; }
+.progress-text { font-size:12px; color:var(--text-muted); margin-top:6px; }
+
+.form-actions { display:flex; gap:12px; align-items:center; margin-top:6px; }
+.btn { padding:10px 14px; border-radius:8px; border:1px solid var(--border-color); background:transparent; cursor:pointer; font-weight:600; }
+.btn.primary { background:var(--primary); color:white; border:none; }
+.btn.danger { background:#fff5f5; border-color: #fecaca; color:var(--danger); }
+
+.form-message { margin-top:8px; color:var(--text-muted); }
+
+.upload-history { margin-top:20px; }
+.upload-item { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-color); margin-bottom:8px; }
+.upload-meta { display:flex; flex-direction:column; }
+.upload-sub { font-size:12px; color:var(--text-muted); margin-top:4px; }
+
+.upload-history .table-container { margin-top: 8px; }
+.upload-history table th, .upload-history table td { padding: 12px 16px; }
+.upload-history table td { vertical-align: middle; }
+.upload-history table th { background: #fafafa; font-size: 13px; color: var(--text-muted); }
+.upload-history .btn { padding: 8px 10px; font-size: 13px; }

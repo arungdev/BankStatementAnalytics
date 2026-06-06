@@ -23,5 +23,7 @@ namespace BankStatementAnalytics.Models
         public virtual decimal Balance { get; set; }
 
         public virtual DateTime ImportedOn { get; set; } = DateTime.Now;
+
+        public virtual Guid? UploadId { get; set; }
     }
 }

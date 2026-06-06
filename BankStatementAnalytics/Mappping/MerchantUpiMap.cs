@@ -5,11 +5,11 @@ using BankStatementAnalytics.Models;
 
 namespace BankStatementAnalytics.Mapping
 {
-    public class CounterPartyUpiMap : ClassMapping<CounterPartyUpi>
+    public class MerchantUpiMap : ClassMapping<MerchantUpi>
     {
-        public CounterPartyUpiMap()
+        public MerchantUpiMap()
         {
-            Table("CounterPartyUpis");
+            Table("MerchantUpis");
 
             Id(x => x.Id, m => m.Generator(Generators.Identity));
 

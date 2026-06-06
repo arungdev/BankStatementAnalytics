@@ -17,7 +17,7 @@ namespace BankStatementAnalytics.Controllers
         {
             using var session = DbHelper.GetSession();
 
-            var cp = session.Query<CounterParty>()
+            var cp = session.Query<Merchant>()
                 .Where(x => x.Id == id)
                 .FetchMany(x => x.UpiIds)
                 .SingleOrDefault();
@@ -57,7 +57,7 @@ namespace BankStatementAnalytics.Controllers
         }
         public async Task<IActionResult> Create(CounterPartyDto dto)
         {
-            var cp = new CounterParty
+            var cp = new Merchant
             {
                 Name = dto.Name,
                 FriendlyName = dto.FriendlyName,

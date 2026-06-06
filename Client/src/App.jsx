@@ -11,12 +11,15 @@ import {
   FiSearch,
   FiPlus,
   FiTrendingUp,
+  FiSettings,
 } from "react-icons/fi";
 
 // Import pages
 import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions";
-import Counterparties from "./pages/Counterparties";
+import Merchants from "./pages/Merchants";
+import UploadStatement from "./pages/UploadStatement";
+import Settings from "./pages/Settings";
 
 export default function App() {
   return (
@@ -25,7 +28,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/transactions" element={<Transactions />} />
-          <Route path="/counterparties" element={<Counterparties />} />
+          <Route path="/merchants" element={<Merchants />} />
+          <Route path="/upload-statement" element={<UploadStatement />} />
         </Routes>
       </Layout>
     </BrowserRouter>
@@ -37,6 +41,7 @@ function Layout({ children }) {
   const { selectedAccountId, setSelectedAccountId } = useAccount();
   const [accounts, setAccounts] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     api.get('/statements/accounts')
@@ -52,10 +57,16 @@ function Layout({ children }) {
 
   const getPageTitle = (pathname) => {
     switch (pathname) {
-      case "/": return "Dashboard";
-      case "/transactions": return "Transactions";
-      case "/counterparties": return "Counterparties";
-      default: return "FinTrack";
+      case "/":
+        return "Dashboard";
+      case "/transactions":
+        return "Transactions";
+      case "/merchants":
+        return "Merchants";
+      case "/upload-statement":
+        return "Upload Statement";
+      default:
+        return "Bank Statement Analytics";
     }
   };
 
@@ -66,7 +77,7 @@ function Layout({ children }) {
           <div className="brand-icon">
             <FiTrendingUp size={22} />
           </div>
-          FinTrack
+          Bank Statement Analytics
         </div>
 
         <nav className="nav">
@@ -78,8 +89,12 @@ function Layout({ children }) {
             <FiList /> Transactions
           </Link>
 
-          <Link to="/counterparties" className={`nav-link ${location.pathname === '/counterparties' ? 'active' : ''}`}>
-            <FiUsers /> Counterparties
+          <Link to="/merchants" className={`nav-link ${location.pathname === '/merchants' ? 'active' : ''}`}>
+            <FiUsers /> Merchants
+          </Link>
+
+          <Link to="/upload-statement" className={`nav-link ${location.pathname === '/upload-statement' ? 'active' : ''}`}>
+            <FiCreditCard /> Upload Statement
           </Link>
         </nav>
 
@@ -150,9 +165,35 @@ function Layout({ children }) {
               <FiSearch />
               <input placeholder="Search transactions, accounts..." />
             </div>
+            
+            <button 
+              onClick={() => setIsSettingsOpen(true)}
+              style={{ 
+                cursor: 'pointer', 
+                background: '#f3f4f6', 
+                border: '1px solid #d1d5db', 
+                borderRadius: '50%', 
+                width: '38px', 
+                height: '38px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                color: '#374151',
+                transition: 'background-color 0.2s',
+                margin: '0 12px'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#e5e7eb'}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+              title="Settings"
+            >
+              <FiSettings size={18} />
+            </button>
+
             <div className="avatar">AG</div>
           </div>
         </header>
+        
+        <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         <section className="content">
           {children}

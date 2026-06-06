@@ -12,7 +12,11 @@
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
   </ItemGroup>
 
-  <ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Common.Framework\Common.Framework.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
     <Folder Include="Views\Shared\" />
     <Folder Include="Views\Statement\" />
   </ItemGroup>

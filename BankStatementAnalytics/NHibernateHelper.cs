@@ -1,67 +1,105 @@
+using System.Collections.Generic;
+using System.IO;
+using System;
+using System.Linq;
 using NHibernate;
-using NHibernate.Cfg;
-using NHibernate.Mapping.ByCode;
-using NHibernate.Tool.hbm2ddl;
+using NHibernate.Linq;
 using BankStatementAnalytics.Mapping;
 using BankStatementAnalytics.Mappping;
 using BankStatementAnalytics.Models;
+using Common.Framework.Data;
 
 namespace BankStatementAnalytics
 {
     public static class NHibernateHelper
     {
-        private static ISessionFactory? _sessionFactory;
-
         public static ISessionFactory SessionFactory
         {
             get
             {
-                if (_sessionFactory == null)
+                try
                 {
-                    var mapper = new ModelMapper();
-
-                    mapper.AddMapping<AccountMap>();
-                    mapper.AddMapping<BankStatementMap>();
-                    mapper.AddMapping<CounterPartyUpiMap>();
-                    mapper.AddMapping<CounterPartyMap>();
-                    mapper.AddMapping<IobTransactionMap>();
-                    mapper.AddMapping<HdfcTransactionMap>();
-
-                    var mapping =
-                        mapper.CompileMappingForAllExplicitlyAddedEntities();
-
-                    var cfg = new Configuration();
-
-                    cfg.DataBaseIntegration(db =>
-                    {
-                        var dbPath = Path.Combine(
-                            AppContext.BaseDirectory,
-                            "Data",
-                            "DataBase.db");
-
-                        Directory.CreateDirectory(
-                            Path.GetDirectoryName(dbPath)!);
-
-                        db.ConnectionString =
-                            $"Data Source={dbPath};Version=3;";
-
-                        db.Driver<NHibernate.Driver.SQLite20Driver>();
-                        db.Dialect<NHibernate.Dialect.SQLiteDialect>();
-
-
-                    });
-
-                    cfg.AddMapping(mapping);
-
-                    new SchemaUpdate(cfg)
-                        .Execute(false, true);
-
-                    _sessionFactory =
-                        cfg.BuildSessionFactory();
+                    return NHibernateManager.SessionFactory;
                 }
+                catch (InvalidOperationException)
+                {
+                    var dbPath = Path.Combine(
+                        AppContext.BaseDirectory,
+                        "Data",
+                        "DataBase.db");
 
-                return _sessionFactory;
+                    NHibernateManager.Initialize(dbPath, mapper =>
+                    {
+                        mapper.AddMapping<AccountMap>();
+                        mapper.AddMapping<BankStatementMap>();
+                        mapper.AddMapping<MerchantUpiMap>();
+                        mapper.AddMapping<MerchantMap>();
+                        mapper.AddMapping<IobTransactionMap>();
+                        mapper.AddMapping<HdfcTransactionMap>();
+                        mapper.AddMapping<UploadMap>();
+                        mapper.AddMapping<UploadTransactionMap>();
+                        mapper.AddMapping<CategoryMap>();
+                        mapper.AddMapping<SubCategoryMap>();
+                    }, SeedDefaultCategories);
+
+                    return NHibernateManager.SessionFactory;
+                }
             }
+        }
+
+        private static void SeedDefaultCategories(ISessionFactory sessionFactory)
+        {
+            using var session = sessionFactory.OpenSession();
+            
+            // If any categories already exist in the DB, exit early
+            if (session.Query<Category>().Any())
+            {
+                return;
+            }
+
+            using var tx = session.BeginTransaction();
+
+            var defaultCategories = new List<Category>
+            {
+                new Category
+                {
+                    Name = "Food & Dining",
+                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Groceries" }, new SubCategory { Name = "Restaurants" }, new SubCategory { Name = "Coffee" } }
+                },
+                new Category
+                {
+                    Name = "Transportation",
+                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Fuel" }, new SubCategory { Name = "Public Transit" }, new SubCategory { Name = "Taxi" } }
+                },
+                new Category
+                {
+                    Name = "Utilities",
+                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Electricity" }, new SubCategory { Name = "Water" }, new SubCategory { Name = "Internet" } }
+                },
+                new Category
+                {
+                    Name = "Entertainment",
+                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Movies" }, new SubCategory { Name = "Subscriptions" }, new SubCategory { Name = "Games" } }
+                },
+                new Category
+                {
+                    Name = "Shopping",
+                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Clothing" }, new SubCategory { Name = "Electronics" }, new SubCategory { Name = "Gifts" } }
+                }
+            };
+
+            foreach (var category in defaultCategories)
+            {
+                // Since Inverse = true on the mapping, we must set the parent reference on the child before saving
+                foreach (var sub in category.SubCategories)
+                {
+                    sub.Category = category;
+                }
+                
+                session.Save(category);
+            }
+
+            tx.Commit();
         }
     }
 }

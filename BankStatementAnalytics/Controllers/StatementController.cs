@@ -92,7 +92,7 @@ namespace BankStatementAnalytics.Controllers
             {
                 if (ext == ".txt")
                 {
-                    _textService.ExtractText(path, accountId);
+                    _textService.ExtractText(path, accountId, Guid.Empty);
                 }
                 else
                 {

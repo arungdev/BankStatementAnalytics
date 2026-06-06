@@ -8,7 +8,7 @@ namespace BankStatementAnalytics.Models
 
         public virtual string Mode { get; set; } = string.Empty;
         // ── CounterParty as FK instead of plain string ───────────────────────
-        public virtual CounterParty? CounterParty { get; set; }
+        public virtual Merchant? CounterParty { get; set; }
 
         public override bool Equals(object obj)
         {

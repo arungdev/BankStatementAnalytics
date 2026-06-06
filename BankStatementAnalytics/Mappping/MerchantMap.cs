@@ -5,11 +5,11 @@ using BankStatementAnalytics.Models;
 
 namespace BankStatementAnalytics.Mapping
 {
-    public class CounterPartyMap : ClassMapping<CounterParty>
+    public class MerchantMap : ClassMapping<Merchant>
     {
-        public CounterPartyMap()
+        public MerchantMap()
         {
-            Table("CounterParties");
+            Table("Merchant");
 
             Id(x => x.Id, m => m.Generator(Generators.Identity));
 
@@ -27,9 +27,18 @@ namespace BankStatementAnalytics.Mapping
             {
                 m.Key(k => k.Column("CounterPartyId"));
                 m.Cascade(Cascade.All | Cascade.DeleteOrphans);
+                m.Inverse(true);
                 m.Lazy(CollectionLazy.NoLazy);  // always load with parent
             },
             r => r.OneToMany());
+
+            // Aliases collection to track merged names
+            Bag(x => x.Aliases, m =>
+            {
+                m.Table("CounterPartyAliases");
+                m.Key(k => k.Column("CounterPartyId"));
+                m.Lazy(CollectionLazy.Lazy);
+            }, r => r.Element(e => e.Column("AliasName")));
         }
     }
 }

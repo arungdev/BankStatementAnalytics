@@ -3,6 +3,7 @@ using BankStatementAnalytics;
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Services;
 using BankStatementAnalytics.Services.Parser;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +29,12 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+    });
+
 
 var app = builder.Build();
 

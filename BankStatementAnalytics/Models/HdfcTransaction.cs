@@ -11,7 +11,7 @@ namespace BankStatementAnalytics.Models
         public virtual string UpiReference { get; set; } = string.Empty;
         public virtual string BankCode { get; set; } = string.Empty;
         public virtual string Mode { get; set; } = string.Empty;
-        public virtual CounterParty? CounterParty { get; set; }
+        public virtual Merchant? CounterParty { get; set; }
         // Models/HdfcTransaction.cs — add one field
         public virtual string? UpiVpa { get; set; }  
 

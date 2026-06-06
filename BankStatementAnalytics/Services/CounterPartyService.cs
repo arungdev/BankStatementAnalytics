@@ -1,5 +1,5 @@
 // Services/CounterPartyService.cs
-using BankStatementAnalytics.Data;
+using Common.Framework.Data;
 using BankStatementAnalytics.Models;
 
 namespace BankStatementAnalytics.Services
@@ -7,7 +7,7 @@ namespace BankStatementAnalytics.Services
     public class CounterPartyService
     {
 
-        public CounterParty ResolveOrCreate(
+        public Merchant ResolveOrCreate(
             string name,
             string? bankCode,
             string? upiId = null)
@@ -15,12 +15,12 @@ namespace BankStatementAnalytics.Services
             using var session = DbHelper.GetSession();
             using var tx = session.BeginTransaction();
 
-            CounterParty? found = null;
+            Merchant? found = null;
 
             // ── 1. Try match by UPI ID ───────────────────────────────────────
             if (!string.IsNullOrWhiteSpace(upiId))
             {
-                found = session.Query<CounterPartyUpi>()
+                found = session.Query<MerchantUpi>()
                     .Where(u => u.UpiId == upiId)
                     .Select(u => u.CounterParty)
                     .FirstOrDefault();
@@ -28,14 +28,15 @@ namespace BankStatementAnalytics.Services
 
             if (found == null)
             {
-                found = session.Query<CounterParty>()
-                    .FirstOrDefault(x => x.Name == name && x.BankCode == bankCode);
+                // Check if the name matches either the primary Name, or any of the previously merged Aliases
+                found = session.Query<Merchant>()
+                    .FirstOrDefault(x => (x.Name == name && x.BankCode == bankCode) || x.Aliases.Contains(name));
             }
 
             // ── 3. Create new ────────────────────────────────────────────────
             if (found == null)
             {
-                found = new CounterParty
+                found = new Merchant
                 {
                     Name = name,
                     BankCode = bankCode,
@@ -50,7 +51,7 @@ namespace BankStatementAnalytics.Services
                 bool upiExists = found.UpiIds.Any(u => u.UpiId == upiId);
                 if (!upiExists)
                 {
-                    var newUpi = new CounterPartyUpi
+                    var newUpi = new MerchantUpi
                     {
                         CounterParty = found,
                         UpiId = upiId,
