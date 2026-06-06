@@ -84,20 +84,22 @@ function Layout({ children }) {
         </nav>
 
         <div className="accounts">
-          <p className="section-title">Your Accounts</p>
+          <p className="section-title">Selected Account</p>
           {accounts.length === 0 ? (
             <div className="account-item">No accounts found</div>
           ) : (
-            accounts.map(acc => (
-              <div 
-                key={acc.id} 
-                className={`account-item ${selectedAccountId === acc.id ? 'active' : ''}`}
-                onClick={() => setSelectedAccountId(acc.id)}
-              >
-                <FiCreditCard size={18} color={acc.bankName === 'IOB' ? '#4f46e5' : '#10b981'} />
-                <span>{acc.maskedAccountNumber || acc.accountNumber || '****'}</span>
-              </div>
-            ))
+            <select 
+              className="account-select"
+              value={selectedAccountId || ''}
+              onChange={(e) => setSelectedAccountId(Number(e.target.value))}
+            >
+              <option value="">Select an account...</option>
+              {accounts.map(acc => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.maskedAccountNumber || acc.accountNumber || '****'} ({acc.bankName})
+                </option>
+              ))}
+            </select>
           )}
         </div>
 

@@ -330,3 +330,32 @@ tr:hover td {
   border-color: #4f46e5;
   font-weight: 600;
 }
+
+.account-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.account-select:hover {
+  border-color: #4f46e5;
+  background: #f9fafb;
+}
+
+.account-select:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.account-select option {
+  background: #ffffff;
+  color: #111827;
+}
