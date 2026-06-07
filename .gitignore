@@ -1,37 +1,10 @@
-﻿﻿# Build outputs
-bin/
-obj/
+﻿﻿# Ignore publish output
+Publish/
 
-# Visual Studio
-.vs/
-*.user
-*.suo
-*.userprefs
-
-# Rider
-.idea/
-
-# Uploads and local data
-Uploads/
-*.db
-*.sqlite
-*.log
-
-# Secrets
-appsettings.*.Local.json
-secrets.json
-
-# OS files
-Thumbs.db
-.DS_Store
-
-# NuGet
-*.nupkg
-
-# JetBrains Rider
-.idea/
-
-# Node and React Client
-node_modules/
-dist/
-.env
+# Ignore React build output and dependencies
+BankStatementAnalytics/wwwroot/
+Client/node_modules/
+/BankStatementAnalytics/bin
+/BankStatementAnalytics/obj
+/BankStatementAnalytics/Uploads
+/.vs

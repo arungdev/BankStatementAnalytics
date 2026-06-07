@@ -47,9 +47,10 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
+    
+    // Move HTTPS redirection here so it doesn't break local HTTP testing
+    app.UseHttpsRedirection();
 }
-
-app.UseHttpsRedirection();
 
 app.UseStaticFiles();
 
@@ -57,8 +58,10 @@ app.UseRouting();
 
 app.UseAuthorization();
 
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Statement}/{action=Index}/{id?}");
+// Map API controllers that use [Route("...")] attributes
+app.MapControllers();
+
+// Forward any requests that don't match an API endpoint to the React frontend
+app.MapFallbackToFile("index.html");
 
 app.Run();
