@@ -1,16 +1,11 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import api from "./api/client";
 import { useAccount } from "./context/useAccount";
 import CreateAccount from "./components/CreateAccount";
 import {
-  FiHome,
-  FiList,
-  FiUsers,
-  FiCreditCard,
   FiSearch,
   FiPlus,
-  FiTrendingUp,
   FiSettings,
 } from "react-icons/fi";
 
@@ -19,24 +14,28 @@ import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions";
 import Merchants from "./pages/Merchants";
 import UploadStatement from "./pages/UploadStatement";
+import Trends from "./pages/Trends";
 import Settings from "./pages/Settings";
+import Sidebar from "./components/Sidebar";
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/trends" element={<Trends />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/merchants" element={<Merchants />} />
-          <Route path="/upload-statement" element={<UploadStatement />} />
-        </Routes>
-      </Layout>
+          <Route path="/upload" element={<UploadStatement />} />
+        </Route>
+      </Routes>
     </BrowserRouter>
   );
 }
 
-function Layout({ children }) {
+function Layout() {
   const location = useLocation();
   const { selectedAccountId, setSelectedAccountId } = useAccount();
   const [accounts, setAccounts] = useState([]);
@@ -57,104 +56,29 @@ function Layout({ children }) {
 
   const getPageTitle = (pathname) => {
     switch (pathname) {
-      case "/":
+      case "/dashboard":
         return "Dashboard";
+      case "/trends":
+        return "Trends";
       case "/transactions":
         return "Transactions";
       case "/merchants":
         return "Merchants";
-      case "/upload-statement":
+      case "/upload":
         return "Upload Statement";
       default:
-        return "Bank Statement Analytics";
+        return "Dashboard";
     }
   };
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-icon">
-            <FiTrendingUp size={22} />
-          </div>
-          Bank Statement Analytics
-        </div>
-
-        <nav className="nav">
-          <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
-            <FiHome /> Dashboard
-          </Link>
-
-          <Link to="/transactions" className={`nav-link ${location.pathname === '/transactions' ? 'active' : ''}`}>
-            <FiList /> Transactions
-          </Link>
-
-          <Link to="/merchants" className={`nav-link ${location.pathname === '/merchants' ? 'active' : ''}`}>
-            <FiUsers /> Merchants
-          </Link>
-
-          <Link to="/upload-statement" className={`nav-link ${location.pathname === '/upload-statement' ? 'active' : ''}`}>
-            <FiCreditCard /> Upload Statement
-          </Link>
-        </nav>
-
-        <div className="accounts">
-          <p className="section-title">Selected Account</p>
-          {accounts.length === 0 ? (
-            <div className="account-item">No accounts found</div>
-          ) : (
-            <select 
-              className="account-select"
-              value={selectedAccountId || ''}
-              onChange={(e) => setSelectedAccountId(Number(e.target.value))}
-            >
-              <option value="">Select an account...</option>
-              {accounts.map(acc => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.maskedAccountNumber || acc.accountNumber || '****'} ({acc.bankName})
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        <button className="addBtn" aria-label="Add Account" onClick={() => setShowCreate(true)}>
-          <FiPlus size={18} /> Add Account
-        </button>
-
-        {showCreate && (
-          <div className="modal" onClick={() => setShowCreate(false)}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
-              <h3>Create Account</h3>
-              <CreateAccount onClose={() => setShowCreate(false)} onCreate={(data) => {
-                // optimistic UI: create temporary account locally
-                const temp = {
-                  id: `temp-${Date.now()}`,
-                  accountHolderName: data.AccountHolderName,
-                  accountNumber: data.AccountNumber,
-                  maskedAccountNumber: '****' + (data.AccountNumber?.slice(-4) || ''),
-                  bankName: data.BankName,
-                };
-                setAccounts(prev => [temp, ...prev]);
-
-                // send to server and replace temp when done
-                return api.post('/accounts', {
-                  AccountHolderName: data.AccountHolderName,
-                  AccountNumber: data.AccountNumber,
-                  BankName: data.BankName
-                }).then(res => {
-                  // replace temp by real account from response
-                  setAccounts(prev => prev.map(a => a.id === temp.id ? res.data : a));
-                }).catch(err => {
-                  // remove temp on failure
-                  setAccounts(prev => prev.filter(a => a.id !== temp.id));
-                  throw err;
-                });
-              }} />
-            </div>
-          </div>
-        )}
-      </aside>
+      <Sidebar 
+        accounts={accounts}
+        selectedAccountId={selectedAccountId}
+        onAccountChange={setSelectedAccountId}
+        onAddAccount={() => setShowCreate(true)}
+      />
 
       <main className="main">
         <header className="topbar">
@@ -193,10 +117,40 @@ function Layout({ children }) {
           </div>
         </header>
         
+        {showCreate && (
+          <div className="modal" onClick={() => setShowCreate(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setShowCreate(false)}>&times;</button>
+              <h3>Create Account</h3>
+              <CreateAccount onClose={() => setShowCreate(false)} onCreate={(data) => {
+                const temp = {
+                  id: `temp-${Date.now()}`,
+                  accountHolderName: data.AccountHolderName,
+                  accountNumber: data.AccountNumber,
+                  maskedAccountNumber: '****' + (data.AccountNumber?.slice(-4) || ''),
+                  bankName: data.BankName,
+                };
+                setAccounts(prev => [temp, ...prev]);
+
+                return api.post('/accounts', {
+                  AccountHolderName: data.AccountHolderName,
+                  AccountNumber: data.AccountNumber,
+                  BankName: data.BankName
+                }).then(res => {
+                  setAccounts(prev => prev.map(a => a.id === temp.id ? res.data : a));
+                }).catch(err => {
+                  setAccounts(prev => prev.filter(a => a.id !== temp.id));
+                  throw err;
+                });
+              }} />
+            </div>
+          </div>
+        )}
+
         <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         <section className="content">
-          {children}
+          <Outlet />
         </section>
       </main>
     </div>

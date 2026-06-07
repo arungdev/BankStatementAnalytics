@@ -1,0 +1,299 @@
+/* ── Google Font import ──────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
+
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+:root {
+  --bg:           #f4f5f7;
+  --surface:      #ffffff;
+  --surface-2:    #f9fafb;
+  --border:       #e8eaed;
+  --border-soft:  #f0f2f4;
+
+  --ink:          #111827;
+  --ink-2:        #6b7280;
+  --ink-3:        #9ca3af;
+
+  --green:        #16a34a;
+  --green-light:  #dcfce7;
+  --green-mid:    rgba(22,163,74,0.12);
+
+  --red:          #dc2626;
+  --red-light:    #fee2e2;
+  --red-mid:      rgba(220,38,38,0.10);
+
+  --amber:        #d97706;
+  --amber-mid:    rgba(217,119,6,0.10);
+
+  --radius-sm:    10px;
+  --radius-md:    14px;
+  --radius-lg:    20px;
+
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-body:    'DM Sans', system-ui, sans-serif;
+
+  --shadow-card:  0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-hover: 0 4px 24px rgba(0,0,0,0.11);
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+.trends-container * { box-sizing: border-box; }
+
+.trends-container {
+  font-family: var(--font-body);
+  background: var(--bg);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 28px 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+  color: var(--ink);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.trends-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  /* CRITICAL: allows date picker dropdown to escape without clipping */
+  position: relative;
+  z-index: 100;
+}
+
+/* ── Date picker — overlap fix ───────────────────────────────────────────── */
+.date-range-picker {
+  position: relative;
+  z-index: 200;   /* sits above cards and chart */
+}
+.date-range-picker .react-datepicker-wrapper { display: block; }
+.date-range-picker .react-datepicker-wrapper input {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 14px;
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--ink-2);
+  outline: none;
+  min-width: 210px;
+  transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
+  box-shadow: var(--shadow-card);
+}
+.date-range-picker .react-datepicker-wrapper input::placeholder { color: var(--ink-3); }
+.date-range-picker .react-datepicker-wrapper input:focus {
+  border-color: #6366f1;
+  color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+
+/* The calendar popup itself */
+.date-range-picker .react-datepicker-popper {
+  z-index: 9999 !important;  /* always on top of everything */
+}
+.date-range-picker .react-datepicker {
+  font-family: var(--font-body);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-hover);
+  overflow: hidden;
+}
+
+/* ── Period toggle ───────────────────────────────────────────────────────── */
+.filter-group {
+  display: flex;
+  gap: 2px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+}
+.filter-group button {
+  padding: 7px 20px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.16s, color 0.16s, box-shadow 0.16s;
+  letter-spacing: 0.01em;
+}
+.filter-group button:hover { background: var(--surface-2); color: var(--ink-2); }
+.filter-group button.active {
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(17,24,39,0.18);
+}
+
+/* ── Summary cards ───────────────────────────────────────────────────────── */
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  /* stays below the date picker dropdown */
+  position: relative;
+  z-index: 1;
+}
+@media (max-width: 680px) { .summary-stats { grid-template-columns: 1fr; } }
+
+.summary-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1.5px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 22px 24px 18px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.22s, transform 0.22s;
+}
+.summary-card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+}
+
+/* Coloured top stripe */
+.summary-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20px; right: 20px;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+}
+.summary-card:nth-child(1)::before { background: var(--green); }
+.summary-card:nth-child(2)::before { background: var(--red); }
+.summary-card.net-positive::before { background: var(--green); }
+.summary-card.net-negative::before { background: var(--red); }
+
+/* Faint background tint */
+.summary-card:nth-child(1) { background: linear-gradient(160deg, #fff 60%, var(--green-mid)); }
+.summary-card:nth-child(2) { background: linear-gradient(160deg, #fff 60%, var(--red-mid)); }
+.summary-card.net-positive  { background: linear-gradient(160deg, #fff 60%, var(--green-mid)); }
+.summary-card.net-negative  { background: linear-gradient(160deg, #fff 60%, var(--red-mid)); }
+
+.summary-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.summary-value {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+.summary-value.income { color: var(--green); }
+.summary-value.spend  { color: var(--red); }
+
+/* ── Chart card ──────────────────────────────────────────────────────────── */
+.trends-chart-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 24px 26px 18px;
+  box-shadow: var(--shadow-card);
+  position: relative;
+  z-index: 1;
+}
+
+.trends-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.chart-card-title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--ink);
+  margin: 0;
+}
+.chart-legend     { display: flex; gap: 18px; font-size: 12px; color: var(--ink-2); font-weight: 500; }
+.chart-legend div { display: flex; align-items: center; gap: 7px; }
+.legend-dot       { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.legend-dot.spend  { background: var(--red); }
+.legend-dot.income { background: var(--green); }
+
+/* ── Chart wrapper + split-canvas ────────────────────────────────────────── */
+.chart-wrapper { height: 420px; position: relative; }
+
+.split-chart-container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.y-axis-panel {
+  flex: 0 0 56px;
+  height: 100%;
+  position: relative;
+  z-index: 2;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.bars-scroll-panel {
+  flex: 1 1 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  cursor: grab;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+.bars-scroll-panel:active { cursor: grabbing; }
+.bars-scroll-panel::-webkit-scrollbar        { height: 4px; }
+.bars-scroll-panel::-webkit-scrollbar-track  { background: transparent; }
+.bars-scroll-panel::-webkit-scrollbar-thumb  { background: #d1d5db; border-radius: 10px; }
+.bars-scroll-panel::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* ── Loading ─────────────────────────────────────────────────────────────── */
+.chart-loader {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100%; gap: 12px;
+  color: var(--ink-3); font-size: 13px;
+}
+.loader-spinner {
+  width: 28px; height: 28px;
+  border: 2.5px solid var(--border);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.chart-empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100%; gap: 10px;
+  color: var(--ink-3); text-align: center;
+}
+.chart-empty svg  { color: var(--ink-3); margin-bottom: 4px; opacity: 0.45; }
+.chart-empty p    { font-family: var(--font-display); font-size: 17px; color: var(--ink-2); margin: 0; }
+.chart-empty span { font-size: 13px; }
+
+/* ── Entrance animation ──────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.summary-card:nth-child(1) { animation: fadeUp 0.35s 0.05s ease both; }
+.summary-card:nth-child(2) { animation: fadeUp 0.35s 0.10s ease both; }
+.summary-card:nth-child(3) { animation: fadeUp 0.35s 0.15s ease both; }
+.trends-chart-card          { animation: fadeUp 0.35s 0.20s ease both; }
