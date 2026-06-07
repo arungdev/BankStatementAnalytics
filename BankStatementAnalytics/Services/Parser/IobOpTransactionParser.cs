@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using BankStatementAnalytics.Models;
+using Common.Framework.Logging;
 
 namespace BankStatementAnalytics.Services.Parser
 {
@@ -60,83 +61,96 @@ namespace BankStatementAnalytics.Services.Parser
         private IEnumerable<IobTransaction> Parse(string text, int accountId)
         {
             var transactions = new List<IobTransaction>();
-            var lines = text.Replace("\r", "").Split('\n');
-
-            string? pendingRemarks = null;
-            (string tx, string val)? pendingDates = null;
-
-            foreach (var rawLine in lines)
+            try
             {
-                string line = rawLine.TrimEnd();
+                var lines = text.Replace("\r", "").Split('\n');
 
-                if (ShouldSkip(line)) continue;
+                string? pendingRemarks = null;
+                (string tx, string val)? pendingDates = null;
 
-                bool hasDate = DateRegex.IsMatch(line);
-                bool hasTrf = line.Contains("TRF");
-                bool hasKeyword = KeywordRegex.IsMatch(line);
-
-
-                if (hasKeyword && !hasDate && !hasTrf)
+                foreach (var rawLine in lines)
                 {
-                    pendingRemarks = line.Trim();
-                    continue;
-                }
-
-                // ── (2) TRF / amounts line ───────────────────────────────────
-                if (hasTrf)
-                {
-
-                    string txDate, valDate;
-
-                    if (hasDate)
+                    try
                     {
-                        var dates = DateRegex.Matches(line);
-                        txDate = dates[0].Value;
-                        valDate = dates.Count > 1 ? dates[1].Value : dates[0].Value;
-                        pendingDates = null;
+                        string line = rawLine.TrimEnd();
+
+                        if (ShouldSkip(line)) continue;
+
+                        bool hasDate = DateRegex.IsMatch(line);
+                        bool hasTrf = line.Contains("TRF");
+                        bool hasKeyword = KeywordRegex.IsMatch(line);
+
+                        if (hasKeyword && !hasDate && !hasTrf)
+                        {
+                            pendingRemarks = line.Trim();
+                            continue;
+                        }
+
+                        // ── (2) TRF / amounts line ───────────────────────────────────
+                        if (hasTrf)
+                        {
+
+                            string txDate, valDate;
+
+                            if (hasDate)
+                            {
+                                var dates = DateRegex.Matches(line);
+                                txDate = dates[0].Value;
+                                valDate = dates.Count > 1 ? dates[1].Value : dates[0].Value;
+                                pendingDates = null;
+                            }
+                            else if (pendingDates.HasValue)
+                            {
+                                (txDate, valDate) = pendingDates.Value;
+                                pendingDates = null;
+                            }
+                            else
+                            {
+                                // No dates available — orphan TRF line, skip
+                                pendingRemarks = null;
+                                continue;
+                            }
+
+                            // Resolve remarks:
+                            // CASH rows have keyword + date + TRF all on one line,
+                            // so the line itself is used when no pending remarks exist.
+                            string remarks = hasKeyword
+                                ? line.Trim()
+                                : (pendingRemarks ?? string.Empty);
+
+                            pendingRemarks = null;
+
+                            var tx = BuildTransaction(txDate, valDate, line, remarks, accountId);
+                            if (tx != null)
+                                transactions.Add(tx);
+
+                            continue;
+                        }
+
+                        // ── (3) Date-only line (no TRF yet) ─────────────────────────
+                        if (hasDate)
+                        {
+                            var dates = DateRegex.Matches(line);
+                            pendingDates = (
+                                dates[0].Value,
+                                dates.Count > 1 ? dates[1].Value : dates[0].Value
+                            );
+
+                            // Remarks may be embedded on the same line as the date
+                            // e.g. "01/06/2026  01/06/2026  UPI/124010099773/CR/..."
+                            if (hasKeyword)
+                                pendingRemarks = line.Trim();
+                        }
                     }
-                    else if (pendingDates.HasValue)
+                    catch (Exception ex)
                     {
-                        (txDate, valDate) = pendingDates.Value;
-                        pendingDates = null;
+                        Log.Error($"IOB Parse Error on line: {rawLine}", ex);
                     }
-                    else
-                    {
-                        // No dates available — orphan TRF line, skip
-                        pendingRemarks = null;
-                        continue;
-                    }
-
-                    // Resolve remarks:
-                    // CASH rows have keyword + date + TRF all on one line,
-                    // so the line itself is used when no pending remarks exist.
-                    string remarks = hasKeyword
-                        ? line.Trim()
-                        : (pendingRemarks ?? string.Empty);
-
-                    pendingRemarks = null;
-
-                    var tx = BuildTransaction(txDate, valDate, line, remarks, accountId);
-                    if (tx != null)
-                        transactions.Add(tx);
-
-                    continue;
                 }
-
-                // ── (3) Date-only line (no TRF yet) ─────────────────────────
-                if (hasDate)
-                {
-                    var dates = DateRegex.Matches(line);
-                    pendingDates = (
-                        dates[0].Value,
-                        dates.Count > 1 ? dates[1].Value : dates[0].Value
-                    );
-
-                    // Remarks may be embedded on the same line as the date
-                    // e.g. "01/06/2026  01/06/2026  UPI/124010099773/CR/..."
-                    if (hasKeyword)
-                        pendingRemarks = line.Trim();
-                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Fatal error parsing IOB statement for account {accountId}", ex);
             }
 
             return transactions;

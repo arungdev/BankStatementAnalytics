@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Models;
 using Common.Framework.Data;
+using Common.Framework.Logging;
+using System;
 
 namespace BankStatementAnalytics.Controllers.Api
 {
@@ -13,18 +15,26 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public IActionResult GetByAccount(int accountId)
         {
-            var account = DbHelper.GetById<Account>((long)accountId);
-            if (account == null)
-                return NotFound();
+            try
+            {
+                var account = DbHelper.GetById<Account>((long)accountId);
+                if (account == null)
+                    return NotFound();
 
-            // fallback simple version
-            var transactions = DbHelper
-                .GetAll<IobTransaction>()
-                .Where(x => x.AccountId == accountId)
-                .OrderByDescending(x => x.TransactionDate)
-                .ToList();
+                // fallback simple version
+                var transactions = DbHelper
+                    .GetAll<IobTransaction>()
+                    .Where(x => x.AccountId == accountId)
+                    .OrderByDescending(x => x.TransactionDate)
+                    .ToList();
 
-            return Ok(transactions);
+                return Ok(transactions);
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex);
+                return StatusCode(500, "Internal server error");
+            }
         }
     }
 }

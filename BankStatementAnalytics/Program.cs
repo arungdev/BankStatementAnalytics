@@ -4,6 +4,8 @@ using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Services;
 using BankStatementAnalytics.Services.Parser;
 using System.Text.Json.Serialization;
+using Common.Framework.Logging;
+using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,6 +42,20 @@ var app = builder.Build();
 
 app.UseCors("React");
 
+// Global Error Logging Middleware
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        Log.Error($"Unhandled API exception: {context.Request.Method} {context.Request.Path}", ex);
+        throw;
+    }
+});
+
 // Initialize NHibernate
 _ = NHibernateHelper.SessionFactory;
 
@@ -47,7 +63,7 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
-    
+
     // Move HTTPS redirection here so it doesn't break local HTTP testing
     app.UseHttpsRedirection();
 }

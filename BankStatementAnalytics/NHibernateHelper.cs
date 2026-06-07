@@ -8,6 +8,7 @@ using BankStatementAnalytics.Mapping;
 using BankStatementAnalytics.Mappping;
 using BankStatementAnalytics.Models;
 using Common.Framework.Data;
+using Common.Framework.Logging;
 
 namespace BankStatementAnalytics
 {
@@ -23,8 +24,12 @@ namespace BankStatementAnalytics
                 }
                 catch (InvalidOperationException)
                 {
+                    // Determine the true location of the executable, avoiding the single-file extract temp folder
+                    var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                    var appDir = string.IsNullOrEmpty(exePath) ? AppContext.BaseDirectory : Path.GetDirectoryName(exePath);
+
                     var dbPath = Path.Combine(
-                        AppContext.BaseDirectory,
+                        appDir,
                         "Data",
                         "DataBase.db");
 
@@ -44,62 +49,74 @@ namespace BankStatementAnalytics
 
                     return NHibernateManager.SessionFactory;
                 }
+                catch (Exception ex)
+                {
+                    Log.Exception(ex);
+                    throw;
+                }
             }
         }
 
         private static void SeedDefaultCategories(ISessionFactory sessionFactory)
         {
-            using var session = sessionFactory.OpenSession();
-            
-            // If any categories already exist in the DB, exit early
-            if (session.Query<Category>().Any())
+            try
             {
-                return;
-            }
-
-            using var tx = session.BeginTransaction();
-
-            var defaultCategories = new List<Category>
-            {
-                new Category
-                {
-                    Name = "Food & Dining",
-                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Groceries" }, new SubCategory { Name = "Restaurants" }, new SubCategory { Name = "Coffee" } }
-                },
-                new Category
-                {
-                    Name = "Transportation",
-                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Fuel" }, new SubCategory { Name = "Public Transit" }, new SubCategory { Name = "Taxi" } }
-                },
-                new Category
-                {
-                    Name = "Utilities",
-                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Electricity" }, new SubCategory { Name = "Water" }, new SubCategory { Name = "Internet" } }
-                },
-                new Category
-                {
-                    Name = "Entertainment",
-                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Movies" }, new SubCategory { Name = "Subscriptions" }, new SubCategory { Name = "Games" } }
-                },
-                new Category
-                {
-                    Name = "Shopping",
-                    SubCategories = new List<SubCategory> { new SubCategory { Name = "Clothing" }, new SubCategory { Name = "Electronics" }, new SubCategory { Name = "Gifts" } }
-                }
-            };
-
-            foreach (var category in defaultCategories)
-            {
-                // Since Inverse = true on the mapping, we must set the parent reference on the child before saving
-                foreach (var sub in category.SubCategories)
-                {
-                    sub.Category = category;
-                }
+                using var session = sessionFactory.OpenSession();
                 
-                session.Save(category);
-            }
+                // If any categories already exist in the DB, exit early
+                if (session.Query<Category>().Any())
+                {
+                    return;
+                }
 
-            tx.Commit();
+                using var tx = session.BeginTransaction();
+
+                var defaultCategories = new List<Category>
+                {
+                    new Category
+                    {
+                        Name = "Food & Dining",
+                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Groceries" }, new SubCategory { Name = "Restaurants" }, new SubCategory { Name = "Coffee" } }
+                    },
+                    new Category
+                    {
+                        Name = "Transportation",
+                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Fuel" }, new SubCategory { Name = "Public Transit" }, new SubCategory { Name = "Taxi" } }
+                    },
+                    new Category
+                    {
+                        Name = "Utilities",
+                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Electricity" }, new SubCategory { Name = "Water" }, new SubCategory { Name = "Internet" } }
+                    },
+                    new Category
+                    {
+                        Name = "Entertainment",
+                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Movies" }, new SubCategory { Name = "Subscriptions" }, new SubCategory { Name = "Games" } }
+                    },
+                    new Category
+                    {
+                        Name = "Shopping",
+                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Clothing" }, new SubCategory { Name = "Electronics" }, new SubCategory { Name = "Gifts" } }
+                    }
+                };
+
+                foreach (var category in defaultCategories)
+                {
+                    // Since Inverse = true on the mapping, we must set the parent reference on the child before saving
+                    foreach (var sub in category.SubCategories)
+                    {
+                        sub.Category = category;
+                    }
+                    
+                    session.Save(category);
+                }
+
+                tx.Commit();
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex);
+            }
         }
     }
 }

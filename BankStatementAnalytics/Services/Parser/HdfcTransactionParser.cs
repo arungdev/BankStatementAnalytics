@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using BankStatementAnalytics.Models;
+using Common.Framework.Logging;
 
 namespace BankStatementAnalytics.Services.Parser
 {
@@ -57,39 +58,46 @@ namespace BankStatementAnalytics.Services.Parser
         {
             var transactions = new List<HdfcTransaction>();
 
-            var lines = text
-                .Replace("\r", "")
-                .Split('\n')
-                .Select(l => l.Trim())
-                .Where(l => !string.IsNullOrWhiteSpace(l))
-                .ToList();
-
-            foreach (var line in lines)
+            try
             {
-                if (line.StartsWith("Date") || line.StartsWith("Date ,"))
-                    continue;
+                var lines = text
+                    .Replace("\r", "")
+                    .Split('\n')
+                    .Select(l => l.Trim())
+                    .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .ToList();
 
-                // All data rows are CSV — split on comma
-                var cols = SplitCsvHdfc(line);
-
-                // Need at least 7 columns:
-                // [0] Date  [1] Narration  [2] Value Date
-                // [3] Debit [4] Credit     [5] Ref No  [6] Closing Balance
-                if (cols.Length < 7) continue;
-
-        string dateRaw = cols[0].Trim();
-                if (!DateRegex.IsMatch(dateRaw)) continue;
-
-                try
+                foreach (var line in lines)
                 {
-                    var tx = BuildTransaction(cols, accountId);
-                    if (tx != null)
-                        transactions.Add(tx);
+                    try
+                    {
+                        if (line.StartsWith("Date") || line.StartsWith("Date ,"))
+                            continue;
+
+                        // All data rows are CSV — split on comma
+                        var cols = SplitCsvHdfc(line);
+
+                        // Need at least 7 columns:
+                        // [0] Date  [1] Narration  [2] Value Date
+                        // [3] Debit [4] Credit     [5] Ref No  [6] Closing Balance
+                        if (cols.Length < 7) continue;
+
+                        string dateRaw = cols[0].Trim();
+                        if (!DateRegex.IsMatch(dateRaw)) continue;
+
+                        var tx = BuildTransaction(cols, accountId);
+                        if (tx != null)
+                            transactions.Add(tx);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error($"HDFC Parse Error on line: {line}", ex);
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"HDFC Parse Error: {ex.Message} | {line}");
-                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Fatal error parsing HDFC statement for account {accountId}", ex);
             }
 
             return transactions;

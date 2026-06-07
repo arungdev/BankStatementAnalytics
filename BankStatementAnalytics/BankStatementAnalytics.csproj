@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,6 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>BankStatementAnalytics</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Remove="log4net.config" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="NHibernate" Version="5.6.1" />
@@ -19,6 +23,16 @@
 	<ItemGroup>
     <Folder Include="Views\Shared\" />
     <Folder Include="Views\Statement\" />
+  </ItemGroup>
+
+	<ItemGroup>
+	  <None Include="log4net.config" />
+	</ItemGroup>
+
+  <ItemGroup>
+    <None Update="log4net.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- Automatically build the React client and output to wwwroot only in Release (production) mode -->
