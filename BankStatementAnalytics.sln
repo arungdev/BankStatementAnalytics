@@ -1,10 +1,12 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.5.2.0
+# Visual Studio Version 18
+VisualStudioVersion = 18.7.11903.348 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "BankStatementAnalytics", "BankStatementAnalytics", "{71552F90-DC1A-4657-7647-58ED78018F5C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BankStatementAnalytics", "BankStatementAnalytics\BankStatementAnalytics.csproj", "{E2B087B6-8A14-BC20-FF40-568C0913C2CA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Common.Framework", "Common.Framework\Common.Framework.csproj", "{8A539176-D49B-46FC-9D54-0F8F69641DD7}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -16,6 +18,10 @@ Global
 		{E2B087B6-8A14-BC20-FF40-568C0913C2CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E2B087B6-8A14-BC20-FF40-568C0913C2CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E2B087B6-8A14-BC20-FF40-568C0913C2CA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8A539176-D49B-46FC-9D54-0F8F69641DD7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A539176-D49B-46FC-9D54-0F8F69641DD7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A539176-D49B-46FC-9D54-0F8F69641DD7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A539176-D49B-46FC-9D54-0F8F69641DD7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

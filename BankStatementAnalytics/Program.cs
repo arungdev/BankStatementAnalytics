@@ -9,6 +9,8 @@ using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
+Log.Initialize("log4net.config"); 
+Log.Info(AppContext.BaseDirectory);
 // MVC
 builder.Services.AddControllersWithViews();
 
@@ -35,6 +37,7 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
 

@@ -54,9 +54,9 @@ namespace BankStatementAnalytics.Services.Parser
             new(@"^(NWD|ATW)-(.+?)-(.+?)-(.+)$",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        private IEnumerable<HdfcTransaction> Parse(string text, int accountId)
+        private IEnumerable<BankTransaction> Parse(string text, int accountId)
         {
-            var transactions = new List<HdfcTransaction>();
+            var transactions = new List<BankTransaction>();
 
             try
             {
@@ -103,7 +103,7 @@ namespace BankStatementAnalytics.Services.Parser
             return transactions;
         }
 
-        private HdfcTransaction? BuildTransaction(string[] cols, int accountId)
+        private BankTransaction? BuildTransaction(string[] cols, int accountId)
         {
             string dateRaw = cols[0].Trim();
             string narration = cols[1].Trim();
@@ -113,11 +113,13 @@ namespace BankStatementAnalytics.Services.Parser
             string refNo = cols[5].Trim();
             string balanceRaw = cols[6].Trim();
 
-            var tx = new HdfcTransaction
+            var tx = new BankTransaction
             {
                 ImportedOn = DateTime.Now,
                 Description = narration,
+                Narration = narration,
                 AccountId = accountId,
+                BankType = "HDFC",
                 BankReference = refNo.TrimStart('0'), // strip leading zeros
             };
 
@@ -149,18 +151,13 @@ namespace BankStatementAnalytics.Services.Parser
 
             // Parse narration
             ParseNarration(narration, tx, out string? counterPartyName);
-            
-            // After ParseNarration:
+
+            // Resolve CounterParty (single call, with VPA)
             if (!string.IsNullOrWhiteSpace(counterPartyName))
                 tx.CounterParty = _counterPartyService.ResolveOrCreate(
                     counterPartyName,
                     tx.BankCode,
-                    upiId: tx.UpiVpa);  // ← pass VPA as UPI ID
-
-            // Resolve CounterParty
-            if (!string.IsNullOrWhiteSpace(counterPartyName))
-                tx.CounterParty = _counterPartyService.ResolveOrCreate(
-                    counterPartyName, tx.BankCode);
+                    upiId: tx.UpiVpa);
 
             // Generate reference if ref is empty/zeroed
             if (string.IsNullOrWhiteSpace(tx.BankReference) ||
@@ -174,7 +171,7 @@ namespace BankStatementAnalytics.Services.Parser
 
         private static void ParseNarration(
             string narration,
-            HdfcTransaction tx,
+            BankTransaction tx,
             out string? counterPartyName)
         {
             counterPartyName = null;
@@ -187,7 +184,7 @@ namespace BankStatementAnalytics.Services.Parser
                 var parts = narration.Split('-');
 
                 int refIdx = -1;
-                string? vpa = null;   // ← capture VPA
+                string? vpa = null;
 
                 for (int i = 0; i < parts.Length; i++)
                 {
@@ -228,6 +225,7 @@ namespace BankStatementAnalytics.Services.Parser
                 tx.UpiVpa = vpa;
                 return;
             }
+
             // NEFT
             if (narration.StartsWith("NEFT", StringComparison.OrdinalIgnoreCase))
             {
@@ -238,13 +236,15 @@ namespace BankStatementAnalytics.Services.Parser
                     string direction = m.Groups[1].Value.ToUpper();
                     string ifsc = m.Groups[2].Value;
                     string party1 = m.Groups[3].Value.Trim();
+                    string party2 = m.Groups[4].Value.Trim();
                     string refNo = m.Groups[5].Value.Trim();
 
                     tx.BankCode = ifsc;
                     tx.UpiReference = refNo;
 
-                    // For CR: party1 is sender; for DR: party1 is beneficiary
-                    counterPartyName = direction == "CR" ? party1 : party1;
+                    // For CR: party1 is the sender (counterparty paying us)
+                    // For DR: party2 is the beneficiary (counterparty we paid)
+                    counterPartyName = direction == "CR" ? party1 : party2;
 
                     if (tx.TransactionType == null)
                         tx.TransactionType = direction;
@@ -327,7 +327,7 @@ namespace BankStatementAnalytics.Services.Parser
                 StringComparison.OrdinalIgnoreCase))
             {
                 tx.Mode = "FD";
-                tx.TransactionType = tx.TransactionType ?? "CR";
+                tx.TransactionType ??= "CR";
                 var m = FdRegex.Match(narration);
                 counterPartyName = m.Success
                     ? $"FD {m.Groups[1].Value.Trim()}"
@@ -355,12 +355,12 @@ namespace BankStatementAnalytics.Services.Parser
             counterPartyName = narration.Split('-').FirstOrDefault()?.Trim();
         }
 
-        private static string GenerateReference(HdfcTransaction tx)
+        private static string GenerateReference(BankTransaction tx)
         {
             if (!string.IsNullOrWhiteSpace(tx.UpiReference))
                 return $"UPI{tx.UpiReference}";
 
-            var raw = $"{tx.AccountId}|{tx.TransactionDate:yyyyMMdd}|{tx.Mode}|{tx.Amount}|{tx.Balance}";
+            var raw = $"{tx.AccountId}|{tx.BankType}|{tx.TransactionDate:yyyyMMdd}|{tx.Mode}|{tx.Amount}|{tx.Balance}";
             var hash = Convert.ToHexString(
                 SHA1.HashData(Encoding.UTF8.GetBytes(raw)))[..12];
 
@@ -369,7 +369,6 @@ namespace BankStatementAnalytics.Services.Parser
 
         private static DateTime ParseDate(string raw)
         {
-            // Try dd/MM/yy then dd/MM/yyyy
             if (DateTime.TryParseExact(raw, "dd/MM/yy",
                     CultureInfo.InvariantCulture,
                     DateTimeStyles.None, out var dt)) return dt;
@@ -398,18 +397,14 @@ namespace BankStatementAnalytics.Services.Parser
         /// </summary>
         private static string[] SplitCsvHdfc(string line)
         {
-            // Split everything
             var all = line.Split(',');
 
-            // Need at least 7 parts — if clean, return as-is
             if (all.Length == 7)
                 return all;
 
             if (all.Length < 7)
                 return all; // malformed — let caller handle
 
-            // Take first 1 (Date) and last 5 (ValueDate,Debit,Credit,Ref,Balance)
-            // Everything in between is the Narration
             string date = all[0];
             string valueDate = all[all.Length - 5];
             string debit = all[all.Length - 4];
@@ -417,14 +412,14 @@ namespace BankStatementAnalytics.Services.Parser
             string refNo = all[all.Length - 2];
             string balance = all[all.Length - 1];
 
-            // Narration = all parts between index 1 and (Length - 5) joined back
             string narration = string.Join(",", all[1..(all.Length - 5)]);
 
             return new[]
             {
-        date, narration, valueDate, debit, credit, refNo, balance
-    };
+                date, narration, valueDate, debit, credit, refNo, balance
+            };
         }
+
         // ── IBankParser explicit implementation ───────────────────────
         IEnumerable<BaseTransaction> IBankParser.Parse(string text, int accountId)
             => Parse(text, accountId);

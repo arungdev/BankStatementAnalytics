@@ -28,38 +28,19 @@ namespace BankStatementAnalytics.Controllers.Api
             {
                 using var session = DbHelper.GetSession();
 
-                // Normalise to date-only boundaries so timezone-shifted strings
-                // from the frontend ("2026-05-01") always compare correctly.
                 var start = startDate.HasValue ? startDate.Value.Date : (DateTime?)null;
                 var end = endDate.HasValue ? endDate.Value.Date : (DateTime?)null;
 
-                var hdfcQuery = session.Query<HdfcTransaction>().Where(t => t.AccountId == accountId);
-                var iobQuery = session.Query<IobTransaction>().Where(t => t.AccountId == accountId);
+                var query = session.Query<BankTransaction>().Where(t => t.AccountId == accountId);
 
                 if (start.HasValue)
-                {
-                    hdfcQuery = hdfcQuery.Where(t => t.TransactionDate.Date >= start.Value);
-                    iobQuery = iobQuery.Where(t => t.TransactionDate.Date >= start.Value);
-                }
+                    query = query.Where(t => t.TransactionDate.Date >= start.Value);
                 if (end.HasValue)
-                {
-                    hdfcQuery = hdfcQuery.Where(t => t.TransactionDate.Date <= end.Value);
-                    iobQuery = iobQuery.Where(t => t.TransactionDate.Date <= end.Value);
-                }
+                    query = query.Where(t => t.TransactionDate.Date <= end.Value);
 
-                var hdfcTransactions = await hdfcQuery
-                    .Select(t => new { t.TransactionDate, t.Debit, t.Credit })
-                    .ToListAsync();
-
-                var iobTransactions = await iobQuery
-                    .Select(t => new { t.TransactionDate, t.Debit, t.Credit })
-                    .ToListAsync();
-
-                var all = hdfcTransactions
+                var all = await query
                     .Select(t => new { Date = t.TransactionDate.Date, Spend = t.Debit, Income = t.Credit })
-                    .Concat(iobTransactions
-                    .Select(t => new { Date = t.TransactionDate.Date, Spend = t.Debit, Income = t.Credit }))
-                    .ToList();
+                    .ToListAsync();
 
                 if (!all.Any())
                     return Ok(new List<object>());
@@ -73,7 +54,6 @@ namespace BankStatementAnalytics.Controllers.Api
                             .GroupBy(t => t.Date)
                             .OrderBy(g => g.Key)
                             .Select(g => new {
-                                // ↓ ISO date lets the frontend filter/sort reliably
                                 date = g.Key.ToString("yyyy-MM-dd"),
                                 label = g.Key.ToString("dd MMM"),
                                 spend = g.Sum(t => t.Spend),
@@ -86,9 +66,6 @@ namespace BankStatementAnalytics.Controllers.Api
                             .GroupBy(t => GetStartOfWeek(t.Date))
                             .OrderBy(g => g.Key)
                             .Select(g => {
-                                // The week bucket key can be before startDate (e.g. Apr 30
-                                // for a week containing May 1). Use the later of the two
-                                // so the label/date always falls within the requested range.
                                 var bucketStart = start.HasValue && g.Key < start.Value
                                     ? start.Value
                                     : g.Key;

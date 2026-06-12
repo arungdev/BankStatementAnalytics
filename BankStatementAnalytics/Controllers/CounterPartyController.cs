@@ -1,9 +1,10 @@
-using Microsoft.AspNetCore.Mvc;
-using NHibernate.Linq;
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Dtos;
+using BankStatementAnalytics.Mappping;
 using BankStatementAnalytics.Models;
 using Common.Framework.Data;
+using Microsoft.AspNetCore.Mvc;
+using NHibernate.Linq;
 
 namespace BankStatementAnalytics.Controllers
 {
@@ -26,7 +27,7 @@ namespace BankStatementAnalytics.Controllers
             if (cp == null) return NotFound();
 
             // Load all transactions for this counterparty across both banks
-            var iobTx = session.Query<IobTransaction>()
+            var iobTx = session.Query<BankTransaction>()
                 .Where(x => x.CounterParty.Id == id)
                 .OrderByDescending(x => x.TransactionDate)
                 .ToList();

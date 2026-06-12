@@ -4,6 +4,7 @@ using Common.Framework.Data;
 using BankStatementAnalytics.Dtos;
 using BankStatementAnalytics.Models;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System;
 using Common.Framework.Logging;
@@ -59,41 +60,26 @@ namespace BankStatementAnalytics.Controllers.Api
                 if (merchantEntity == null)
                     return NotFound();
 
-                var iobTransactions = session.Query<IobTransaction>()
+                var transactions = session.Query<BankTransaction>()
                     .Where(x => x.CounterParty != null && x.CounterParty.Id == id)
                     .ToList();
 
-                var hdfcTransactions = session.Query<HdfcTransaction>()
-                    .Where(x => x.CounterParty != null && x.CounterParty.Id == id)
+                var allTransactions = transactions
+                    .Select(x => new
+                    {
+                        TransactionDate = x.TransactionDate,
+                        UpiReference = x.UpiReference,
+                        Merchant = merchantEntity.Name,
+                        Category = merchantEntity.Category,
+                        Mode = x.Mode,
+                        Debit = x.Debit,
+                        Credit = x.Credit,
+                        Balance = x.Balance,
+                        Description = x.Description,
+                        BankType = x.BankType
+                    })
+                    .OrderByDescending(t => t.TransactionDate)
                     .ToList();
-
-                var iobMapped = iobTransactions.Select(x => new
-                {
-                    TransactionDate = x.TransactionDate,
-                    UpiReference = x.UpiReference,
-                    Merchant = merchantEntity.Name,
-                    Category = merchantEntity.Category,
-                    Mode = x.Mode,
-                    Debit = x.Debit,
-                    Credit = x.Credit,
-                    Balance = x.Balance,
-                    Description = x.Description
-                });
-
-                var hdfcMapped = hdfcTransactions.Select(x => new
-                {
-                    TransactionDate = x.TransactionDate,
-                    UpiReference = x.UpiReference,
-                    Merchant = merchantEntity.Name,
-                    Category = merchantEntity.Category,
-                    Mode = x.Mode,
-                    Debit = x.Debit,
-                    Credit = x.Credit,
-                    Balance = x.Balance,
-                    Description = x.Description
-                });
-
-                var allTransactions = iobMapped.Concat(hdfcMapped).OrderByDescending(t => t.TransactionDate).ToList();
 
                 var dto = new
                 {
@@ -208,16 +194,9 @@ namespace BankStatementAnalytics.Controllers.Api
                     // No need to clear secondary.UpiIds or delete them manually;
                     // NHibernate's Cascade.All will delete them when we delete secondary.
 
-                    // Reassign Transactions to primary
-                    var iobTxs = session.Query<IobTransaction>().Where(t => t.CounterParty != null && t.CounterParty.Id == secId).ToList();
-                    foreach (var t in iobTxs)
-                    {
-                        t.CounterParty = primary;
-                        await session.UpdateAsync(t);
-                    }
-
-                    var hdfcTxs = session.Query<HdfcTransaction>().Where(t => t.CounterParty != null && t.CounterParty.Id == secId).ToList();
-                    foreach (var t in hdfcTxs)
+                    // Reassign Transactions to primary (single unified table)
+                    var txs = session.Query<BankTransaction>().Where(t => t.CounterParty != null && t.CounterParty.Id == secId).ToList();
+                    foreach (var t in txs)
                     {
                         t.CounterParty = primary;
                         await session.UpdateAsync(t);
@@ -278,41 +257,28 @@ namespace BankStatementAnalytics.Controllers.Api
                 await session.SaveAsync(newCp);
 
                 var searchAlias = request.AliasName.Trim();
-                var movedIobTxs = new List<IobTransaction>();
-                var movedHdfcTxs = new List<HdfcTransaction>();
+                var movedTxs = new List<BankTransaction>();
 
                 // Re-assign transactions matched by string back to the unmerged entity
-                var iobTxs = session.Query<IobTransaction>().Where(t => t.CounterParty != null && t.CounterParty.Id == primary.Id).ToList();
-                foreach (var t in iobTxs)
+                var txs = session.Query<BankTransaction>().Where(t => t.CounterParty != null && t.CounterParty.Id == primary.Id).ToList();
+                foreach (var t in txs)
                 {
-                    if ((t.Description != null && t.Description.Contains(searchAlias, StringComparison.OrdinalIgnoreCase)) || 
+                    if ((t.Description != null && t.Description.Contains(searchAlias, StringComparison.OrdinalIgnoreCase)) ||
                         (t.UpiReference != null && t.UpiReference.Contains(searchAlias, StringComparison.OrdinalIgnoreCase)))
                     {
                         t.CounterParty = newCp;
                         await session.UpdateAsync(t);
-                        movedIobTxs.Add(t);
-                    }
-                }
-
-                var hdfcTxs = session.Query<HdfcTransaction>().Where(t => t.CounterParty != null && t.CounterParty.Id == primary.Id).ToList();
-                foreach (var t in hdfcTxs)
-                {
-                    if ((t.Description != null && t.Description.Contains(searchAlias, StringComparison.OrdinalIgnoreCase)) || 
-                        (t.UpiReference != null && t.UpiReference.Contains(searchAlias, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        t.CounterParty = newCp;
-                        await session.UpdateAsync(t);
-                        movedHdfcTxs.Add(t);
+                        movedTxs.Add(t);
                     }
                 }
 
                 // Restore UPI IDs that appear in the restored transactions
                 foreach (var upi in primary.UpiIds.ToList())
                 {
-                    bool matchesMovedTxs = movedIobTxs.Any(t => t.Description != null && t.Description.Contains(upi.UpiId, StringComparison.OrdinalIgnoreCase)) ||
-                                           movedHdfcTxs.Any(t => (t.Description != null && t.Description.Contains(upi.UpiId, StringComparison.OrdinalIgnoreCase)) ||
-                                                                 (t.Narration != null && t.Narration.Contains(upi.UpiId, StringComparison.OrdinalIgnoreCase)) ||
-                                                                 (t.UpiVpa != null && string.Equals(t.UpiVpa, upi.UpiId, StringComparison.OrdinalIgnoreCase)));
+                    bool matchesMovedTxs = movedTxs.Any(t =>
+                        (t.Description != null && t.Description.Contains(upi.UpiId, StringComparison.OrdinalIgnoreCase)) ||
+                        (t.Narration != null && t.Narration.Contains(upi.UpiId, StringComparison.OrdinalIgnoreCase)) ||
+                        (t.UpiVpa != null && string.Equals(t.UpiVpa, upi.UpiId, StringComparison.OrdinalIgnoreCase)));
 
                     if (matchesMovedTxs)
                     {

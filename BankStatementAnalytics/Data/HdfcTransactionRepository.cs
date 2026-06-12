@@ -13,12 +13,12 @@ namespace BankStatementAnalytics.Data
             using var session = DbHelper.GetSession();
 
             return session.CreateQuery(@"
-                select t from HdfcTransaction t
+                select t from BankTransaction t
                 left join fetch t.CounterParty
                 where t.AccountId = :id
                 order by t.TransactionDate desc")
                 .SetParameter("id", accountId)
-                .List<HdfcTransaction>()
+                .List<BankTransaction>()
                 .Select(x => new TransactionDto
                 {
                     TransactionDate = x.TransactionDate,

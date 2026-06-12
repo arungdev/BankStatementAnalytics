@@ -4,6 +4,7 @@ using BankStatementAnalytics.Models;
 using Common.Framework.Data;
 using Common.Framework.Logging;
 using System;
+using System.Linq;
 
 namespace BankStatementAnalytics.Controllers.Api
 {
@@ -21,10 +22,9 @@ namespace BankStatementAnalytics.Controllers.Api
                 if (account == null)
                     return NotFound();
 
-                // fallback simple version
                 var transactions = DbHelper
-                    .GetAll<IobTransaction>()
-                    .Where(x => x.AccountId == accountId)
+                    .GetAll<BankTransaction>()
+                    .Where(x => x.AccountId == accountId && x.BankType == account.BankName.ToString())
                     .OrderByDescending(x => x.TransactionDate)
                     .ToList();
 

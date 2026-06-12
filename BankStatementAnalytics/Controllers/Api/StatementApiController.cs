@@ -5,6 +5,7 @@ using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
 using BankStatementAnalytics.Services.Parser;
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Common.Framework.Logging;
@@ -40,12 +41,12 @@ namespace BankStatementAnalytics.Controllers.Api
         // GET: api/statements/{accountId}
         [HttpGet("{accountId}")]
         public async Task<IActionResult> GetTransactions(
-            int accountId, 
-            [FromQuery] int page = 1, 
-            [FromQuery] int pageSize = 0, 
-            [FromQuery] int? year = null, 
-            [FromQuery] int? month = null, 
-            [FromQuery] DateTime? startDate = null, 
+            int accountId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 0,
+            [FromQuery] int? year = null,
+            [FromQuery] int? month = null,
+            [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null)
         {
             try
@@ -55,121 +56,50 @@ namespace BankStatementAnalytics.Controllers.Api
                     return NotFound();
 
                 using var session = DbHelper.GetSession();
-                int totalCount = 0;
-                object pagedTransactions = null;
 
-                if (account.BankName == Bank.HDFC)
+                var bankType = account.BankName.ToString();
+
+                var query = session.Query<BankTransaction>()
+                    .Where(t => t.AccountId == accountId && t.BankType == bankType);
+
+                if (year.HasValue && month.HasValue)
                 {
-                    var query = session.Query<HdfcTransaction>().Where(t => t.AccountId == accountId);
-
-                    if (year.HasValue && month.HasValue)
+                    query = query.Where(t => t.TransactionDate.Year == year.Value && t.TransactionDate.Month == month.Value);
+                }
+                else
+                {
+                    if (startDate.HasValue)
+                        query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+                    if (endDate.HasValue)
                     {
-                        query = query.Where(t => t.TransactionDate.Year == year.Value && t.TransactionDate.Month == month.Value);
-                    }
-                    else
-                    {
-                        if (startDate.HasValue)
-                            query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
-                        if (endDate.HasValue)
-                        {
-                            var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
-                            query = query.Where(t => t.TransactionDate <= endOfDay);
-                        }
-                    }
-
-                    totalCount = await query.CountAsync();
-
-                    var finalQuery = query.OrderByDescending(t => t.TransactionDate);
-                    if (pageSize > 0)
-                    {
-                        var pagedQuery = finalQuery.Skip((page - 1) * pageSize).Take(pageSize);
-                        pagedTransactions = await pagedQuery.Select(t => new
-                        {
-                            Id = t.BankReference, // using BankReference as a unique ID for React loops
-                            TransactionDate = t.TransactionDate,
-                            Description = t.Description,
-                            UpiReference = t.UpiReference,
-                            Merchant = t.CounterParty != null ? t.CounterParty.Name : "-",
-                            Mode = t.Mode,
-                            Debit = t.Debit,
-                            Credit = t.Credit,
-                            Balance = t.Balance,
-                            Category = t.CounterParty != null ? t.CounterParty.Category : null
-                        }).ToListAsync();
-                    }
-                    else
-                    {
-                        pagedTransactions = await finalQuery.Select(t => new
-                        {
-                            Id = t.BankReference,
-                            TransactionDate = t.TransactionDate,
-                            Description = t.Description,
-                            UpiReference = t.UpiReference,
-                            Merchant = t.CounterParty != null ? t.CounterParty.Name : "-",
-                            Mode = t.Mode,
-                            Debit = t.Debit,
-                            Credit = t.Credit,
-                            Balance = t.Balance,
-                            Category = t.CounterParty != null ? t.CounterParty.Category : null
-                        }).ToListAsync();
+                        var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
+                        query = query.Where(t => t.TransactionDate <= endOfDay);
                     }
                 }
-                else if (account.BankName == Bank.IOB)
+
+                var totalCount = await query.CountAsync();
+
+                var finalQuery = query.OrderByDescending(t => t.TransactionDate);
+
+                IQueryable<BankTransaction> resultQuery = finalQuery;
+                if (pageSize > 0)
                 {
-                    var query = session.Query<IobTransaction>().Where(t => t.AccountId == accountId);
-
-                    if (year.HasValue && month.HasValue)
-                    {
-                        query = query.Where(t => t.TransactionDate.Year == year.Value && t.TransactionDate.Month == month.Value);
-                    }
-                    else
-                    {
-                        if (startDate.HasValue)
-                            query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
-                        if (endDate.HasValue)
-                        {
-                            var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
-                            query = query.Where(t => t.TransactionDate <= endOfDay);
-                        }
-                    }
-
-                    totalCount = await query.CountAsync();
-
-                    var finalQuery = query.OrderByDescending(t => t.TransactionDate);
-                    if (pageSize > 0)
-                    {
-                        var pagedQuery = finalQuery.Skip((page - 1) * pageSize).Take(pageSize);
-                        pagedTransactions = await pagedQuery.Select(t => new
-                        {
-                            Id = t.BankReference,
-                            TransactionDate = t.TransactionDate,
-                            Description = t.Description,
-                            UpiReference = t.UpiReference,
-                            Merchant = t.CounterParty != null ? t.CounterParty.Name : "-",
-                            Mode = t.Mode,
-                            Debit = t.Debit,
-                            Credit = t.Credit,
-                            Balance = t.Balance,
-                            Category = t.CounterParty != null ? t.CounterParty.Category : null
-                        }).ToListAsync();
-                    }
-                    else
-                    {
-                        pagedTransactions = await finalQuery.Select(t => new
-                        {
-                            Id = t.BankReference,
-                            TransactionDate = t.TransactionDate,
-                            Description = t.Description,
-                            UpiReference = t.UpiReference,
-                            Merchant = t.CounterParty != null ? t.CounterParty.Name : "-",
-                            Mode = t.Mode,
-                            Debit = t.Debit,
-                            Credit = t.Credit,
-                            Balance = t.Balance,
-                            Category = t.CounterParty != null ? t.CounterParty.Category : null
-                        }).ToListAsync();
-                    }
+                    resultQuery = finalQuery.Skip((page - 1) * pageSize).Take(pageSize);
                 }
+
+                var pagedTransactions = await resultQuery.Select(t => new
+                {
+                    Id = t.BankReference,
+                    TransactionDate = t.TransactionDate,
+                    Description = t.Description,
+                    UpiReference = t.UpiReference,
+                    Merchant = t.CounterParty != null ? t.CounterParty.Name : "-",
+                    Mode = t.Mode,
+                    Debit = t.Debit,
+                    Credit = t.Credit,
+                    Balance = t.Balance,
+                    Category = t.CounterParty != null ? t.CounterParty.Category : null
+                }).ToListAsync();
 
                 return Ok(new
                 {
@@ -177,7 +107,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     account.AccountNumber,
                     account.BankName,
                     totalCount,
-                    transactions = pagedTransactions ?? new object[0]
+                    transactions = pagedTransactions
                 });
             }
             catch (Exception ex)
@@ -203,13 +133,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
                 var uploads = uploadsQuery.ToList();
 
-                var hdfcCounts = session.Query<HdfcTransaction>()
-                    .Where(t => t.UploadId != null)
-                    .GroupBy(t => t.UploadId)
-                    .Select(g => new { UploadId = g.Key, Count = g.Count() })
-                    .ToList();
-
-                var iobCounts = session.Query<IobTransaction>()
+                var txCounts = session.Query<BankTransaction>()
                     .Where(t => t.UploadId != null)
                     .GroupBy(t => t.UploadId)
                     .Select(g => new { UploadId = g.Key, Count = g.Count() })
@@ -224,8 +148,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     u.Path,
                     u.UploadedAt,
                     u.TransactionId,
-                    TransactionCount = (hdfcCounts.FirstOrDefault(c => c.UploadId == u.Id)?.Count ?? 0) +
-                                       (iobCounts.FirstOrDefault(c => c.UploadId == u.Id)?.Count ?? 0)
+                    TransactionCount = txCounts.FirstOrDefault(c => c.UploadId == u.Id)?.Count ?? 0
                 });
 
                 return Ok(result);
@@ -257,7 +180,6 @@ namespace BankStatementAnalytics.Controllers.Api
 
                 var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
 
-                // persist upload metadata and create a small UploadTransaction for easy revert
                 var uploadId = Guid.NewGuid();
                 var upload = new Models.Upload
                 {
@@ -286,7 +208,6 @@ namespace BankStatementAnalytics.Controllers.Api
 
                 if (ext == ".txt")
                 {
-                    // parse text into transactions (existing behaviour)
                     _textService.ExtractText(path, accountId, uploadId);
                 }
                 else
@@ -295,8 +216,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 }
 
                 using var session = DbHelper.GetSession();
-                int txCount = session.Query<HdfcTransaction>().Count(t => t.UploadId == uploadId) +
-                              session.Query<IobTransaction>().Count(t => t.UploadId == uploadId);
+                int txCount = session.Query<BankTransaction>().Count(t => t.UploadId == uploadId);
 
                 return Ok(new
                 {
@@ -327,7 +247,6 @@ namespace BankStatementAnalytics.Controllers.Api
                 if (upload == null)
                     return NotFound();
 
-                // delete linked transaction record
                 if (upload.TransactionId.HasValue)
                 {
                     var tx = DbHelper.GetById<Models.UploadTransaction>(upload.TransactionId.Value);
@@ -336,20 +255,15 @@ namespace BankStatementAnalytics.Controllers.Api
                         await DbHelper.DeleteAsync(tx);
                     }
                 }
-                
-                // Delete associated bank transactions
+
                 using var session = DbHelper.GetSession();
                 using var sessionTx = session.BeginTransaction();
-                
-                var hdfcTransactions = session.Query<HdfcTransaction>().Where(t => t.UploadId == id).ToList();
-                foreach (var hdfcTx in hdfcTransactions) { await session.DeleteAsync(hdfcTx); }
-                
-                var iobTransactions = session.Query<IobTransaction>().Where(t => t.UploadId == id).ToList();
-                foreach (var iobTx in iobTransactions) { await session.DeleteAsync(iobTx); }
-                
+
+                var transactions = session.Query<BankTransaction>().Where(t => t.UploadId == id).ToList();
+                foreach (var t in transactions) { await session.DeleteAsync(t); }
+
                 await sessionTx.CommitAsync();
 
-                // delete file from disk
                 var folder = Path.Combine(AppContext.BaseDirectory, "Uploads");
                 var filePath = Path.Combine(folder, upload.StoredName);
                 if (System.IO.File.Exists(filePath))

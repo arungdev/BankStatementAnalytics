@@ -39,8 +39,7 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<BankStatementMap>();
                         mapper.AddMapping<MerchantUpiMap>();
                         mapper.AddMapping<MerchantMap>();
-                        mapper.AddMapping<IobTransactionMap>();
-                        mapper.AddMapping<HdfcTransactionMap>();
+                        mapper.AddMapping<BankTransactionMap>();
                         mapper.AddMapping<UploadMap>();
                         mapper.AddMapping<UploadTransactionMap>();
                         mapper.AddMapping<CategoryMap>();

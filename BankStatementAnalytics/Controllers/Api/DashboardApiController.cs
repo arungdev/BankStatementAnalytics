@@ -26,20 +26,15 @@ namespace BankStatementAnalytics.Controllers.Api
             {
                 using var session = DbHelper.GetSession();
 
-                // Fetch all transactions for the account
-                var hdfcTransactions = await session.Query<HdfcTransaction>()
+                // Fetch all transactions for the account (HDFC + IOB unified)
+                var transactions = await session.Query<BankTransaction>()
                     .Where(t => t.AccountId == accountId)
                     .Fetch(t => t.CounterParty) // Eagerly fetch CounterParty
                     .ToListAsync();
 
-                var iobTransactions = await session.Query<IobTransaction>()
-                    .Where(t => t.AccountId == accountId)
-                    .Fetch(t => t.CounterParty) // Eagerly fetch CounterParty
-                    .ToListAsync();
-
-                // Unify transactions
-                var allTransactions = hdfcTransactions
-                    .Select(t => new UnifiedTransaction {
+                var allTransactions = transactions
+                    .Select(t => new UnifiedTransaction
+                    {
                         Id = t.BankReference,
                         Date = t.TransactionDate,
                         Spend = t.Debit,
@@ -47,20 +42,13 @@ namespace BankStatementAnalytics.Controllers.Api
                         CounterPartyName = t.CounterParty?.Name,
                         Mode = t.Mode
                     })
-                    .Concat(iobTransactions.Select(t => new UnifiedTransaction {
-                        Id = t.BankReference,
-                        Date = t.TransactionDate,
-                        Spend = t.Debit,
-                        Income = t.Credit,
-                        CounterPartyName = t.CounterParty?.Name,
-                        Mode = t.Mode
-                    }))
                     .ToList();
 
                 if (!allTransactions.Any())
                 {
                     // Return a default structure if no transactions
-                    return Ok(new {
+                    return Ok(new
+                    {
                         totalIncome = 0,
                         totalSpends = 0,
                         totalTransactions = 0,

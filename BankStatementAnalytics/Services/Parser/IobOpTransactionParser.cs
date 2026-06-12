@@ -58,9 +58,9 @@ namespace BankStatementAnalytics.Services.Parser
         // ────────────────────────────────────────────────────────────────────
         // MAIN PARSE LOOP
         // ────────────────────────────────────────────────────────────────────
-        private IEnumerable<IobTransaction> Parse(string text, int accountId)
+        private IEnumerable<BankTransaction> Parse(string text, int accountId)
         {
-            var transactions = new List<IobTransaction>();
+            var transactions = new List<BankTransaction>();
             try
             {
                 var lines = text.Replace("\r", "").Split('\n');
@@ -89,7 +89,6 @@ namespace BankStatementAnalytics.Services.Parser
                         // ── (2) TRF / amounts line ───────────────────────────────────
                         if (hasTrf)
                         {
-
                             string txDate, valDate;
 
                             if (hasDate)
@@ -159,16 +158,19 @@ namespace BankStatementAnalytics.Services.Parser
         // ────────────────────────────────────────────────────────────────────
         // BUILD SINGLE TRANSACTION
         // ────────────────────────────────────────────────────────────────────
-        private IobTransaction? BuildTransaction(
+        private BankTransaction? BuildTransaction(
             string txDate, string valDate,
             string trfLine, string remarks,
             int accountId)
         {
-            var tx = new IobTransaction
+            string description = CleanDescription(remarks, trfLine);
+
+            var tx = new BankTransaction
             {
                 ImportedOn = DateTime.Now,
-                Description = CleanDescription(remarks, trfLine),
+                Description = description,
                 AccountId = accountId,
+                BankType = "IOB",
                 TransactionDate = DateTime.ParseExact(txDate, "dd/MM/yyyy", CultureInfo.InvariantCulture),
                 ValueDate = DateTime.ParseExact(valDate, "dd/MM/yyyy", CultureInfo.InvariantCulture),
             };
@@ -179,15 +181,12 @@ namespace BankStatementAnalytics.Services.Parser
             tx.BankReference = GenerateReference(tx);
 
             // Resolve CounterParty from master table using name + bankcode
-            if (!string.IsNullOrWhiteSpace(counterPartyName))
-                tx.CounterParty = _counterPartyService.ResolveOrCreate(
-                    counterPartyName, tx.BankCode);
-         
+            // (single call — IOB text format has no VPA)
             if (!string.IsNullOrWhiteSpace(counterPartyName))
                 tx.CounterParty = _counterPartyService.ResolveOrCreate(
                     counterPartyName,
                     tx.BankCode,
-                    upiId: null);   // IOB text format has no VPA
+                    upiId: null);
 
             return tx;
         }
@@ -220,7 +219,7 @@ namespace BankStatementAnalytics.Services.Parser
         /// Credit : col &gt;= 150
         /// Balance: always the last amount on the line
         /// </summary>
-        private static void ParseAmounts(string trfLine, IobTransaction tx)
+        private static void ParseAmounts(string trfLine, BankTransaction tx)
         {
             if (!trfLine.Contains("TRF")) return;
 
@@ -257,14 +256,14 @@ namespace BankStatementAnalytics.Services.Parser
         }
 
         // ────────────────────────────────────────────────────────────────────
-        // PARSE REMARKS  (single version — out param for counterparty name)
+        // PARSE REMARKS
         // ────────────────────────────────────────────────────────────────────
         /// <summary>
         /// Populates Mode, UpiReference, BankCode, TransactionType.
         /// CounterParty name is returned via out param so the caller can
         /// resolve it against the CounterParties master table.
         /// </summary>
-        private static void ParseRemarks(string remarks, IobTransaction tx, out string? counterPartyName)
+        private static void ParseRemarks(string remarks, BankTransaction tx, out string? counterPartyName)
         {
             counterPartyName = null;
 
@@ -329,12 +328,12 @@ namespace BankStatementAnalytics.Services.Parser
         /// Other→ "GEN" + first 12 chars of SHA1 hash of key fields
         ///        (deterministic: re-importing same file won't create duplicates)
         /// </summary>
-        private static string GenerateReference(IobTransaction tx)
+        private static string GenerateReference(BankTransaction tx)
         {
             if (!string.IsNullOrWhiteSpace(tx.UpiReference))
                 return $"UPI{tx.UpiReference}";
 
-            var raw = $"{tx.AccountId}|{tx.TransactionDate:yyyyMMdd}|{tx.Mode}|{tx.Amount}|{tx.Balance}";
+            var raw = $"{tx.AccountId}|{tx.BankType}|{tx.TransactionDate:yyyyMMdd}|{tx.Mode}|{tx.Amount}|{tx.Balance}";
             var hash = Convert.ToHexString(
                 SHA1.HashData(Encoding.UTF8.GetBytes(raw)))[..12];
 
