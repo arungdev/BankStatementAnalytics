@@ -1,10 +1,6 @@
-﻿﻿# Ignore publish output
-Publish/
-
-# Ignore React build output and dependencies
+﻿﻿# Ignore React build output and dependencies
 BankStatementAnalytics/wwwroot/
 Client/node_modules/
-/BankStatementAnalytics/bin
+/.vs/BankStatementAnalytics
+/BankStatementAnalytics/bin/Debug/net10.0
 /BankStatementAnalytics/obj
-/BankStatementAnalytics/Uploads
-/.vs

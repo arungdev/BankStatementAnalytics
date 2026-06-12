@@ -58,7 +58,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 int totalCount = 0;
                 object pagedTransactions = null;
 
-                if (account.BankName == "HDFC")
+                if (account.BankName == Bank.HDFC)
                 {
                     var query = session.Query<HdfcTransaction>().Where(t => t.AccountId == accountId);
 
@@ -114,7 +114,7 @@ namespace BankStatementAnalytics.Controllers.Api
                         }).ToListAsync();
                     }
                 }
-                else if (account.BankName == "IOB")
+                else if (account.BankName == Bank.IOB)
                 {
                     var query = session.Query<IobTransaction>().Where(t => t.AccountId == accountId);
 

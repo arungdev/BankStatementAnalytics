@@ -1,3 +1,5 @@
+using BankStatementAnalytics.Services.Parser;
+
 namespace BankStatementAnalytics.Models
 {
     public class Account
@@ -9,7 +11,7 @@ namespace BankStatementAnalytics.Models
 
         public virtual string AccountHolderName { get; set; } = string.Empty;
 
-        public virtual string BankName { get; set; } = string.Empty;
+        public virtual Bank BankName { get; set; } 
 
         public virtual string BranchCode { get; set; } = string.Empty; 
 

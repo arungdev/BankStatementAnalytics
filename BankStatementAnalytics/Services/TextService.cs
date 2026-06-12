@@ -21,16 +21,16 @@ namespace BankStatementAnalytics.Services
             // ── Get bank name from DB via accountId ──────────────────
             var bank = GetBankName(accountId);
 
-            IBankParser parser = bank?.ToUpper() switch
+            IBankParser parser = bank switch
             {
-                "HDFC" => _serviceProvider.GetRequiredService<HdfcTransactionParser>(),
-                "IOB" => _serviceProvider.GetRequiredService<OpTransactionParser>(),
+                Bank.HDFC => _serviceProvider.GetRequiredService<HdfcTransactionParser>(),
+                Bank.IOB => _serviceProvider.GetRequiredService<OpTransactionParser>(),
                 _ => FallbackDetect(text, filePath)
             };
 
             var transactions = parser.Parse(text, accountId).ToList();
-            
-            foreach(var tx in transactions)
+
+            foreach (var tx in transactions)
             {
                 if (tx is BaseTransaction baseTx)
                 {
@@ -45,11 +45,11 @@ namespace BankStatementAnalytics.Services
         }
 
         // ── Fetch BankName from Accounts table ───────────────────────
-        private static string? GetBankName(int accountId)
+        private static Bank GetBankName(int accountId)
         {
             using var session = DbHelper.GetSession();
             var account = session.Get<Account>((long)accountId);
-            return account?.BankName;
+            return (Bank)account?.BankName;
         }
 
         // ── Fallback: detect from file content if BankName is empty ──
