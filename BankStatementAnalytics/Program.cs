@@ -20,6 +20,8 @@ builder.Services.AddScoped<TransactionRepositoryFactory>();
 builder.Services.AddScoped<CounterPartyService>();
 builder.Services.AddScoped<OpTransactionParser>();
 builder.Services.AddScoped<HdfcTransactionParser>();
+builder.Services.AddScoped<HdfcCreditCardParser>();
+builder.Services.AddScoped<HdfcCreditCardService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("React", policy =>

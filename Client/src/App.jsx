@@ -85,11 +85,6 @@ function Layout() {
           <h2>{getPageTitle(location.pathname)}</h2>
 
           <div className="topbar-right">
-            <div className="search">
-              <FiSearch />
-              <input placeholder="Search transactions, accounts..." />
-            </div>
-            
             <button 
               onClick={() => setIsSettingsOpen(true)}
               style={{ 
@@ -109,11 +104,8 @@ function Layout() {
               onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#e5e7eb'}
               onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
               title="Settings"
-            >
-              <FiSettings size={18} />
+            >              <FiSettings size={18} />
             </button>
-
-            <div className="avatar">AG</div>
           </div>
         </header>
         

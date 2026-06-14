@@ -19,13 +19,13 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 // ── Chart colour tokens (light theme) ────────────────────────────────────
 const C = {
-  green:      '#16a34a',
-  greenFill:  'rgba(22,163,74,0.72)',
-  red:        '#dc2626',
-  redFill:    'rgba(220,38,38,0.70)',
-  grid:       '#f0f2f4',
-  tickColor:  '#9ca3af',
-  tooltipBg:  '#1e293b',
+  green: '#16a34a',
+  greenFill: 'rgba(22,163,74,0.72)',
+  red: '#dc2626',
+  redFill: 'rgba(220,38,38,0.70)',
+  grid: '#f0f2f4',
+  tickColor: '#9ca3af',
+  tooltipBg: '#1e293b',
 };
 
 const currencyFormatter = new Intl.NumberFormat('en-IN', {
@@ -34,36 +34,41 @@ const currencyFormatter = new Intl.NumberFormat('en-IN', {
 
 const formatShort = (v) => {
   if (v >= 10000000) return (v / 10000000).toFixed(1) + 'Cr';
-  if (v >= 100000)   return (v / 100000).toFixed(2)   + 'L';
-  if (v >= 1000)     return (v / 1000).toFixed(1)     + 'k';
+  if (v >= 100000) return (v / 100000).toFixed(2) + 'L';
+  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
   return v;
 };
 
 const VISIBLE_GROUPS = 8;
 
 const Trends = () => {
-  const [period, setPeriod]       = useState('week');
+  const [period, setPeriod] = useState('week');
   const [dateRange, setDateRange] = useState([null, null]);
-  const [startDate, endDate]      = dateRange;
-  const [data, setData]           = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const { selectedAccountId }     = useAccount();
+  const [startDate, endDate] = dateRange;
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const { selectedAccountId } = useAccount();
 
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: Infinity });
-  const scrollRef   = useRef(null);
+  const scrollRef = useRef(null);
   const debounceRef = useRef(null);
   const barGroupWidth = period === 'day' ? 150 : 60;
+
+  // ── Drill-down modal state ─────────────────────────────────────────────
+  const [drillDown, setDrillDown] = useState(null); // { label, start, end } | null
+  const [drillTransactions, setDrillTransactions] = useState([]);
+  const [drillLoading, setDrillLoading] = useState(false);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedAccountId) { setLoading(false); setData([]); return; }
     setLoading(true);
     const toLocalDate = (d) =>
-      `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
     const params = new URLSearchParams({ accountId: selectedAccountId, period });
     if (startDate) params.append('startDate', toLocalDate(startDate));
-    if (endDate)   params.append('endDate',   toLocalDate(endDate));
+    if (endDate) params.append('endDate', toLocalDate(endDate));
     api.get(`/trends?${params.toString()}`)
       .then(res => {
         let rows = Array.isArray(res.data) ? res.data : [];
@@ -72,17 +77,17 @@ const Trends = () => {
         // The API response now always includes an ISO `date` field.
         if (startDate || endDate) {
           const fromStr = startDate
-            ? `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}-${String(startDate.getDate()).padStart(2,'0')}`
+            ? `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`
             : null;
           const toStr = endDate
-            ? `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2,'0')}-${String(endDate.getDate()).padStart(2,'0')}`
+            ? `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
             : null;
 
           rows = rows.filter(item => {
             const d = item.date; // "yyyy-MM-dd" from backend
             if (!d) return true;
             if (fromStr && d < fromStr) return false;
-            if (toStr   && d > toStr)   return false;
+            if (toStr && d > toStr) return false;
             return true;
           });
         }
@@ -105,7 +110,7 @@ const Trends = () => {
       if (!scrollRef.current || !data.length) return;
       const { scrollLeft, clientWidth } = scrollRef.current;
       const start = Math.max(0, Math.floor(scrollLeft / barGroupWidth) - 1);
-      const end   = Math.min(data.length, Math.ceil((scrollLeft + clientWidth) / barGroupWidth) + 1);
+      const end = Math.min(data.length, Math.ceil((scrollLeft + clientWidth) / barGroupWidth) + 1);
       setVisibleRange({ start, end });
     }, 40);
   }, [data.length, barGroupWidth]);
@@ -114,7 +119,7 @@ const Trends = () => {
   const visibleYMax = useMemo(() => {
     if (!data.length) return 100;
     const slice = data.slice(visibleRange.start, visibleRange.end);
-    const max   = slice.reduce((m, d) => Math.max(m, d.income, d.spend), 0);
+    const max = slice.reduce((m, d) => Math.max(m, d.income, d.spend), 0);
     return max > 0 ? max * 1.18 : 100;
   }, [data, visibleRange]);
 
@@ -122,9 +127,64 @@ const Trends = () => {
   const summary = useMemo(() => {
     if (!data.length) return { totalIncome: 0, totalSpends: 0, netFlow: 0 };
     const totalIncome = data.reduce((s, d) => s + d.income, 0);
-    const totalSpends = data.reduce((s, d) => s + d.spend,  0);
+    const totalSpends = data.reduce((s, d) => s + d.spend, 0);
     return { totalIncome, totalSpends, netFlow: totalIncome - totalSpends };
   }, [data]);
+
+  // ── Compute date range for a clicked bucket ─────────────────────────────
+  const getBucketRange = useCallback((item) => {
+    // item.date is "yyyy-MM-dd" — the start of the bucket
+    const [y, m, d] = item.date.split('-').map(Number);
+    const start = new Date(y, m - 1, d);
+    let end;
+
+    if (period === 'day') {
+      end = new Date(start);
+    } else if (period === 'week') {
+      end = new Date(start);
+      end.setDate(end.getDate() + 6);
+    } else {
+      // month: last day of that month
+      end = new Date(y, m, 0);
+    }
+
+    const toLocalDate = (dt) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+
+    return { startDate: toLocalDate(start), endDate: toLocalDate(end) };
+  }, [period]);
+
+  // ── Handle bar click → fetch transactions for that bucket ────────────────
+  const handleBarClick = useCallback((evt, elements) => {
+    if (!elements.length || !selectedAccountId) return;
+    const index = elements[0].index;
+    const item = data[index];
+    if (!item) return;
+
+    const { startDate: bStart, endDate: bEnd } = getBucketRange(item);
+
+    setDrillDown({ label: item.label, date: item.date, start: bStart, end: bEnd });
+    setDrillLoading(true);
+    setDrillTransactions([]);
+
+    const params = new URLSearchParams({
+      startDate: bStart,
+      endDate: bEnd,
+      pageSize: 0, // get all
+    });
+
+    api.get(`/statements/${selectedAccountId}?${params.toString()}`)
+      .then(res => {
+        setDrillTransactions(res.data?.transactions || []);
+      })
+      .catch(() => setDrillTransactions([]))
+      .finally(() => setDrillLoading(false));
+  }, [data, selectedAccountId, getBucketRange]);
+
+  const closeDrillDown = () => {
+    setDrillDown(null);
+    setDrillTransactions([]);
+  };
 
   // ── Shared Y scale factory ────────────────────────────────────────────────
   const makeYScale = (showTicks) => ({
@@ -185,6 +245,12 @@ const Trends = () => {
     responsive: true,
     maintainAspectRatio: false,
     animation: { duration: 350, easing: 'easeOutQuart' },
+    onClick: handleBarClick,
+    onHover: (evt, elements) => {
+      if (evt.native?.target) {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      }
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -196,15 +262,15 @@ const Trends = () => {
         titleColor: '#f1f5f9',
         bodyColor: '#94a3b8',
         titleFont: { size: 12, weight: '600', family: "'DM Sans'" },
-        bodyFont:  { size: 12, family: "'DM Sans'" },
+        bodyFont: { size: 12, family: "'DM Sans'" },
         callbacks: {
           label: ctx => `  ${ctx.dataset.label}  ${currencyFormatter.format(ctx.parsed.y)}`,
           afterBody: (items) => {
             if (items.length < 2) return [];
-            const spend  = items.find(i => i.dataset.label === 'Spends')?.parsed.y ?? 0;
+            const spend = items.find(i => i.dataset.label === 'Spends')?.parsed.y ?? 0;
             const income = items.find(i => i.dataset.label === 'Income')?.parsed.y ?? 0;
-            const net    = income - spend;
-            return [`  Net  ${net >= 0 ? '+' : ''}${currencyFormatter.format(net)}`];
+            const net = income - spend;
+            return [`  Net  ${net >= 0 ? '+' : ''}${currencyFormatter.format(net)}`, '  Click bar for transactions'];
           },
         },
       },
@@ -217,8 +283,8 @@ const Trends = () => {
         border: { display: false },
       },
     },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [visibleYMax]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [visibleYMax, handleBarClick]);
 
   // ── Render helpers ────────────────────────────────────────────────────────
   const renderChart = () => {
@@ -257,6 +323,16 @@ const Trends = () => {
   };
 
   const netPositive = summary.netFlow >= 0;
+
+  // ── Drill-down totals ──────────────────────────────────────────────────
+  const drillTotals = useMemo(() => {
+    if (!drillTransactions.length) return { income: 0, spend: 0 };
+    return drillTransactions.reduce((acc, t) => {
+      acc.income += t.Credit ?? t.credit ?? 0;
+      acc.spend += t.Debit ?? t.debit ?? 0;
+      return acc;
+    }, { income: 0, spend: 0 });
+  }, [drillTransactions]);
 
   return (
     <div className="trends-container">
@@ -316,6 +392,93 @@ const Trends = () => {
         </div>
         <div className="chart-wrapper">{renderChart()}</div>
       </div>
+
+      {/* Drill-down modal */}
+      {drillDown && (
+        <div className="drilldown-backdrop" onClick={closeDrillDown}>
+          <div className="drilldown-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="drilldown-header">
+              <div>
+                <h3>{drillDown.label}</h3>
+                <span className="drilldown-range">{drillDown.start} → {drillDown.end}</span>
+              </div>
+              <button className="drilldown-close" onClick={closeDrillDown}>&times;</button>
+            </div>
+
+            {!drillLoading && drillTransactions.length > 0 && (
+              <div className="drilldown-summary">
+                <div>
+                  <span className="drilldown-summary-label">Income</span>
+                  <span className="drilldown-summary-value income">{currencyFormatter.format(drillTotals.income)}</span>
+                </div>
+                <div>
+                  <span className="drilldown-summary-label">Spends</span>
+                  <span className="drilldown-summary-value spend">{currencyFormatter.format(drillTotals.spend)}</span>
+                </div>
+                <div>
+                  <span className="drilldown-summary-label">Net</span>
+                  <span className={`drilldown-summary-value ${drillTotals.income - drillTotals.spend >= 0 ? 'income' : 'spend'}`}>
+                    {drillTotals.income - drillTotals.spend >= 0 ? '+' : ''}{currencyFormatter.format(drillTotals.income - drillTotals.spend)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="drilldown-body">
+              {drillLoading ? (
+                <div className="chart-loader">
+                  <div className="loader-spinner" />
+                  <span>Loading transactions…</span>
+                </div>
+              ) : drillTransactions.length === 0 ? (
+                <div className="chart-empty">
+                  <p>No transactions found</p>
+                  <span>for {drillDown.label}.</span>
+                </div>
+              ) : (
+                <table className="drilldown-table">
+  <colgroup>
+    <col style={{ width: '110px' }} />
+    <col style={{ width: 'auto' }} />
+    <col style={{ width: '160px' }} />
+    <col style={{ width: '110px' }} />
+    <col style={{ width: '110px' }} />
+  </colgroup>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Description</th>
+      <th>Merchant</th>
+      <th className="num">Debit</th>
+      <th className="num">Credit</th>
+    </tr>
+  </thead>
+  <tbody>
+    {drillTransactions.map((t, i) => {
+      const debit    = t.Debit    ?? t.debit    ?? 0;
+      const credit   = t.Credit   ?? t.credit   ?? 0;
+      const date     = t.TransactionDate ?? t.transactionDate;
+      const desc     = t.Description ?? t.description;
+      const merchant = t.Merchant ?? t.merchant;
+      return (
+        <tr key={t.Id ?? t.id ?? i}>
+          <td className="cell-date">
+            {date ? new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+          </td>
+          <td className="cell-desc" title={desc || ''}>{desc || '-'}</td>
+          <td className="cell-merchant" title={merchant || ''}>{merchant && merchant !== '-' ? merchant : '-'}</td>
+          <td className="num">{debit  > 0 ? <span className="text-red">{currencyFormatter.format(debit)}</span>  : <span className="cell-muted">-</span>}</td>
+          <td className="num">{credit > 0 ? <span className="text-green">{currencyFormatter.format(credit)}</span> : <span className="cell-muted">-</span>}</td>
+        </tr>
+      );
+    })}
+  </tbody>
+</table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

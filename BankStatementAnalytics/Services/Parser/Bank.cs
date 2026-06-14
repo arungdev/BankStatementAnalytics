@@ -3,6 +3,7 @@
     public enum Bank
     {
         HDFC,
+        HDFCCreditCard,
         IOB
     }
 }

@@ -17,8 +17,6 @@ namespace BankStatementAnalytics.Services
         public string ExtractText(string filePath, int accountId, Guid uploadId)
         {
             var text = File.ReadAllText(filePath);
-
-            // ── Get bank name from DB via accountId ──────────────────
             var bank = GetBankName(accountId);
 
             IBankParser parser = bank switch
@@ -44,7 +42,25 @@ namespace BankStatementAnalytics.Services
             return text;
         }
 
-        // ── Fetch BankName from Accounts table ───────────────────────
+        // ── NEW: CSV entry point for credit card statements ───────────────
+        public async Task ExtractCsvAsync(string filePath, int accountId, Guid uploadId)
+        {
+            var bank = GetBankName(accountId);
+
+            if (bank == Bank.HDFCCreditCard)
+            {
+                var ccService = _serviceProvider.GetRequiredService<HdfcCreditCardService>();
+                await ccService.ExtractAsync(filePath, accountId, uploadId);
+            }
+            else
+            {
+                throw new NotSupportedException(
+                    $"CSV upload is not supported for bank: {bank}. " +
+                    $"Only HDFC Credit Card CSV statements are currently supported.");
+            }
+        }
+
+        // ── Fetch BankName from Accounts table ───────────────────────────
         private static Bank GetBankName(int accountId)
         {
             using var session = DbHelper.GetSession();
@@ -52,7 +68,7 @@ namespace BankStatementAnalytics.Services
             return (Bank)account?.BankName;
         }
 
-        // ── Fallback: detect from file content if BankName is empty ──
+        // ── Fallback: detect from file content if BankName is empty ──────
         private IBankParser FallbackDetect(string text, string filePath)
         {
             var head = text.Length > 500 ? text[..500] : text;

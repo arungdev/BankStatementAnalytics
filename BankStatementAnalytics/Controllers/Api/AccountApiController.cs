@@ -1,8 +1,9 @@
-using Microsoft.AspNetCore.Mvc;
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services.Parser;
 using Common.Framework.Data;
 using Common.Framework.Logging;
+using Microsoft.AspNetCore.Mvc;
 using System;
 
 namespace BankStatementAnalytics.Controllers.Api
@@ -11,6 +12,37 @@ namespace BankStatementAnalytics.Controllers.Api
     [Route("api/accounts")]
     public class AccountApiController : ControllerBase
     {
+        // GET: api/accounts/{id}/supported-formats
+        [HttpGet("{id}/supported-formats")]
+        public IActionResult GetSupportedFormats(int id)
+        {
+            var account = DbHelper.GetById<Account>((long)id);
+            if (account == null) return NotFound();
+
+            var formats = account.BankName switch
+            {
+                Bank.HDFC => new[] { ".txt" },
+                Bank.HDFCCreditCard => new[] { ".csv" },
+                Bank.IOB => new[] { ".txt" },
+                _ => new[] { ".txt" }
+            };
+
+            return Ok(new
+            {
+                bankName = account.BankName.ToString(),
+                formats,
+                label = string.Join(", ", formats.Select(f => f.TrimStart('.').ToUpper()))
+            });
+        }
+
+        // GET: api/accounts/banks
+        [HttpGet("banks")]
+        public IActionResult GetBanks()
+        {
+            var banks = Enum.GetNames<Bank>();
+            return Ok(banks);
+        }
+
         // GET: api/accounts
         [HttpGet]
         public IActionResult GetAll()

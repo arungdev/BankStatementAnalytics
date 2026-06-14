@@ -119,7 +119,7 @@ namespace BankStatementAnalytics.Services.Parser
                 Description = narration,
                 Narration = narration,
                 AccountId = accountId,
-                BankType = "HDFC",
+                BankType = Bank.HDFC.ToString(),
                 BankReference = refNo.TrimStart('0'), // strip leading zeros
             };
 

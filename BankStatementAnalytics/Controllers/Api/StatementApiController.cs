@@ -210,9 +210,13 @@ namespace BankStatementAnalytics.Controllers.Api
                 {
                     _textService.ExtractText(path, accountId, uploadId);
                 }
+                else if (ext == ".csv")
+                {
+                    await _textService.ExtractCsvAsync(path, accountId, uploadId);
+                }
                 else
                 {
-                    return BadRequest("Only TXT supported");
+                    return BadRequest("Only TXT and CSV files are supported.");
                 }
 
                 using var session = DbHelper.GetSession();

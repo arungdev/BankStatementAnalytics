@@ -170,7 +170,7 @@ namespace BankStatementAnalytics.Services.Parser
                 ImportedOn = DateTime.Now,
                 Description = description,
                 AccountId = accountId,
-                BankType = "IOB",
+                BankType = Bank.IOB.ToString(),
                 TransactionDate = DateTime.ParseExact(txDate, "dd/MM/yyyy", CultureInfo.InvariantCulture),
                 ValueDate = DateTime.ParseExact(valDate, "dd/MM/yyyy", CultureInfo.InvariantCulture),
             };

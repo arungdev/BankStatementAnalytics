@@ -4,3 +4,4 @@ Client/node_modules/
 /.vs/BankStatementAnalytics
 /BankStatementAnalytics/bin/Debug/net10.0
 /BankStatementAnalytics/obj
+/.vs/ProjectEvaluation

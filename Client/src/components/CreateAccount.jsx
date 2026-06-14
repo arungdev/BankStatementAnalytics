@@ -1,20 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import api from '../api/client';
 
 export default function CreateAccount({ onClose, onCreate }) {
-  const [holder, setHolder] = useState('');
-  const [number, setNumber] = useState('');
-  const [bank, setBank] = useState('IOB');
-  const [saving, setSaving] = useState(false);
+  const [holder, setHolder]   = useState('');
+  const [number, setNumber]   = useState('');
+  const [bank, setBank]       = useState('');
+  const [banks, setBanks]     = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => {
+    api.get('/accounts/banks')
+      .then(res => {
+        const list = res.data || [];
+        setBanks(list);
+        if (list.length > 0) setBank(list[0]);
+      })
+      .catch(err => {
+        console.error('Failed to load banks', err);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      // Optimistic: invoke parent handler which will add a temp account immediately
       const p = onCreate({ AccountHolderName: holder, AccountNumber: number, BankName: bank });
-      // Close immediately for optimistic UX
       onClose();
-      // Handle eventual failure
       if (p && typeof p.then === 'function') {
         p.catch(err => {
           console.error(err);
@@ -38,14 +51,21 @@ export default function CreateAccount({ onClose, onCreate }) {
       </div>
       <div>
         <label>Bank</label>
-        <select value={bank} onChange={e => setBank(e.target.value)}>
-          <option>IOB</option>
-          <option>HDFC</option>
-        </select>
+        {loading ? (
+          <select disabled><option>Loading...</option></select>
+        ) : (
+          <select value={bank} onChange={e => setBank(e.target.value)}>
+            {banks.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div style={{ marginTop: 12 }}>
-        <button type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create'}</button>
+        <button type="submit" disabled={saving || loading}>
+          {saving ? 'Creating...' : 'Create'}
+        </button>
         <button type="button" onClick={onClose} style={{ marginLeft: 8 }}>Cancel</button>
       </div>
     </form>

@@ -26,6 +26,18 @@ export default function Settings({ isOpen, onClose }) {
     }
   }, [isOpen]);
 
+  // Lock background scroll while modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   const fetchCategories = async () => {
     try {
       const res = await api.get("/categories");
@@ -124,6 +136,27 @@ export default function Settings({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
+  const headingStyle = {
+    margin: 0,
+    fontSize: '24px',
+    position: 'sticky',
+    top: 0,
+    backgroundColor: '#fff',
+    zIndex: 5,
+    padding: '0 0 24px 0'
+  };
+
+  const scrollAreaStyle = {
+    flex: 1,
+    overflowY: 'auto'
+  };
+
+  const tabWrapperStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%'
+  };
+
   return (
     <>
       {/* Backdrop */}
@@ -142,7 +175,7 @@ export default function Settings({ isOpen, onClose }) {
         <button onClick={onClose} style={{ position: 'absolute', top: '16px', right: '20px', cursor: 'pointer', background: 'none', border: 'none', fontSize: '28px', color: '#6b7280', lineHeight: 1, zIndex: 10 }}>&times;</button>
 
         {/* LHS - Sidebar */}
-        <div style={{ width: '240px', backgroundColor: '#f9fafb', borderRight: '1px solid #e5e7eb', padding: '32px 0', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ width: '240px', backgroundColor: '#f9fafb', borderRight: '1px solid #e5e7eb', padding: '32px 0', display: 'flex', flexDirection: 'column', overflowY: 'hidden', flexShrink: 0 }}>
           <h2 style={{ margin: '0 0 24px 24px', fontSize: '20px', color: '#111827' }}>Settings</h2>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <button 
@@ -173,161 +206,169 @@ export default function Settings({ isOpen, onClose }) {
         </div>
       
         {/* RHS - Main Content Area */}
-        <div style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
+        <div style={{ flex: 1, padding: '32px', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
           {activeTab === 'general' && (
-            <div>
-              <h1 style={{ margin: '0 0 32px 0', fontSize: '24px' }}>General Settings</h1>
-              <p style={{ color: '#6b7280' }}>Application-wide settings can be configured here.</p>
+            <div style={tabWrapperStyle}>
+              <h1 style={headingStyle}>General Settings</h1>
+              <div style={scrollAreaStyle}>
+                <p style={{ color: '#6b7280' }}>Application-wide settings can be configured here.</p>
+              </div>
             </div>
           )}
           
           {activeTab === 'profile' && (
-            <div>
-              <h1 style={{ margin: '0 0 32px 0', fontSize: '24px' }}>Profile Settings</h1>
-              <p style={{ color: '#6b7280' }}>User account and preferences can be configured here.</p>
+            <div style={tabWrapperStyle}>
+              <h1 style={headingStyle}>Profile Settings</h1>
+              <div style={scrollAreaStyle}>
+                <p style={{ color: '#6b7280' }}>User account and preferences can be configured here.</p>
+              </div>
             </div>
           )}
 
           {activeTab === 'accounts' && (
-            <div>
-              <h1 style={{ margin: '0 0 32px 0', fontSize: '24px' }}>Manage Accounts</h1>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {accounts.map(acc => (
-                  <div key={acc.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      {editingAccountId === acc.id ? (
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                          <input 
-                            type="text" 
-                            value={editAccountName}
-                            onChange={(e) => setEditAccountName(e.target.value)}
-                            style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px' }}
-                          />
-                        </div>
-                      ) : (
-                        <h3 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>{acc.accountHolderName || acc.bankName}</h3>
-                      )}
-                      <p style={{ margin: 0, color: '#6b7280', fontSize: '14px' }}>{acc.bankName} ending in {acc.accountNumber?.slice(-4) || '****'}</p>
+            <div style={tabWrapperStyle}>
+              <h1 style={headingStyle}>Manage Accounts</h1>
+              <div style={scrollAreaStyle}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {accounts.map(acc => (
+                    <div key={acc.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        {editingAccountId === acc.id ? (
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                            <input 
+                              type="text" 
+                              value={editAccountName}
+                              onChange={(e) => setEditAccountName(e.target.value)}
+                              style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px' }}
+                            />
+                          </div>
+                        ) : (
+                          <h3 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>{acc.accountHolderName || acc.bankName}</h3>
+                        )}
+                        <p style={{ margin: 0, color: '#6b7280', fontSize: '14px' }}>{acc.bankName} ending in {acc.accountNumber?.slice(-4) || '****'}</p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {editingAccountId === acc.id ? (
+                          <>
+                            <button className="btn primary small" onClick={() => handleUpdateAccount(acc.id)}>Save</button>
+                            <button className="btn small" onClick={() => setEditingAccountId(null)}>Cancel</button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="btn small" onClick={() => { setEditingAccountId(acc.id); setEditAccountName(acc.accountHolderName || ''); }}>Edit Name</button>
+                            <button className="btn danger small" onClick={() => handleDeleteAccount(acc.id)}>Delete</button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {editingAccountId === acc.id ? (
-                        <>
-                          <button className="btn primary small" onClick={() => handleUpdateAccount(acc.id)}>Save</button>
-                          <button className="btn small" onClick={() => setEditingAccountId(null)}>Cancel</button>
-                        </>
-                      ) : (
-                        <>
-                          <button className="btn small" onClick={() => { setEditingAccountId(acc.id); setEditAccountName(acc.accountHolderName || ''); }}>Edit Name</button>
-                          <button className="btn danger small" onClick={() => handleDeleteAccount(acc.id)}>Delete</button>
-                        </>
-                      )}
+                  ))}
+                  {accounts.length === 0 && (
+                    <div style={{ textAlign: 'center', color: '#6b7280', padding: '32px' }}>
+                      No accounts found.
                     </div>
-                  </div>
-                ))}
-                {accounts.length === 0 && (
-                  <div style={{ textAlign: 'center', color: '#6b7280', padding: '32px' }}>
-                    No accounts found.
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )}
 
           {activeTab === 'categories' && (
-            <div>
-              <h1 style={{ margin: '0 0 32px 0', fontSize: '24px' }}>Settings: Categories</h1>
-              
-              <div className="card" style={{ marginBottom: '32px' }}>
-                <h3 style={{ marginTop: 0 }}>Add New Category</h3>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Category Name" 
-                    value={newCatName}
-                    onChange={(e) => setNewCatName(e.target.value)}
-                    style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', flex: 1 }}
-                  />
-                  <button className="btn primary" onClick={handleAddCategory}>Add Category</button>
+            <div style={tabWrapperStyle}>
+              <h1 style={headingStyle}>Settings: Categories</h1>
+
+              <div style={scrollAreaStyle}>
+                <div className="card" style={{ marginBottom: '32px' }}>
+                  <h3 style={{ marginTop: 0 }}>Add New Category</h3>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input 
+                      type="text" 
+                      placeholder="Category Name" 
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', flex: 1 }}
+                    />
+                    <button className="btn primary" onClick={handleAddCategory}>Add Category</button>
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {categories.map(cat => (
-                  <div key={cat.id} className="card">
-                    {/* Category Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      {editingCatId === cat.id ? (
-                        <div style={{ display: 'flex', gap: '8px', flex: 1, marginRight: '16px' }}>
-                          <input 
-                            type="text" 
-                            value={editCatName}
-                            onChange={(e) => setEditCatName(e.target.value)}
-                            style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', flex: 1 }}
-                          />
-                          <button className="btn" style={{ padding: '6px 12px' }} onClick={() => handleUpdateCategory(cat.id)}>Save</button>
-                          <button className="btn" style={{ padding: '6px 12px' }} onClick={() => setEditingCatId(null)}>Cancel</button>
-                        </div>
-                      ) : (
-                        <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          {cat.name}
-                          <button 
-                            style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13px', textDecoration: 'underline' }}
-                            onClick={() => { setEditingCatId(cat.id); setEditCatName(cat.name); }}
-                          >
-                            Edit
-                          </button>
-                        </h3>
-                      )}
-                      
-                      <button className="btn danger small" onClick={() => handleDeleteCategory(cat.id)}>Delete</button>
-                    </div>
-
-                    {/* Sub-Categories */}
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Sub-Categories</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                        {cat.subCategories.map((sub, idx) => (
-                          <span key={idx} className="badge" style={{ backgroundColor: '#f3f4f6', color: '#374151', padding: '6px 10px', fontSize: '13px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {sub}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {categories.map(cat => (
+                    <div key={cat.id} className="card">
+                      {/* Category Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        {editingCatId === cat.id ? (
+                          <div style={{ display: 'flex', gap: '8px', flex: 1, marginRight: '16px' }}>
+                            <input 
+                              type="text" 
+                              value={editCatName}
+                              onChange={(e) => setEditCatName(e.target.value)}
+                              style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', flex: 1 }}
+                            />
+                            <button className="btn" style={{ padding: '6px 12px' }} onClick={() => handleUpdateCategory(cat.id)}>Save</button>
+                            <button className="btn" style={{ padding: '6px 12px' }} onClick={() => setEditingCatId(null)}>Cancel</button>
+                          </div>
+                        ) : (
+                          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {cat.name}
                             <button 
-                              onClick={() => handleDeleteSubCategory(cat.id, idx, sub)}
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontWeight: 'bold', lineHeight: 1 }}
+                              style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13px', textDecoration: 'underline' }}
+                              onClick={() => { setEditingCatId(cat.id); setEditCatName(cat.name); }}
                             >
-                              &times;
+                              Edit
                             </button>
-                          </span>
-                        ))}
+                          </h3>
+                        )}
+                        
+                        <button className="btn danger small" onClick={() => handleDeleteCategory(cat.id)}>Delete</button>
                       </div>
 
-                      {/* Add Sub-Category Input */}
-                      {activeSubCatInputId === cat.id ? (
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                          <input 
-                            type="text" 
-                            placeholder="New Sub-Category"
-                            value={newSubCatName}
-                            onChange={(e) => setNewSubCatName(e.target.value)}
-                            style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
-                          />
-                          <button className="btn primary small" onClick={() => handleAddSubCategory(cat.id)}>Add</button>
-                          <button className="btn small" onClick={() => setActiveSubCatInputId(null)}>Cancel</button>
+                      {/* Sub-Categories */}
+                      <div>
+                        <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Sub-Categories</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {cat.subCategories.map((sub, idx) => (
+                            <span key={idx} className="badge" style={{ backgroundColor: '#f3f4f6', color: '#374151', padding: '6px 10px', fontSize: '13px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {sub}
+                              <button 
+                                onClick={() => handleDeleteSubCategory(cat.id, idx, sub)}
+                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontWeight: 'bold', lineHeight: 1 }}
+                              >
+                                &times;
+                              </button>
+                            </span>
+                          ))}
                         </div>
-                      ) : (
-                        <button 
-                          onClick={() => { setActiveSubCatInputId(cat.id); setNewSubCatName(""); }}
-                          style={{ marginTop: '12px', padding: '4px 8px', fontSize: '12px', backgroundColor: '#fff', border: '1px dashed #d1d5db', borderRadius: '4px', cursor: 'pointer', color: '#6b7280' }}
-                        >
-                          + Add Sub-Category
-                        </button>
-                      )}
+
+                        {/* Add Sub-Category Input */}
+                        {activeSubCatInputId === cat.id ? (
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                            <input 
+                              type="text" 
+                              placeholder="New Sub-Category"
+                              value={newSubCatName}
+                              onChange={(e) => setNewSubCatName(e.target.value)}
+                              style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
+                            />
+                            <button className="btn primary small" onClick={() => handleAddSubCategory(cat.id)}>Add</button>
+                            <button className="btn small" onClick={() => setActiveSubCatInputId(null)}>Cancel</button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => { setActiveSubCatInputId(cat.id); setNewSubCatName(""); }}
+                            style={{ marginTop: '12px', padding: '4px 8px', fontSize: '12px', backgroundColor: '#fff', border: '1px dashed #d1d5db', borderRadius: '4px', cursor: 'pointer', color: '#6b7280' }}
+                          >
+                            + Add Sub-Category
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {categories.length === 0 && (
-                  <div style={{ textAlign: 'center', color: '#6b7280', padding: '32px' }}>
-                    No categories defined. Add one above!
-                  </div>
-                )}
+                  ))}
+                  {categories.length === 0 && (
+                    <div style={{ textAlign: 'center', color: '#6b7280', padding: '32px' }}>
+                      No categories defined. Add one above!
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

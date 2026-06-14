@@ -24,7 +24,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
                 var transactions = DbHelper
                     .GetAll<BankTransaction>()
-                    .Where(x => x.AccountId == accountId && x.BankType == account.BankName.ToString())
+                    .Where(x => x.AccountId == accountId)
                     .OrderByDescending(x => x.TransactionDate)
                     .ToList();
 
