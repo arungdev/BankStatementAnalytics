@@ -36,7 +36,6 @@ namespace BankStatementAnalytics
                     NHibernateManager.Initialize(dbPath, mapper =>
                     {
                         mapper.AddMapping<AccountMap>();
-                        mapper.AddMapping<BankStatementMap>();
                         mapper.AddMapping<MerchantUpiMap>();
                         mapper.AddMapping<MerchantMap>();
                         mapper.AddMapping<BankTransactionMap>();

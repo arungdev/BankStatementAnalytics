@@ -1,6 +1,6 @@
 using BankStatementAnalytics.Data;
+using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
-using BankStatementAnalytics.Services.Parser;
 using Common.Framework.Data;
 using Common.Framework.Logging;
 using Microsoft.AspNetCore.Mvc;

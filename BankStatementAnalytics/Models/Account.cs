@@ -1,4 +1,5 @@
-using BankStatementAnalytics.Services.Parser;
+
+using BankStatementAnalytics.EnumClass;
 
 namespace BankStatementAnalytics.Models
 {

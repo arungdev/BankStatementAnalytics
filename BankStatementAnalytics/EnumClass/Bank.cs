@@ -1,4 +1,4 @@
-﻿namespace BankStatementAnalytics.Services.Parser
+﻿namespace BankStatementAnalytics.EnumClass
 {
     public enum Bank
     {

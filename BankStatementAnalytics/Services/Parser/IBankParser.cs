@@ -2,5 +2,5 @@ using BankStatementAnalytics.Models;
 
 public interface IBankParser
 {
-    IEnumerable<BaseTransaction> Parse(string text,int accountId);
+    IEnumerable<BankTransaction> Parse(string text,int accountId);
 }

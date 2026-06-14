@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using Common.Framework.Logging;
 
@@ -421,7 +422,7 @@ namespace BankStatementAnalytics.Services.Parser
         }
 
         // ── IBankParser explicit implementation ───────────────────────
-        IEnumerable<BaseTransaction> IBankParser.Parse(string text, int accountId)
+        IEnumerable<BankTransaction> IBankParser.Parse(string text, int accountId)
             => Parse(text, accountId);
     }
 }

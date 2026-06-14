@@ -9,7 +9,7 @@ using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
-Log.Initialize("log4net.config"); 
+Log.Initialize("log4net.config");
 Log.Info(AppContext.BaseDirectory);
 // MVC
 builder.Services.AddControllersWithViews();
@@ -18,10 +18,11 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddScoped<TextService>();
 builder.Services.AddScoped<TransactionRepositoryFactory>();
 builder.Services.AddScoped<CounterPartyService>();
-builder.Services.AddScoped<OpTransactionParser>();
-builder.Services.AddScoped<HdfcTransactionParser>();
-builder.Services.AddScoped<HdfcCreditCardParser>();
-builder.Services.AddScoped<HdfcCreditCardService>();
+// ── Auto-register all parsers from registry ──────────────────────────────
+foreach (var config in BankParserRegistry.Parsers)
+{
+    builder.Services.AddScoped(config.ParserType);
+}
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("React", policy =>

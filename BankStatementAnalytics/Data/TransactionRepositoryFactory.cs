@@ -1,5 +1,4 @@
-// Data/TransactionRepositoryFactory.cs
-using BankStatementAnalytics.Services.Parser;
+using BankStatementAnalytics.EnumClass;
 
 namespace BankStatementAnalytics.Data
 {

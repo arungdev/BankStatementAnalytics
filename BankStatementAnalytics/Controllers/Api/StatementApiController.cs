@@ -1,14 +1,15 @@
-using Microsoft.AspNetCore.Mvc;
-using NHibernate.Linq;
-using Common.Framework.Data;
+using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
 using BankStatementAnalytics.Services.Parser;
+using Common.Framework.Data;
+using Common.Framework.Logging;
+using Microsoft.AspNetCore.Mvc;
+using NHibernate.Linq;
 using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Common.Framework.Logging;
 
 namespace BankStatementAnalytics.Controllers.Api
 {
@@ -207,14 +208,14 @@ namespace BankStatementAnalytics.Controllers.Api
                 upload.TransactionId = tx.Id;
                 await DbHelper.UpdateAsync(upload);
 
-                
+
                 if (ext == ".txt")
                 {
-                    _textService.ExtractText(path, accountId, uploadId);
+                    await _textService.ExtractAsync(path, accountId, uploadId, StatementFileFormat.Txt);
                 }
                 else if (ext == ".csv")
                 {
-                    await _textService.ExtractCsvAsync(path, accountId, uploadId);
+                    await _textService.ExtractAsync(path, accountId, uploadId, StatementFileFormat.Csv);
                 }
                 else
                 {
