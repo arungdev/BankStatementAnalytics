@@ -1,6 +1,7 @@
+using BankStatementAnalytics.Models;
+using Common.Framework.Types;
 using NHibernate.Mapping.ByCode;
 using NHibernate.Mapping.ByCode.Conformist;
-using BankStatementAnalytics.Models;
 
 namespace BankStatementAnalytics.Mappping
 {
@@ -10,9 +11,13 @@ namespace BankStatementAnalytics.Mappping
         {
             Table("UploadTransactions");
 
-            Id(x => x.Id, m => m.Generator(Generators.GuidComb));
+            Id(x => x.Id, m => m.Type<GuidToStringType>());
 
-            Property(x => x.UploadId);
+            Property(x => x.UploadId, m =>
+            {
+                m.Type<GuidToStringType>();
+                m.Length(50);
+            });
             Property(x => x.Amount);
             Property(x => x.Description, m => m.Length(1000));
             Property(x => x.CreatedAt);

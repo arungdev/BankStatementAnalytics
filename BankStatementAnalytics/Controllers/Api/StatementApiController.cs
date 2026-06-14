@@ -148,7 +148,8 @@ namespace BankStatementAnalytics.Controllers.Api
                     u.Path,
                     u.UploadedAt,
                     u.TransactionId,
-                    TransactionCount = txCounts.FirstOrDefault(c => c.UploadId == u.Id)?.Count ?? 0
+                    TransactionCount = txCounts.FirstOrDefault(c => c.UploadId.HasValue &&
+                     c.UploadId.Value == u.Id)?.Count ?? 0
                 });
 
                 return Ok(result);
@@ -206,6 +207,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 upload.TransactionId = tx.Id;
                 await DbHelper.UpdateAsync(upload);
 
+                
                 if (ext == ".txt")
                 {
                     _textService.ExtractText(path, accountId, uploadId);

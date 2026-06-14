@@ -1,6 +1,7 @@
-﻿using NHibernate.Mapping.ByCode;
+﻿using BankStatementAnalytics.Models;
+using Common.Framework.Types;
+using NHibernate.Mapping.ByCode;
 using NHibernate.Mapping.ByCode.Conformist;
-using BankStatementAnalytics.Models;
 
 namespace BankStatementAnalytics.Mappping
 {
@@ -30,8 +31,11 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.Balance);
 
             Property(x => x.ImportedOn);
-            Property(x => x.UploadId);
-
+            Property(x => x.UploadId, m =>
+            {
+                m.Type<GuidToStringType>();
+                m.Length(50);
+            });
             Property(x => x.UpiReference, m => m.Length(50));
             Property(x => x.BankCode, m => m.Length(20));
             Property(x => x.Mode, m => m.Length(50));
