@@ -18,7 +18,7 @@ export default function Transactions() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   // Lowered default to 10 so you can actually see the pagination working with your 18 records!
-  const [itemsPerPage, setItemsPerPage] = useState(10); 
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Sidebar state
   const [selectedTx, setSelectedTx] = useState(null);
@@ -58,7 +58,7 @@ export default function Transactions() {
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    
+
     const params = new URLSearchParams({
       page: currentPage,
       pageSize: itemsPerPage
@@ -77,7 +77,7 @@ export default function Transactions() {
       .then(res => {
         let allTx = [];
         let isServerPaginated = false;
-        
+
         if (Array.isArray(res.data)) {
           allTx = res.data;
         } else if (res.data) {
@@ -86,13 +86,13 @@ export default function Transactions() {
             isServerPaginated = true;
           }
         }
-          
+
         if (!isServerPaginated) {
           // Client-side fallback mode
           // Apply Filters Locally
           allTx = allTx.filter(t => {
             if (dateFilterType === 'ALL') return true;
-            
+
             const txDate = new Date(t.transactionDate);
             if (dateFilterType === 'MONTH' && selectedMonth) {
               const [year, month] = selectedMonth.split('-');
@@ -115,7 +115,7 @@ export default function Transactions() {
           });
 
           setTotalTransactions(allTx.length);
-          
+
           // Apply Pagination Locally
           const startIdx = (currentPage - 1) * itemsPerPage;
           setTx(allTx.slice(startIdx, startIdx + itemsPerPage));
@@ -154,7 +154,7 @@ export default function Transactions() {
 
   const handleExportCSV = () => {
     const params = new URLSearchParams({ pageSize: 0 });
-    
+
     if (dateFilterType === 'MONTH' && selectedMonth) {
       const [year, month] = selectedMonth.split('-');
       params.append('year', year);
@@ -207,19 +207,19 @@ export default function Transactions() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <h1 style={{ marginBottom: 0 }}>All Transactions</h1>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          
-          <button 
+
+          <button
             onClick={handleExportCSV}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', color: '#374151', fontWeight: 500 }}
           >
             <FiDownload size={14} /> Export CSV
           </button>
-          
+
           {/* Date Filter Controls */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', background: '#f9fafb', padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
             <span style={{ fontSize: '13px', fontWeight: 600, color: '#4b5563' }}>Filter:</span>
-            <select 
-              value={dateFilterType} 
+            <select
+              value={dateFilterType}
               onChange={handleFilterTypeChange}
               style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none' }}
             >
@@ -280,58 +280,65 @@ export default function Transactions() {
       </div>
 
       {/* Pagination Controls */}
+      {/* Pagination Controls */}
       {totalTransactions > 0 && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '16px', background: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-            <div style={{ fontSize: '13px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>Items per page:</span>
-              <select 
-                value={itemsPerPage} 
-                onChange={handleItemsPerPageChange}
-                style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none', background: '#f9fafb' }}
-              >
-                <option value={5}>5</option>
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
+            {totalPages > 1 && (
+              <div style={{ fontSize: '13px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>Items per page:</span>
+                <select
+                  value={itemsPerPage}
+                  onChange={handleItemsPerPageChange}
+                  style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none', background: '#f9fafb' }}
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            )}
             <div style={{ fontSize: '13px', color: '#6b7280' }}>
-              Showing <span style={{fontWeight: 600, color: '#111827'}}>{tx.length > 0 ? startIndex + 1 : 0}</span> to <span style={{fontWeight: 600, color: '#111827'}}>{startIndex + tx.length}</span> of <span style={{fontWeight: 600, color: '#111827'}}>{totalTransactions}</span> transactions
+              {totalPages > 1
+                ? <>Showing <span style={{ fontWeight: 600, color: '#111827' }}>{tx.length > 0 ? startIndex + 1 : 0}</span> to <span style={{ fontWeight: 600, color: '#111827' }}>{startIndex + tx.length}</span> of <span style={{ fontWeight: 600, color: '#111827' }}>{totalTransactions}</span> transactions</>
+                : <><span style={{ fontWeight: 600, color: '#111827' }}>{totalTransactions}</span> transaction{totalTransactions !== 1 ? 's' : ''}</>
+              }
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button 
-              className="btn small" 
-              disabled={currentPage === 1} 
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            >
-              Previous
-            </button>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', padding: '0 8px' }}>
-              Page {currentPage} of {totalPages}
-            </span>
-            <button 
-              className="btn small" 
-              disabled={currentPage >= totalPages || totalPages === 0} 
-              onClick={() => setCurrentPage(p => Math.min(totalPages || 1, p + 1))}
-            >
-              Next
-            </button>
-          </div>
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                className="btn small"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', padding: '0 8px' }}>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                className="btn small"
+                disabled={currentPage >= totalPages || totalPages === 0}
+                onClick={() => setCurrentPage(p => Math.min(totalPages || 1, p + 1))}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       )}
-
       {/* RHS Sidebar Overlay */}
       {selectedTx && (
         <>
           {/* Backdrop */}
-          <div 
+          <div
             onClick={() => setSelectedTx(null)}
             style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 999 }}
           />
-          
+
           {/* Sidebar */}
           <div style={{
             position: 'fixed', top: 0, right: 0, bottom: 0, width: `${sidebarWidth}px`, maxWidth: '100vw',
@@ -339,7 +346,7 @@ export default function Transactions() {
             zIndex: 1000, display: 'flex', flexDirection: 'column'
           }}>
             {/* Resize Handle */}
-            <div 
+            <div
               onMouseDown={() => setIsResizing(true)}
               style={{
                 position: 'absolute', left: 0, top: 0, bottom: 0, width: '6px',
@@ -353,7 +360,7 @@ export default function Transactions() {
               <h2 style={{ margin: 0, fontSize: '18px', color: '#111827' }}>Transaction Details</h2>
               <button onClick={() => setSelectedTx(null)} style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: '28px', color: '#6b7280', lineHeight: 1 }}>&times;</button>
             </div>
-            
+
             {/* Content */}
             <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
               <div style={{ textAlign: 'center', padding: '16px 0', borderBottom: '1px solid #e5e7eb', marginBottom: '24px' }}>

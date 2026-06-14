@@ -75,6 +75,7 @@ export default function UploadStatement() {
   const handleFileChange = (e) => {
     const picked = e.target.files?.[0];
     if (!picked) return;
+    if (!selectedAccount) { setMessage("Please select an account first."); return; }
     if (!isValidFormat(picked)) {
       setMessage(`Only ${formats.label} files are supported for ${formats.bankName || 'this account'}.`);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -148,9 +149,9 @@ export default function UploadStatement() {
         <h1 style={{ marginBottom: 0 }}>Upload Statement</h1>
       </div>
 
-      <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
         {/* Upload Form Card */}
-        <div style={{ flex: '1 1 500px', backgroundColor: '#fff', borderRadius: '12px', padding: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', maxWidth: '700px' }}>
+        <div style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', maxWidth: '700px' }}>
           <form onSubmit={handleSubmit}>
 
             {/* Account selector */}
@@ -178,7 +179,12 @@ export default function UploadStatement() {
             <div style={{ marginBottom: '32px' }}>
               <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Statement File</label>
 
-              {!file ? (
+              {!selectedAccount ? (
+                <div style={{ border: '2px dashed #e5e7eb', borderRadius: '8px', padding: '48px 20px', textAlign: 'center', backgroundColor: '#f3f4f6' }}>
+                  <FiUploadCloud size={44} color="#d1d5db" style={{ marginBottom: '16px' }} />
+                  <p style={{ margin: 0, fontSize: '15px', color: '#9ca3af', fontWeight: 600 }}>Select an account first</p>
+                </div>
+              ) : !file ? (
                 <div
                   style={{ position: 'relative', border: '2px dashed #d1d5db', borderRadius: '8px', padding: '48px 20px', textAlign: 'center', backgroundColor: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s ease' }}
                   onMouseOver={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#eff6ff'; }}
@@ -238,8 +244,8 @@ export default function UploadStatement() {
 
             {/* Message */}
             {message && (
-              <div style={{ marginBottom: '24px', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', backgroundColor: message.includes('failed') || message.includes('Only') ? '#fef2f2' : '#ecfdf5', color: message.includes('failed') || message.includes('Only') ? '#991b1b' : '#065f46', border: `1px solid ${message.includes('failed') || message.includes('Only') ? '#f87171' : '#34d399'}` }}>
-                {message.includes('failed') || message.includes('Only')
+              <div style={{ marginBottom: '24px', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', backgroundColor: message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#fef2f2' : '#ecfdf5', color: message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#991b1b' : '#065f46', border: `1px solid ${message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#f87171' : '#34d399'}` }}>
+                {message.includes('failed') || message.includes('Only') || message.includes('Please')
                   ? <FiAlertCircle size={18} style={{ marginRight: '8px' }} />
                   : <FiCheckCircle size={18} style={{ marginRight: '8px' }} />
                 }
@@ -252,7 +258,7 @@ export default function UploadStatement() {
               <button
                 className="btn primary"
                 type="submit"
-                disabled={loading || !file || loadingFormats}
+                disabled={loading || !file || loadingFormats || !selectedAccount}
                 style={{ flex: 1, padding: '12px', fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
               >
                 {loading ? <span className="spinner" style={{ width: '16px', height: '16px', borderTopColor: '#fff', borderRightColor: '#fff' }}></span> : <FiUploadCloud size={18} />}
@@ -264,7 +270,7 @@ export default function UploadStatement() {
 
         {/* Upload History */}
         {filteredUploads.length > 0 && (
-          <div style={{ flex: '1 1 500px' }}>
+          <div>
             <h2 style={{ fontSize: '18px', color: '#111827', marginBottom: '16px', marginTop: 0 }}>Upload History</h2>
             <div className="table-container" style={{ backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
               <table>

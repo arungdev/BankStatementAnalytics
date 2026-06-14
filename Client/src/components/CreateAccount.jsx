@@ -46,8 +46,16 @@ export default function CreateAccount({ onClose, onCreate }) {
         <input value={holder} onChange={e => setHolder(e.target.value)} required />
       </div>
       <div>
-        <label>Account Number</label>
-        <input value={number} onChange={e => setNumber(e.target.value)} required />
+        <label>Account Number (last 4 digits)</label>
+        <input
+          value={number}
+          onChange={e => setNumber(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          inputMode="numeric"
+          pattern="\d{4}"
+          maxLength={4}
+          placeholder="e.g. 1234"
+          required
+        />
       </div>
       <div>
         <label>Bank</label>
