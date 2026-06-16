@@ -37,6 +37,8 @@
         public virtual string ChequeNumber { get; set; } = string.Empty;
         public virtual string CustomerReference { get; set; } = string.Empty;
         public virtual string? UpiVpa { get; set; }
+        public virtual string? CategoryOverride { get; set; }
+        public virtual string? SubCategoryOverride { get; set; }
 
         public override bool Equals(object? obj)
         {

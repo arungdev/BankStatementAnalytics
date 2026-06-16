@@ -4,10 +4,14 @@ import { useAccount } from "../context/useAccount";
 import { FiDownload } from "react-icons/fi";
 
 export default function Transactions() {
-  const { selectedAccountId } = useAccount();
+  const { selectedAccountId, selectedAccount } = useAccount();
+  console.log('selectedAccount:', selectedAccount);
   const [tx, setTx] = useState([]);
   const [loading, setLoading] = useState(!selectedAccountId);
   const [totalTransactions, setTotalTransactions] = useState(0);
+
+  // Categories from API
+  const [categories, setCategories] = useState([]);
 
   // Date filter state
   const [dateFilterType, setDateFilterType] = useState('ALL');
@@ -17,21 +21,24 @@ export default function Transactions() {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  // Lowered default to 10 so you can actually see the pagination working with your 18 records!
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Sidebar state
   const [selectedTx, setSelectedTx] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(450);
   const [isResizing, setIsResizing] = useState(false);
+  // Fetch categories once on mount
+  useEffect(() => {
+    api.get('/categories')
+      .then(res => setCategories(res.data || []))
+      .catch(err => console.error("Failed to load categories", err));
+  }, []);
 
   // Handle dragging the sidebar to resize
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (!isResizing) return;
-      // Calculate new width based on mouse position from the right edge
       const newWidth = window.innerWidth - e.clientX;
-      // Constrain the width between 300px and the window width minus 50px
       if (newWidth >= 300 && newWidth <= window.innerWidth - 50) {
         setSidebarWidth(newWidth);
       }
@@ -41,7 +48,7 @@ export default function Transactions() {
     if (isResizing) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.userSelect = 'none'; // Prevent text selection while dragging
+      document.body.style.userSelect = 'none';
     }
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
@@ -88,8 +95,6 @@ export default function Transactions() {
         }
 
         if (!isServerPaginated) {
-          // Client-side fallback mode
-          // Apply Filters Locally
           allTx = allTx.filter(t => {
             if (dateFilterType === 'ALL') return true;
 
@@ -116,11 +121,9 @@ export default function Transactions() {
 
           setTotalTransactions(allTx.length);
 
-          // Apply Pagination Locally
           const startIdx = (currentPage - 1) * itemsPerPage;
           setTx(allTx.slice(startIdx, startIdx + itemsPerPage));
         } else {
-          // Server-side mode
           setTx(allTx);
           setTotalTransactions(res.data.totalCount);
         }
@@ -145,12 +148,68 @@ export default function Transactions() {
   const totalPages = Math.ceil(totalTransactions / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
 
-  // Handlers to prevent double-fetching on filter change
   const handleFilterTypeChange = (e) => { setDateFilterType(e.target.value); setCurrentPage(1); };
   const handleMonthChange = (e) => { setSelectedMonth(e.target.value); setCurrentPage(1); };
   const handleStartDateChange = (e) => { setStartDate(e.target.value); setCurrentPage(1); };
   const handleEndDateChange = (e) => { setEndDate(e.target.value); setCurrentPage(1); };
   const handleItemsPerPageChange = (e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); };
+
+  const handleCategoryChange = (t, selectedValue) => {
+    const previousCategory = t.category;
+    const previousSubCategory = t.subCategory;
+    console.log('Transaction object:', JSON.stringify(t, null, 2)); // 👈 add this
+    let resolvedCategory = selectedValue;
+    let resolvedSubCategory = null;
+
+    if (selectedValue) {
+      for (const cat of categories) {
+        if (cat.subCategories?.includes(selectedValue)) {
+          resolvedCategory = cat.name;
+          resolvedSubCategory = selectedValue;
+          break;
+        }
+      }
+    } else {
+      resolvedCategory = null;
+      resolvedSubCategory = null;
+    }
+
+    const displayLabel = resolvedSubCategory || resolvedCategory || '';
+
+    // Use t.id for comparisons — the transaction object has no bankReference/bankType
+    setTx(prev => prev.map(item =>
+      item.id === t.id
+        ? { ...item, category: displayLabel, subCategory: resolvedSubCategory }
+        : item
+    ));
+
+    setSelectedTx(prev =>
+      prev && prev.id === t.id
+        ? { ...prev, category: displayLabel, subCategory: resolvedSubCategory }
+        : prev
+    );
+
+    api.patch(`/transactions/category`, {
+      AccountId: selectedAccountId,   // from useAccount() context, already in scope
+      BankReference: t.id,            // "GEN156323E5E94E"
+      BankType: t.bankType,
+      Category: resolvedCategory,
+      SubCategory: resolvedSubCategory
+    }).catch(err => {
+      console.error("Failed to update category", err);
+      alert("Failed to update category. Please try again.");
+      setTx(prev => prev.map(item =>
+        item.id === t.id
+          ? { ...item, category: previousCategory, subCategory: previousSubCategory }
+          : item
+      ));
+      setSelectedTx(prev =>
+        prev && prev.id === t.id
+          ? { ...prev, category: previousCategory, subCategory: previousSubCategory }
+          : prev
+      );
+    });
+  };
 
   const handleExportCSV = () => {
     const params = new URLSearchParams({ pageSize: 0 });
@@ -201,6 +260,27 @@ export default function Transactions() {
         alert("Failed to export transactions.");
       });
   };
+
+  // Build the category <select> options from the API response.
+  // Each category from the API is: { id, name, subCategories: string[] }
+  // - If it has subcategories → render an <optgroup> with each sub as an <option>
+  // - If it has no subcategories → render a plain <option> using the category name
+  const renderCategoryOptions = () => (
+    <>
+      <option value="">Uncategorized</option>
+      {categories.map(cat =>
+        cat.subCategories?.length > 0 ? (
+          <optgroup key={cat.id} label={cat.name}>
+            {cat.subCategories.map(sub => (
+              <option key={sub} value={sub}>{sub}</option>
+            ))}
+          </optgroup>
+        ) : (
+          <option key={cat.id} value={cat.name}>{cat.name}</option>
+        )
+      )}
+    </>
+  );
 
   return (
     <div>
@@ -255,6 +335,7 @@ export default function Transactions() {
               <th>Merchant</th>
               <th>Debit</th>
               <th>Credit</th>
+              <th>Category</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -265,12 +346,24 @@ export default function Transactions() {
                 <td style={{ fontWeight: 600 }}>{t.merchant}</td>
                 <td className="text-red">{t.debit ? `₹${t.debit.toLocaleString('en-IN')}` : "-"}</td>
                 <td className="text-green">{t.credit ? `₹${t.credit.toLocaleString('en-IN')}` : "-"}</td>
+                <td onClick={(e) => e.stopPropagation()}>
+                  <select
+                    value={t.subCategory || t.category || ''}
+                    onChange={(e) => handleCategoryChange(t, e.target.value)}
+                    style={{
+                      padding: '3px 6px', borderRadius: '4px', border: '1px solid #d1d5db',
+                      fontSize: '12px', color: t.category ? '#374151' : '#9ca3af', background: '#fff'
+                    }}
+                  >
+                    {renderCategoryOptions()}
+                  </select>
+                </td>
                 <td><span className="badge green">Completed</span></td>
               </tr>
             ))}
             {tx.length === 0 && (
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af', fontStyle: 'italic' }}>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af', fontStyle: 'italic' }}>
                   No transactions found for the selected account.
                 </td>
               </tr>
@@ -279,7 +372,6 @@ export default function Transactions() {
         </table>
       </div>
 
-      {/* Pagination Controls */}
       {/* Pagination Controls */}
       {totalTransactions > 0 && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '16px', background: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
@@ -330,6 +422,7 @@ export default function Transactions() {
           )}
         </div>
       )}
+
       {/* RHS Sidebar Overlay */}
       {selectedTx && (
         <>
@@ -395,8 +488,18 @@ export default function Transactions() {
                 </div>
                 <div style={{ gridColumn: 'span 2' }}>
                   <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
-                  <div style={{ marginTop: '4px', color: '#111827', fontWeight: 500 }}>
-                    {selectedTx.category ? <span className="badge purple">{selectedTx.category}</span> : '-'}
+                  <div style={{ marginTop: '8px' }}>
+                    <select
+                      value={selectedTx.subCategory || selectedTx.category || ''}
+                      onChange={(e) => handleCategoryChange(selectedTx, e.target.value)}
+                      style={{
+                        padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db',
+                        fontSize: '13px', color: selectedTx.category ? '#374151' : '#9ca3af',
+                        background: '#fff', width: '100%'
+                      }}
+                    >
+                      {renderCategoryOptions()}
+                    </select>
                   </div>
                 </div>
               </div>

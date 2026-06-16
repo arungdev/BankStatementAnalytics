@@ -42,13 +42,13 @@ namespace BankStatementAnalytics.Controllers.Api
         // GET: api/statements/{accountId}
         [HttpGet("{accountId}")]
         public async Task<IActionResult> GetTransactions(
-            int accountId,
-            [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 0,
-            [FromQuery] int? year = null,
-            [FromQuery] int? month = null,
-            [FromQuery] DateTime? startDate = null,
-            [FromQuery] DateTime? endDate = null)
+     int accountId,
+     [FromQuery] int page = 1,
+     [FromQuery] int pageSize = 0,
+     [FromQuery] int? year = null,
+     [FromQuery] int? month = null,
+     [FromQuery] DateTime? startDate = null,
+     [FromQuery] DateTime? endDate = null)
         {
             try
             {
@@ -99,7 +99,9 @@ namespace BankStatementAnalytics.Controllers.Api
                     Debit = t.Debit,
                     Credit = t.Credit,
                     Balance = t.Balance,
-                    Category = t.CounterParty != null ? t.CounterParty.Category : null
+                    BankType = bankType,
+                    Category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
+                    SubCategory = t.SubCategoryOverride ?? (t.CounterParty != null ? t.CounterParty.SubCategory : null)
                 }).ToListAsync();
 
                 return Ok(new

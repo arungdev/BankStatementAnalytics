@@ -44,6 +44,8 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.ChequeNumber, m => m.Length(50));
             Property(x => x.CustomerReference, m => m.Length(100));
             Property(x => x.UpiVpa, m => m.Length(255));
+            Property(x => x.CategoryOverride);
+            Property(x => x.SubCategoryOverride);
 
             ManyToOne(x => x.CounterParty, m =>
             {
