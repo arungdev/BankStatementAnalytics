@@ -95,6 +95,53 @@ namespace BankStatementAnalytics.Controllers.Api
                 return StatusCode(500, "Internal server error");
             }
         }
+        // PATCH: api/transactions/tags
+        [HttpPatch("tags")]
+        public async Task<IActionResult> UpdateTags([FromBody] UpdateTransactionTagsRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.BankReference))
+                    return BadRequest("Invalid request.");
+
+                using var session = DbHelper.GetSession();
+                using var tx = session.BeginTransaction();
+
+                var transaction = session.Query<BankTransaction>()
+                    .SingleOrDefault(t => t.AccountId == request.AccountId
+                                        && t.BankReference == request.BankReference
+                                        && t.BankType == request.BankType);
+
+                if (transaction == null)
+                    return NotFound();
+
+                // Convert list to comma-separated string, or null if empty
+                transaction.Tags = request.Tags != null && request.Tags.Count > 0
+                    ? string.Join(",", request.Tags.Select(t => t.Trim().ToLower()))
+                    : null;
+
+                await session.UpdateAsync(transaction);
+                await tx.CommitAsync();
+
+                return Ok(new
+                {
+                    Tags = transaction.Tags
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex);
+                return StatusCode(500, "Internal server error");
+            }
+        }
+    }
+
+    public class UpdateTransactionTagsRequest
+    {
+        public long AccountId { get; set; }
+        public string BankReference { get; set; } = string.Empty;
+        public string BankType { get; set; } = string.Empty;
+        public List<string> Tags { get; set; } = new();
     }
 
     public class UpdateTransactionCategoryRequest

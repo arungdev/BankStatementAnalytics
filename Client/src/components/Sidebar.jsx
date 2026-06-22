@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { FiGrid, FiUsers, FiRepeat, FiUpload, FiChevronDown, FiChevronRight, FiPlus, FiTrendingUp } from 'react-icons/fi';
+import { FiGrid, FiUsers, FiRepeat, FiUpload, FiChevronDown, FiChevronRight, FiPlus, FiTrendingUp, FiPieChart } from 'react-icons/fi';
 import './Sidebar.css';
 
 const Sidebar = ({
@@ -43,6 +43,12 @@ const Sidebar = ({
                 <li>
                   <NavLink to="/trends">
                     Trends
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink to="/insights">
+                    <FiPieChart size={14} />
+                    Insights
                   </NavLink>
                 </li>
               </ul>

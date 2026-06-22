@@ -46,6 +46,7 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.UpiVpa, m => m.Length(255));
             Property(x => x.CategoryOverride);
             Property(x => x.SubCategoryOverride);
+            Property(x => x.Tags);
 
             ManyToOne(x => x.CounterParty, m =>
             {

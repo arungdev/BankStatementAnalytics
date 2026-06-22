@@ -18,3 +18,8 @@
     font-weight: 700;
     color: #111827;
   }
+  .submenu li a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

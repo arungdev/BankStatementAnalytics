@@ -43,7 +43,8 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<UploadTransactionMap>();
                         mapper.AddMapping<CategoryMap>();
                         mapper.AddMapping<SubCategoryMap>();
-                    }, SeedDefaultCategories);
+                        mapper.AddMapping<TagMap>();
+                    }, IntilizeDefaultValues);
 
                     return NHibernateManager.SessionFactory;
                 }
@@ -54,6 +55,39 @@ namespace BankStatementAnalytics
                 }
             }
         }
+
+        private static void IntilizeDefaultValues(ISessionFactory sessionFactory)
+        {
+            SeedDefaultCategories(sessionFactory);
+            SeedDefaultTags(sessionFactory);
+        }
+        private static void SeedDefaultTags(ISessionFactory sessionFactory)
+        {
+            try
+            {
+                using var session = sessionFactory.OpenSession();
+
+                if (session.Query<Tag>().Any()) return;
+
+                using var tx = session.BeginTransaction();
+
+                var defaultTags = new List<string>
+        {
+            "Personal", "Business", "Tax", "Reimbursable",
+            "Recurring", "One-time", "Urgent", "Review Later"
+        };
+
+                foreach (var name in defaultTags)
+                    session.Save(new Tag { Name = name });
+
+                tx.Commit();
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex);
+            }
+        }
+
 
         private static void SeedDefaultCategories(ISessionFactory sessionFactory)
         {

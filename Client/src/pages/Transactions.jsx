@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import api from "../api/client";
 import { useAccount } from "../context/useAccount";
 import { FiDownload } from "react-icons/fi";
+// ── Replaced native date inputs with custom DateRangePicker ──────────────
+import DateRangePicker from "../components/DateRangePicker"; // adjust path as needed
 
 export default function Transactions() {
   const { selectedAccountId, selectedAccount } = useAccount();
@@ -13,11 +15,9 @@ export default function Transactions() {
   // Categories from API
   const [categories, setCategories] = useState([]);
 
-  // Date filter state
-  const [dateFilterType, setDateFilterType] = useState('ALL');
-  const [selectedMonth, setSelectedMonth] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // ── Date filter state — now driven by DateRangePicker ─────────────────
+  // dateRange holds { start: Date|null, end: Date|null, preset: string }
+  const [dateRange, setDateRange] = useState({ start: null, end: null, preset: 'ALL' });
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -27,11 +27,16 @@ export default function Transactions() {
   const [selectedTx, setSelectedTx] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(450);
   const [isResizing, setIsResizing] = useState(false);
-  // Fetch categories once on mount
+  const [tags, setTags] = useState([]);
+
   useEffect(() => {
     api.get('/categories')
       .then(res => setCategories(res.data || []))
       .catch(err => console.error("Failed to load categories", err));
+
+    api.get('/tags')
+      .then(res => setTags(res.data || []))
+      .catch(err => console.error("Failed to load tags", err));
   }, []);
 
   // Handle dragging the sidebar to resize
@@ -57,28 +62,21 @@ export default function Transactions() {
     };
   }, [isResizing]);
 
+  // ── Helper: Date → "yyyy-MM-dd" string in local time ──────────────────
+  const toLocalDate = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!selectedAccountId) {
-      return;
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!selectedAccountId) return;
     setLoading(true);
 
-    const params = new URLSearchParams({
-      page: currentPage,
-      pageSize: itemsPerPage
-    });
+    const { start: startDate, end: endDate } = dateRange;
 
-    if (dateFilterType === 'MONTH' && selectedMonth) {
-      const [year, month] = selectedMonth.split('-');
-      params.append('year', year);
-      params.append('month', month);
-    } else if (dateFilterType === 'CUSTOM') {
-      if (startDate) params.append('startDate', startDate);
-      if (endDate) params.append('endDate', endDate);
-    }
+    const params = new URLSearchParams({ page: currentPage, pageSize: itemsPerPage });
+
+    if (startDate) params.append('startDate', toLocalDate(startDate));
+    if (endDate)   params.append('endDate',   toLocalDate(endDate));
 
     api.get(`/statements/${selectedAccountId}?${params.toString()}`)
       .then(res => {
@@ -95,32 +93,22 @@ export default function Transactions() {
         }
 
         if (!isServerPaginated) {
+          // Client-side date filtering
           allTx = allTx.filter(t => {
-            if (dateFilterType === 'ALL') return true;
-
+            if (!startDate && !endDate) return true;
             const txDate = new Date(t.transactionDate);
-            if (dateFilterType === 'MONTH' && selectedMonth) {
-              const [year, month] = selectedMonth.split('-');
-              return txDate.getFullYear() === parseInt(year, 10) && (txDate.getMonth() + 1) === parseInt(month, 10);
+            if (startDate) {
+              const s = new Date(startDate); s.setHours(0, 0, 0, 0);
+              if (txDate < s) return false;
             }
-            if (dateFilterType === 'CUSTOM') {
-              if (startDate) {
-                const start = new Date(startDate);
-                start.setHours(0, 0, 0, 0);
-                if (txDate < start) return false;
-              }
-              if (endDate) {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
-                if (txDate > end) return false;
-              }
-              return true;
+            if (endDate) {
+              const e = new Date(endDate); e.setHours(23, 59, 59, 999);
+              if (txDate > e) return false;
             }
             return true;
           });
 
           setTotalTransactions(allTx.length);
-
           const startIdx = (currentPage - 1) * itemsPerPage;
           setTx(allTx.slice(startIdx, startIdx + itemsPerPage));
         } else {
@@ -133,7 +121,7 @@ export default function Transactions() {
         console.error(err);
         setLoading(false);
       });
-  }, [selectedAccountId, currentPage, dateFilterType, selectedMonth, startDate, endDate, itemsPerPage]);
+  }, [selectedAccountId, currentPage, dateRange, itemsPerPage]);
 
   if (loading) {
     return (
@@ -148,16 +136,18 @@ export default function Transactions() {
   const totalPages = Math.ceil(totalTransactions / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
 
-  const handleFilterTypeChange = (e) => { setDateFilterType(e.target.value); setCurrentPage(1); };
-  const handleMonthChange = (e) => { setSelectedMonth(e.target.value); setCurrentPage(1); };
-  const handleStartDateChange = (e) => { setStartDate(e.target.value); setCurrentPage(1); };
-  const handleEndDateChange = (e) => { setEndDate(e.target.value); setCurrentPage(1); };
+  // ── When date range changes, reset to page 1 ──────────────────────────
+  const handleDateRangeChange = (range) => {
+    setDateRange(range);
+    setCurrentPage(1);
+  };
+
   const handleItemsPerPageChange = (e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); };
 
   const handleCategoryChange = (t, selectedValue) => {
     const previousCategory = t.category;
     const previousSubCategory = t.subCategory;
-    console.log('Transaction object:', JSON.stringify(t, null, 2)); // 👈 add this
+    console.log('Transaction object:', JSON.stringify(t, null, 2));
     let resolvedCategory = selectedValue;
     let resolvedSubCategory = null;
 
@@ -176,7 +166,6 @@ export default function Transactions() {
 
     const displayLabel = resolvedSubCategory || resolvedCategory || '';
 
-    // Use t.id for comparisons — the transaction object has no bankReference/bankType
     setTx(prev => prev.map(item =>
       item.id === t.id
         ? { ...item, category: displayLabel, subCategory: resolvedSubCategory }
@@ -190,8 +179,8 @@ export default function Transactions() {
     );
 
     api.patch(`/transactions/category`, {
-      AccountId: selectedAccountId,   // from useAccount() context, already in scope
-      BankReference: t.id,            // "GEN156323E5E94E"
+      AccountId: selectedAccountId,
+      BankReference: t.id,
       BankType: t.bankType,
       Category: resolvedCategory,
       SubCategory: resolvedSubCategory
@@ -211,17 +200,38 @@ export default function Transactions() {
     });
   };
 
-  const handleExportCSV = () => {
-    const params = new URLSearchParams({ pageSize: 0 });
+  const handleTagChange = (updatedTags) => {
+    const previousTags = selectedTx.tags;
 
-    if (dateFilterType === 'MONTH' && selectedMonth) {
-      const [year, month] = selectedMonth.split('-');
-      params.append('year', year);
-      params.append('month', month);
-    } else if (dateFilterType === 'CUSTOM') {
-      if (startDate) params.append('startDate', startDate);
-      if (endDate) params.append('endDate', endDate);
-    }
+    setSelectedTx(prev => ({ ...prev, tags: updatedTags }));
+    setTx(prev => prev.map(item =>
+      item.id === selectedTx.id ? { ...item, tags: updatedTags } : item
+    ));
+
+    api.patch(`/transactions/tags`, {
+      AccountId: selectedAccountId,
+      BankReference: selectedTx.id,
+      BankType: selectedTx.bankType,
+      Tags: updatedTags
+    }).catch(err => {
+      console.error("Failed to update tags", err);
+      alert("Failed to update tags. Please try again.");
+      setSelectedTx(prev => ({ ...prev, tags: previousTags }));
+      setTx(prev => prev.map(item =>
+        item.id === selectedTx.id ? { ...item, tags: previousTags } : item
+      ));
+    });
+  };
+
+  const handleRemoveTag = (tagToRemove) => {
+    handleTagChange((selectedTx.tags || []).filter(t => t !== tagToRemove));
+  };
+
+  const handleExportCSV = () => {
+    const { start: startDate, end: endDate } = dateRange;
+    const params = new URLSearchParams({ pageSize: 0 });
+    if (startDate) params.append('startDate', toLocalDate(startDate));
+    if (endDate)   params.append('endDate',   toLocalDate(endDate));
 
     api.get(`/statements/${selectedAccountId}?${params.toString()}`)
       .then(res => {
@@ -261,10 +271,6 @@ export default function Transactions() {
       });
   };
 
-  // Build the category <select> options from the API response.
-  // Each category from the API is: { id, name, subCategories: string[] }
-  // - If it has subcategories → render an <optgroup> with each sub as an <option>
-  // - If it has no subcategories → render a plain <option> using the category name
   const renderCategoryOptions = () => (
     <>
       <option value="">Uncategorized</option>
@@ -295,31 +301,14 @@ export default function Transactions() {
             <FiDownload size={14} /> Export CSV
           </button>
 
-          {/* Date Filter Controls */}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', background: '#f9fafb', padding: '6px 12px', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#4b5563' }}>Filter:</span>
-            <select
-              value={dateFilterType}
-              onChange={handleFilterTypeChange}
-              style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none' }}
-            >
-              <option value="ALL">All Time</option>
-              <option value="MONTH">By Month</option>
-              <option value="CUSTOM">Custom Range</option>
-            </select>
-
-            {dateFilterType === 'MONTH' && (
-              <input type="month" value={selectedMonth} onChange={handleMonthChange} style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none' }} />
-            )}
-
-            {dateFilterType === 'CUSTOM' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input type="date" value={startDate} onChange={handleStartDateChange} style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none' }} />
-                <span style={{ fontSize: '12px', color: '#6b7280' }}>to</span>
-                <input type="date" value={endDate} onChange={handleEndDateChange} style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none' }} />
-              </div>
-            )}
-          </div>
+          {/* ── DateRangePicker replaces the old filter controls ─────── */}
+          <DateRangePicker
+            value={dateRange}
+            onChange={handleDateRangeChange}
+            showTime={false}
+            placeholder="Filter by date range"
+            size="sm"
+          />
 
           <div className="badge blue" style={{ padding: '10px 18px', fontSize: '13px', fontWeight: 700 }}>
             {totalTransactions} Total Transactions
@@ -336,12 +325,19 @@ export default function Transactions() {
               <th>Debit</th>
               <th>Credit</th>
               <th>Category</th>
+              <th>Tags</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {tx.map((t, index) => (
-              <tr key={t.id || index} onClick={() => setSelectedTx(t)} style={{ cursor: 'pointer', transition: 'background-color 0.2s' }} onMouseOver={e => e.currentTarget.style.backgroundColor = '#f9fafb'} onMouseOut={e => e.currentTarget.style.backgroundColor = ''}>
+              <tr
+                key={t.id || index}
+                onClick={() => setSelectedTx(t)}
+                style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
+                onMouseOver={e => e.currentTarget.style.backgroundColor = '#f9fafb'}
+                onMouseOut={e => e.currentTarget.style.backgroundColor = ''}
+              >
                 <td style={{ fontWeight: 600 }}>{new Date(t.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                 <td style={{ fontWeight: 600 }}>{t.merchant}</td>
                 <td className="text-red">{t.debit ? `₹${t.debit.toLocaleString('en-IN')}` : "-"}</td>
@@ -350,21 +346,27 @@ export default function Transactions() {
                   <select
                     value={t.subCategory || t.category || ''}
                     onChange={(e) => handleCategoryChange(t, e.target.value)}
-                    style={{
-                      padding: '3px 6px', borderRadius: '4px', border: '1px solid #d1d5db',
-                      fontSize: '12px', color: t.category ? '#374151' : '#9ca3af', background: '#fff'
-                    }}
+                    style={{ padding: '3px 6px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '12px', color: t.category ? '#374151' : '#9ca3af', background: '#fff' }}
                   >
                     {renderCategoryOptions()}
                   </select>
+                </td>
+                <td>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {(t.tags || []).map(tag => (
+                      <span key={tag} style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 7px', borderRadius: '10px', fontSize: '11px', fontWeight: 600 }}>
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
                 </td>
                 <td><span className="badge green">Completed</span></td>
               </tr>
             ))}
             {tx.length === 0 && (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af', fontStyle: 'italic' }}>
-                  No transactions found for the selected account.
+                <td colSpan="7" style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af', fontStyle: 'italic' }}>
+                  No transactions found for the selected filters.
                 </td>
               </tr>
             )}
@@ -401,21 +403,13 @@ export default function Transactions() {
           </div>
           {totalPages > 1 && (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                className="btn small"
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              >
+              <button className="btn small" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
                 Previous
               </button>
               <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', padding: '0 8px' }}>
                 Page {currentPage} of {totalPages}
               </span>
-              <button
-                className="btn small"
-                disabled={currentPage >= totalPages || totalPages === 0}
-                onClick={() => setCurrentPage(p => Math.min(totalPages || 1, p + 1))}
-              >
+              <button className="btn small" disabled={currentPage >= totalPages || totalPages === 0} onClick={() => setCurrentPage(p => Math.min(totalPages || 1, p + 1))}>
                 Next
               </button>
             </div>
@@ -426,13 +420,10 @@ export default function Transactions() {
       {/* RHS Sidebar Overlay */}
       {selectedTx && (
         <>
-          {/* Backdrop */}
           <div
             onClick={() => setSelectedTx(null)}
             style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 999 }}
           />
-
-          {/* Sidebar */}
           <div style={{
             position: 'fixed', top: 0, right: 0, bottom: 0, width: `${sidebarWidth}px`, maxWidth: '100vw',
             backgroundColor: '#fff', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)',
@@ -441,11 +432,7 @@ export default function Transactions() {
             {/* Resize Handle */}
             <div
               onMouseDown={() => setIsResizing(true)}
-              style={{
-                position: 'absolute', left: 0, top: 0, bottom: 0, width: '6px',
-                cursor: 'ew-resize', backgroundColor: isResizing ? '#3b82f6' : 'transparent',
-                zIndex: 1001, transition: 'background-color 0.2s'
-              }}
+              style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '6px', cursor: 'ew-resize', backgroundColor: isResizing ? '#3b82f6' : 'transparent', zIndex: 1001, transition: 'background-color 0.2s' }}
             />
 
             {/* Header */}
@@ -492,15 +479,51 @@ export default function Transactions() {
                     <select
                       value={selectedTx.subCategory || selectedTx.category || ''}
                       onChange={(e) => handleCategoryChange(selectedTx, e.target.value)}
-                      style={{
-                        padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db',
-                        fontSize: '13px', color: selectedTx.category ? '#374151' : '#9ca3af',
-                        background: '#fff', width: '100%'
-                      }}
+                      style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', color: selectedTx.category ? '#374151' : '#9ca3af', background: '#fff', width: '100%' }}
                     >
                       {renderCategoryOptions()}
                     </select>
                   </div>
+                </div>
+
+                <div style={{ gridColumn: 'span 2' }}>
+                  <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Tags</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                    {(selectedTx.tags || []).map(tag => (
+                      <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
+                        #{tag}
+                        <span onClick={() => handleRemoveTag(tag)} style={{ cursor: 'pointer', color: '#93c5fd', fontWeight: 700, fontSize: '14px', lineHeight: 1 }}>×</span>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    list={`tags-list-${selectedTx.id}`}
+                    placeholder="+ Add a tag"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.target.value.trim()) {
+                        const newTag = e.target.value.trim().toLowerCase();
+                        const currentTags = selectedTx.tags || [];
+                        if (!currentTags.includes(newTag)) handleTagChange([...currentTags, newTag]);
+                        e.target.value = '';
+                        e.preventDefault();
+                      }
+                    }}
+                    onChange={(e) => {
+                      const matched = tags.find(t => t.name.toLowerCase() === e.target.value.toLowerCase());
+                      if (matched) {
+                        const currentTags = selectedTx.tags || [];
+                        if (!currentTags.includes(matched.name)) handleTagChange([...currentTags, matched.name]);
+                        e.target.value = '';
+                      }
+                    }}
+                    style={{ marginTop: '8px', width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                  <datalist id={`tags-list-${selectedTx.id}`}>
+                    {tags.filter(tag => !(selectedTx.tags || []).includes(tag.name)).map(tag => (
+                      <option key={tag.id} value={tag.name} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
             </div>

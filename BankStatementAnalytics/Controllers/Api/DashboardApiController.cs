@@ -95,6 +95,89 @@ namespace BankStatementAnalytics.Controllers.Api
                 return StatusCode(500, "Internal server error while fetching dashboard data.");
             }
         }
+        [HttpGet("insights")]
+        public async Task<IActionResult> GetInsights(
+    [FromQuery] string accountIds,
+    [FromQuery] DateTime? startDate = null,
+    [FromQuery] DateTime? endDate = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(accountIds))
+                    return BadRequest("accountIds is required.");
+
+                var ids = accountIds.Split(',')
+                    .Select(s => long.TryParse(s.Trim(), out var id) ? id : 0)
+                    .Where(id => id > 0)
+                    .ToList();
+
+                if (!ids.Any())
+                    return BadRequest("No valid accountIds provided.");
+
+                using var session = DbHelper.GetSession();
+
+                var query = session.Query<BankTransaction>()
+                    .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
+
+                if (startDate.HasValue)
+                    query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+
+                if (endDate.HasValue)
+                    query = query.Where(t => t.TransactionDate <= endDate.Value.Date.AddDays(1).AddTicks(-1));
+
+                var transactions = await query
+                    .Fetch(t => t.CounterParty)
+                    .ToListAsync();
+
+                // By Category
+                var byCategory = transactions
+                    .GroupBy(t => t.CategoryOverride ?? t.CounterParty?.Category ?? "Uncategorized")
+                    .Select(g => new
+                    {
+                        name = g.Key,
+                        total = g.Sum(t => t.Debit),
+                        count = g.Count()
+                    })
+                    .OrderByDescending(x => x.total)
+                    .ToList();
+
+                // By Merchant
+                var byMerchant = transactions
+                    .Where(t => t.CounterParty != null)
+                    .GroupBy(t => t.CounterParty!.Name)
+                    .Select(g => new
+                    {
+                        name = g.Key,
+                        total = g.Sum(t => t.Debit),
+                        count = g.Count()
+                    })
+                    .OrderByDescending(x => x.total)
+                    .Take(20)
+                    .ToList();
+
+                // By Tag
+                var byTag = transactions
+                    .Where(t => !string.IsNullOrWhiteSpace(t.Tags))
+                    .SelectMany(t => t.Tags!.Split(',')
+                        .Select(tag => new { tag = tag.Trim(), t.Debit }))
+                    .GroupBy(x => x.tag)
+                    .Select(g => new
+                    {
+                        name = g.Key,
+                        total = g.Sum(x => x.Debit),
+                        count = g.Count()
+                    })
+                    .OrderByDescending(x => x.total)
+                    .ToList();
+
+                return Ok(new { byCategory, byMerchant, byTag });
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex);
+                return StatusCode(500, "Internal server error");
+            }
+        }
     }
 
     // Helper class for unified transaction data

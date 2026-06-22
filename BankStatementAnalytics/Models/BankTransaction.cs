@@ -39,7 +39,7 @@
         public virtual string? UpiVpa { get; set; }
         public virtual string? CategoryOverride { get; set; }
         public virtual string? SubCategoryOverride { get; set; }
-
+        public virtual string? Tags { get; set; } // comma-separated e.g. "food,rent,bills"
         public override bool Equals(object? obj)
         {
             if (obj is not BankTransaction other) return false;

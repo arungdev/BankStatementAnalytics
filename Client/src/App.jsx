@@ -17,6 +17,7 @@ import UploadStatement from "./pages/UploadStatement";
 import Trends from "./pages/Trends";
 import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
+import Insights from "./pages/Insights";
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/merchants" element={<Merchants />} />
           <Route path="/upload" element={<UploadStatement />} />
+          <Route path="/insights" element={<Insights />} />
         </Route>
       </Routes>
     </BrowserRouter>
@@ -66,6 +68,8 @@ function Layout() {
         return "Merchants";
       case "/upload":
         return "Upload Statement";
+      case "/insights":
+        return "Insights";
       default:
         return "Dashboard";
     }

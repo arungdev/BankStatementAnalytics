@@ -101,7 +101,8 @@ namespace BankStatementAnalytics.Controllers.Api
                     Balance = t.Balance,
                     BankType = bankType,
                     Category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
-                    SubCategory = t.SubCategoryOverride ?? (t.CounterParty != null ? t.CounterParty.SubCategory : null)
+                    SubCategory = t.SubCategoryOverride ?? (t.CounterParty != null ? t.CounterParty.SubCategory : null),
+                    Tags = t.Tags != null ? t.Tags.Split(',').ToList() : new List<string>() // ← add this
                 }).ToListAsync();
 
                 return Ok(new
