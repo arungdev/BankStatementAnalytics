@@ -178,6 +178,79 @@ namespace BankStatementAnalytics.Controllers.Api
                 return StatusCode(500, "Internal server error");
             }
         }
+        [HttpGet("insights/transactions")]
+        public async Task<IActionResult> GetInsightTransactions(
+    [FromQuery] string accountIds,
+    [FromQuery] string groupBy,
+    [FromQuery] string groupValue,
+    [FromQuery] DateTime? startDate = null,
+    [FromQuery] DateTime? endDate = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(accountIds))
+                    return BadRequest("accountIds is required.");
+
+                var ids = accountIds.Split(',')
+                    .Select(s => long.TryParse(s.Trim(), out var id) ? id : 0)
+                    .Where(id => id > 0)
+                    .ToList();
+
+                if (!ids.Any())
+                    return BadRequest("No valid accountIds provided.");
+
+                using var session = DbHelper.GetSession();
+
+                // Build IQueryable<BankTransaction> first — no Fetch yet
+                IQueryable<BankTransaction> query = session.Query<BankTransaction>()
+                    .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
+
+                if (startDate.HasValue)
+                    query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+
+                if (endDate.HasValue)
+                    query = query.Where(t => t.TransactionDate <= endDate.Value.Date.AddDays(1).AddTicks(-1));
+
+                // Apply Fetch at the end, after all Where clauses
+                var transactions = await query
+                    .Fetch(t => t.CounterParty)
+                    .ToListAsync();
+
+                // Filter in-memory by the clicked group
+                IEnumerable<BankTransaction> filtered = groupBy switch
+                {
+                    "byCategory" => transactions.Where(t =>
+                        (t.CategoryOverride ?? t.CounterParty?.Category ?? "Uncategorized") == groupValue),
+
+                    "byMerchant" => transactions.Where(t =>
+                        t.CounterParty?.Name == groupValue),
+
+                    "byTag" => transactions.Where(t =>
+                        !string.IsNullOrWhiteSpace(t.Tags) &&
+                        t.Tags.Split(',').Select(tag => tag.Trim()).Contains(groupValue)),
+
+                    _ => Enumerable.Empty<BankTransaction>()
+                };
+
+                var result = filtered
+                    .OrderByDescending(t => t.TransactionDate)
+                    .Select(t => new {
+                        id = t.BankReference,
+                        date = t.TransactionDate,
+                        description = t.CounterParty?.Name ?? t.BankReference,
+                        accountId = t.AccountId,
+                        amount = t.Debit
+                    })
+                    .ToList();
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex);
+                return StatusCode(500, "Internal server error");
+            }
+        }
     }
 
     // Helper class for unified transaction data

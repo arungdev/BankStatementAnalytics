@@ -308,6 +308,7 @@ export default function Transactions() {
             showTime={false}
             placeholder="Filter by date range"
             size="sm"
+            align="right"
           />
 
           <div className="badge blue" style={{ padding: '10px 18px', fontSize: '13px', fontWeight: 700 }}>
