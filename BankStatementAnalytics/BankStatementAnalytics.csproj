@@ -19,7 +19,6 @@
 	<ItemGroup>
 		<ProjectReference Include="..\Common.Framework\Common.Framework.csproj" />
 	</ItemGroup>
-
 	<ItemGroup>
     <Folder Include="Views\Shared\" />
     <Folder Include="Views\Statement\" />
@@ -34,7 +33,13 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
+	<!--
+	<ItemGroup>
+		<Content Update="wwwroot\**">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+-->
   <!-- Automatically build the React client and output to wwwroot only in Release (production) mode -->
   <Target Name="BuildReactClient" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <Message Importance="high" Text="Installing npm dependencies and building React client..." />

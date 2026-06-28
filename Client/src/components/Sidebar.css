@@ -1,157 +1,238 @@
+/* ── Base ── */
 .sidebar {
-    width: 260px;
-    background: #111827; /* Dark background */
-    flex-shrink: 0;
-    color: #d1d5db; /* Light gray text */
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    padding: 16px;
-    box-sizing: border-box;
-    border-right: 1px solid #1f2937;
-  }
-  
-  .sidebar-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px;
-    font-size: 20px;
-    font-weight: 600;
-    color: #fff;
-    margin-bottom: 24px;
-    flex-shrink: 0;
-  }
+  background: #111827;
+  flex-shrink: 0;
+  color: #d1d5db;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-right: 1px solid #1f2937;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+.sidebar--open   { width: 260px; }
+.sidebar--closed { width: 72px; }
 
-  .sidebar-header .brand-icon {
-    background-color: #374151;
-    border-radius: 6px;
-    padding: 6px;
-    display: flex;
-    align-items: center;
-  }
-  
-  .sidebar-nav ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  
-  .sidebar-nav li {
-    font-size: 15px;
-    margin-bottom: 8px;
-  }
-  
-  .nav-item-header {
-    display: flex;
-    align-items: center;
-    padding: 12px 16px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.2s, color 0.2s;
-    text-decoration: none;
-    color: #d1d5db;
-    font-weight: 500;
-  }
-  
-  .nav-item-header:hover {
-    background: #374151; /* Darker gray on hover */
-    color: #fff;
-  }
-  
-  .nav-item-header.active {
-      background: #4f46e5; /* Active color */
-      color: #fff;
-  }
-  
-  .nav-item-header svg {
-    margin-right: 12px;
-    font-size: 18px;
-  }
-  
-  .nav-item-header .chevron {
-    margin-left: auto;
-  }
-  
-  .submenu {
-    list-style: none;
-    padding-left: 24px; /* Indent submenu */
-    margin-top: 8px;
-  }
-  
-  .submenu li a {
-    display: block;
-    padding: 10px 16px;
-    padding-left: 30px; /* Further indent */
-    border-radius: 8px;
-    text-decoration: none;
-    color: #9ca3af; /* Dimmer color for submenu items */
-    position: relative;
-    font-size: 14px;
-  }
-  
-  .submenu li a:hover {
-    background: #374151;
-    color: #fff;
-  }
-  
-  .submenu li a.active {
-    color: #fff;
-    font-weight: 600;
-    background: #1f2937;
-  }
+/* ── Header ── */
+.sidebar-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 8px;
+  border-bottom: 1px solid #1f2937;
+  height: 56px;
+}
 
-  /* Account Section */
-  .sidebar-section {
-    margin-top: auto; /* Pushes this section to the bottom */
-    padding-top: 24px;
-    border-top: 1px solid #1f2937;
-  }
+.sidebar--open .sidebar-header {
+  justify-content: flex-start;
+}
 
-  .sidebar-section-title {
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #6b7280;
-    margin: 0 16px 8px;
-  }
+.sidebar--closed .sidebar-header {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: auto;
+  min-height: 76px;
+  padding: 12px 0;
+  gap: 8px;
+}
 
-  .account-item-placeholder {
-    padding: 12px 16px;
-    font-size: 14px;
-    color: #6b7280;
-  }
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  background-color: #6366f1;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
 
-  .account-select {
-    width: 100%;
-    background-color: #1f2937;
-    color: #d1d5db;
-    border: 1px solid #374151;
-    border-radius: 8px;
-    padding: 10px 12px;
-    font-size: 14px;
-    cursor: pointer;
-  }
+.brand-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  flex: 1;
+  overflow: hidden;
+}
 
-  .sidebar-add-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    margin-top: 16px;
-    padding: 10px 16px;
-    background-color: #374151;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
+.sidebar-toggle {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  flex-shrink: 0;
+  background: #374151;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar--open .sidebar-toggle { margin-left: auto; }
+.sidebar-toggle:hover { background: #4b5563; color: #fff; }
 
-  .sidebar-add-btn:hover {
-    background-color: #4b5563;
-  }
+/* ── Nav ── */
+.sidebar-nav {
+  flex: 1;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.sidebar-nav ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-nav li { margin: 0; }
+
+.nav-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+  color: #d1d5db;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  width: 100%;
+  border: none;
+  background: none;
+  box-sizing: border-box;
+}
+.nav-item-header:hover  { background: #1f2937; color: #fff; }
+.nav-item-header.active { background: #6366f1; color: #fff; }
+.nav-item-header svg    { flex-shrink: 0; }
+.nav-item-header .chevron { margin-left: auto; }
+
+.sidebar--closed .nav-item-header {
+  justify-content: center;
+  padding: 9px 0;
+  gap: 0;
+  width: 100%;
+}
+
+/* ── Submenu ── */
+.submenu {
+  list-style: none;
+  padding: 1px 0 1px 32px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.submenu li a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #9ca3af;
+  font-size: 13px;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.submenu li a:hover  { background: #1f2937; color: #fff; }
+.submenu li a.active { background: #312e81; color: #c7d2fe; font-weight: 500; }
+
+/* Compact submenu */
+.submenu--compact {
+  padding: 1px 0;
+}
+.submenu--compact li a {
+  justify-content: center;
+  padding: 9px 0;
+}
+.submenu--compact li a svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Account section ── */
+.sidebar-section {
+  padding: 12px 8px;
+  border-top: 1px solid #1f2937;
+}
+
+.sidebar-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  margin: 0 2px 6px;
+}
+
+.account-item-placeholder {
+  padding: 8px 4px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.account-select {
+  width: 100%;
+  background-color: #1f2937;
+  color: #d1d5db;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.account-select:focus { outline: none; border-color: #6366f1; }
+
+/* ── Add button ── */
+.sidebar-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 8px 14px;
+  padding: 9px 10px;
+  width: calc(100% - 16px);
+  background-color: #1f2937;
+  color: #d1d5db;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.sidebar-add-btn:hover { background-color: #374151; color: #fff; }
+
+.sidebar--closed .sidebar-add-btn {
+  width: 48px;
+  margin: 0 auto 14px;
+  padding: 9px 0;
+}
+
+.sidebar--closed .sidebar-add-btn {
+  width: 44px;
+  margin: 0 auto 14px;
+  padding: 9px 0;
+  position: relative;
+  left: 0;
+  right: 0;
+}

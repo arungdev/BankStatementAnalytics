@@ -1,23 +1,42 @@
 import { useEffect, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import api from "../api/client";
 import { useAccount } from "../context/useAccount";
 import { FiDownload } from "react-icons/fi";
-// ── Replaced native date inputs with custom DateRangePicker ──────────────
-import DateRangePicker from "../components/DateRangePicker"; // adjust path as needed
+// ── Same DateRangePicker component used on Insights/Trends ──────────────
+import DateRangePicker from "../components/Daterangepicker";
+import { FilterGroup } from "../components/PageHeader";
+
+/* ─── TransactionsFilters — rendered in Layout's PageHeader filter row ──── */
+export function TransactionsFilters({ dateRange, setDateRange }) {
+  return (
+    <FilterGroup label="Period" style={{ position: 'relative', zIndex: 500 }}>
+      <DateRangePicker
+        value={dateRange}
+        onChange={setDateRange}
+        showTime={false}
+        align="left"
+        placeholder="All Time"
+      />
+    </FilterGroup>
+  );
+}
 
 export default function Transactions() {
   const { selectedAccountId, selectedAccount } = useAccount();
   console.log('selectedAccount:', selectedAccount);
+
+  // ── Date filter now lives in Layout, shared with the header row ───────
+  const {
+    transactionsRange: dateRange = { start: null, end: null, preset: 'ALL' },
+  } = useOutletContext() ?? {};
+
   const [tx, setTx] = useState([]);
   const [loading, setLoading] = useState(!selectedAccountId);
   const [totalTransactions, setTotalTransactions] = useState(0);
 
   // Categories from API
   const [categories, setCategories] = useState([]);
-
-  // ── Date filter state — now driven by DateRangePicker ─────────────────
-  // dateRange holds { start: Date|null, end: Date|null, preset: string }
-  const [dateRange, setDateRange] = useState({ start: null, end: null, preset: 'ALL' });
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -65,6 +84,12 @@ export default function Transactions() {
   // ── Helper: Date → "yyyy-MM-dd" string in local time ──────────────────
   const toLocalDate = (d) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  // ── Date range now changes from the header — reset to page 1 when it does ──
+  useEffect(() => {
+    setCurrentPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange.start, dateRange.end]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -135,12 +160,6 @@ export default function Transactions() {
   // Pagination logic
   const totalPages = Math.ceil(totalTransactions / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-
-  // ── When date range changes, reset to page 1 ──────────────────────────
-  const handleDateRangeChange = (range) => {
-    setDateRange(range);
-    setCurrentPage(1);
-  };
 
   const handleItemsPerPageChange = (e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); };
 
@@ -290,30 +309,17 @@ export default function Transactions() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <h1 style={{ marginBottom: 0 }}>All Transactions</h1>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+      {/* ── Action strip — title/date-filter now live in the shared header ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+        <button
+          onClick={handleExportCSV}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', color: '#374151', fontWeight: 500 }}
+        >
+          <FiDownload size={14} /> Export CSV
+        </button>
 
-          <button
-            onClick={handleExportCSV}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', color: '#374151', fontWeight: 500 }}
-          >
-            <FiDownload size={14} /> Export CSV
-          </button>
-
-          {/* ── DateRangePicker replaces the old filter controls ─────── */}
-          <DateRangePicker
-            value={dateRange}
-            onChange={handleDateRangeChange}
-            showTime={false}
-            placeholder="Filter by date range"
-            size="sm"
-            align="right"
-          />
-
-          <div className="badge blue" style={{ padding: '10px 18px', fontSize: '13px', fontWeight: 700 }}>
-            {totalTransactions} Total Transactions
-          </div>
+        <div className="badge blue" style={{ padding: '10px 18px', fontSize: '13px', fontWeight: 700 }}>
+          {totalTransactions} Total Transactions
         </div>
       </div>
 

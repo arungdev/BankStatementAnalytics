@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import api from '../api/client';
 
 export default function CreateAccount({ onClose, onCreate }) {
-  const [holder, setHolder]   = useState('');
-  const [number, setNumber]   = useState('');
-  const [bank, setBank]       = useState('');
-  const [banks, setBanks]     = useState([]);
+  const [holder, setHolder] = useState('');
+  const [number, setNumber] = useState('');
+  const [bank, setBank] = useState('');
+  const [banks, setBanks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving]   = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     api.get('/accounts/banks')
@@ -43,7 +43,13 @@ export default function CreateAccount({ onClose, onCreate }) {
     <form onSubmit={submit}>
       <div>
         <label>Holder Name</label>
-        <input value={holder} onChange={e => setHolder(e.target.value)} required />
+        <input
+          value={holder}
+          onChange={e => setHolder(e.target.value.slice(0, 50))}
+          maxLength={25}
+          placeholder="e.g. John Doe"
+          required
+        />
       </div>
       <div>
         <label>Account Number (last 4 digits)</label>

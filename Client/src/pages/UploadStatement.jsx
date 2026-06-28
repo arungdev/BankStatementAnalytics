@@ -166,7 +166,7 @@ export default function UploadStatement() {
                 <option value="">Select an account...</option>
                 {accounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.bankName} - {acc.maskedAccountNumber || acc.accountNumber || "****"}
+                 {acc.accountHolderName} · {acc.bankName} - {acc.accountNumber || acc.maskedAccountNumber || "****"}
                   </option>
                 ))}
               </select>

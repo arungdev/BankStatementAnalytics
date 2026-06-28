@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import api from '../api/client';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
 import DateRangePicker from '../components/Daterangepicker';
+import { FilterGroup, FilterPill } from '../components/PageHeader';
 
 /* ─── Design tokens ─────────────────────────────────────────────────────── */
 const T = {
@@ -122,7 +124,6 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
     }}>
       {open && (
         <>
-          {/* ── Header ── */}
           <div style={{ padding: '20px 20px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '14px' }}>
               <div>
@@ -146,8 +147,6 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
                 }}
               >✕</button>
             </div>
-
-            {/* Mini stat pills */}
             <div style={{ display: 'flex', gap: '8px' }}>
               {[
                 { label: 'Total',        value: fmt.format(total) },
@@ -168,7 +167,6 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
             </div>
           </div>
 
-          {/* ── Transaction list ── */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {loading ? (
               <div style={{ padding: '48px 20px', textAlign: 'center' }}>
@@ -206,7 +204,6 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
                   onMouseEnter={e => e.currentTarget.style.background = T.bg}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  {/* Icon circle */}
                   <div style={{
                     width: '36px', height: '36px', borderRadius: '10px',
                     background: T.indigoDim, display: 'flex', alignItems: 'center',
@@ -214,8 +211,6 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
                   }}>
                     💳
                   </div>
-
-                  {/* Details */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{
                       margin: 0, fontSize: '13px', fontWeight: 600, color: T.text,
@@ -228,8 +223,6 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
                       {accountMap[tx.accountId] ? ` · ${accountMap[tx.accountId]}` : ''}
                     </p>
                   </div>
-
-                  {/* Amount */}
                   <p style={{
                     margin: 0, fontSize: '13px', fontWeight: 700,
                     color: T.red, flexShrink: 0,
@@ -241,7 +234,6 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
             )}
           </div>
 
-          {/* ── Footer ── */}
           <div style={{
             padding: '12px 20px', borderTop: `1px solid ${T.border}`,
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -268,12 +260,223 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
   );
 };
 
+/* ─── Accounts Multi-Select Dropdown ───────────────────────────────────── */
+function AccountsDropdown({ accounts, selectedAccountIds, toggleAccount }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const allSelected = accounts.length > 0 && selectedAccountIds.length === accounts.length;
+  const noneSelected = selectedAccountIds.length === 0;
+
+  const toggleAll = () => {
+    if (allSelected) {
+      accounts.forEach(a => {
+        if (selectedAccountIds.includes(a.id)) toggleAccount(a.id);
+      });
+    } else {
+      accounts.forEach(a => {
+        if (!selectedAccountIds.includes(a.id)) toggleAccount(a.id);
+      });
+    }
+  };
+
+  const getLast4 = (acc) =>
+    acc.accountNumber?.slice(-4)
+    ?? acc.maskedAccountNumber?.replace(/X/gi, '').slice(-4)
+    ?? '????';
+
+  /* Trigger label */
+  const triggerLabel = allSelected
+    ? 'All accounts'
+    : noneSelected
+    ? 'Select accounts'
+    : `${selectedAccountIds.length} of ${accounts.length} accounts`;
+
+  /* Trigger style — highlighted when any selection is active */
+  const triggerActive = !noneSelected;
+
+  return (
+    <FilterGroup label="Accounts">
+      <div ref={ref} style={{ position: 'relative' }}>
+
+        {/* ── Trigger button ── */}
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: '12px', fontWeight: 700,
+            color:      triggerActive ? T.indigoDark : T.muted,
+            background: triggerActive ? T.indigoDim  : T.bg,
+            border:     triggerActive ? `1.5px solid #c7d2fe` : `1px solid ${T.border}`,
+            borderRadius: '8px', padding: '5px 12px',
+            cursor: 'pointer', whiteSpace: 'nowrap',
+            transition: 'all 0.15s',
+          }}
+        >
+          {/* Dot indicator when items selected */}
+          {triggerActive && (
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: T.indigo, flexShrink: 0, display: 'inline-block',
+            }} />
+          )}
+          {triggerLabel}
+          <span style={{
+            fontSize: 10,
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+            display: 'inline-block',
+            transition: 'transform 0.2s',
+          }}>▾</span>
+        </button>
+
+        {/* ── Dropdown panel ── */}
+        {open && (
+          <div style={{
+            position: 'absolute', top: 'calc(100% + 6px)', left: 0,
+            minWidth: '260px', background: T.surface,
+            border: `1px solid ${T.border}`, borderRadius: '12px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+            zIndex: 9999, overflow: 'hidden',
+          }}>
+
+            {/* Header row: count + select-all */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '10px 14px', borderBottom: `1px solid ${T.borderSub}`,
+              background: T.bg,
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {selectedAccountIds.length} selected
+              </span>
+              <button
+                onClick={toggleAll}
+                style={{
+                  fontSize: 11, fontWeight: 700,
+                  color: allSelected ? T.red : T.indigo,
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                }}
+              >
+                {allSelected ? 'Deselect all' : 'Select all'}
+              </button>
+            </div>
+
+            {/* Account rows */}
+            <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+              {accounts.map(acc => {
+                const active = selectedAccountIds.includes(acc.id);
+                const last4  = getLast4(acc);
+                return (
+                  <label
+                    key={acc.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 14px', cursor: 'pointer',
+                      background: active ? T.indigoDim : 'transparent',
+                      borderBottom: `1px solid ${T.borderSub}`,
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => { if (!active) e.currentTarget.style.background = T.bg; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = active ? T.indigoDim : 'transparent'; }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      onChange={() => toggleAccount(acc.id)}
+                      style={{ accentColor: T.indigo, width: 15, height: 15, cursor: 'pointer', flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: active ? T.indigoDark : T.text, flex: 1 }}>
+                      {acc.bankName}
+                    </span>
+                    <span style={{
+                      fontSize: 11, color: active ? T.indigoMid : T.faint,
+                      fontFamily: 'monospace', letterSpacing: '0.05em',
+                    }}>
+                      ···{last4}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* Footer: clear button */}
+            {!noneSelected && (
+              <div style={{ padding: '8px 14px', borderTop: `1px solid ${T.borderSub}`, background: T.bg }}>
+                <button
+                  onClick={() => {
+                    accounts.forEach(a => {
+                      if (selectedAccountIds.includes(a.id)) toggleAccount(a.id);
+                    });
+                  }}
+                  style={{
+                    fontSize: 11, fontWeight: 600, color: T.red,
+                    background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                  }}
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </FilterGroup>
+  );
+}
+
+/* ─── InsightsFilters — rendered in PageHeader's filter row ────────────── */
+export function InsightsFilters({
+  accounts, selectedAccountIds, toggleAccount,
+  range, setRange,
+  groupBy, setGroupBy,
+}) {
+  return (
+    <>
+      {/* Period */}
+      <FilterGroup label="Period" style={{ position: 'relative', zIndex: 500 }}>
+        <DateRangePicker
+          value={range}
+          onChange={setRange}
+          showTime={false}
+          align="left"
+          placeholder="All Time"
+        />
+      </FilterGroup>
+
+      {/* Group by */}
+      <FilterGroup label="Group by">
+        {GROUP_TABS.map(g => (
+          <FilterPill key={g.key} active={groupBy === g.key} onClick={() => setGroupBy(g.key)}>
+            {g.label}
+          </FilterPill>
+        ))}
+      </FilterGroup>
+
+      {/* Accounts — now a dropdown multiselect */}
+      <AccountsDropdown
+        accounts={accounts}
+        selectedAccountIds={selectedAccountIds}
+        toggleAccount={toggleAccount}
+      />
+    </>
+  );
+}
+
 /* ─── Main Component ────────────────────────────────────────────────────── */
 export default function Insights() {
-  const [accounts, setAccounts]              = useState([]);
-  const [selectedAccountIds, setSelectedIds] = useState([]);
-  const [range, setRange]                    = useState({ start: null, end: null, preset: 'ALL', label: 'All Time' });
-  const [groupBy, setGroupBy]                = useState('byCategory');
+  const {
+    insightAccounts:      accounts          = [],
+    insightSelectedIds:   selectedAccountIds = [],
+    insightRange:         range              = { start: null, end: null },
+    insightGroupBy:       groupBy            = 'byCategory',
+  } = useOutletContext() ?? {};
   const [insightsData, setInsightsData]      = useState(null);
   const [loading, setLoading]                = useState(false);
 
@@ -282,16 +485,6 @@ export default function Insights() {
   const [txList, setTxList]             = useState([]);
   const [txLoading, setTxLoading]       = useState(false);
   const [txError, setTxError]           = useState(null);
-
-  useEffect(() => {
-    api.get('/statements/accounts')
-      .then(res => {
-        const list = res.data || [];
-        setAccounts(list);
-        if (list.length > 0) setSelectedIds(list.map(a => a.id));
-      })
-      .catch(err => console.error('Failed to load accounts', err));
-  }, []);
 
   const fetchInsights = useCallback(() => {
     if (selectedAccountIds.length === 0) return;
@@ -307,9 +500,6 @@ export default function Insights() {
   }, [selectedAccountIds, range]);
 
   useEffect(() => { fetchInsights(); }, [fetchInsights]);
-
-  const toggleAccount = (id) =>
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
 
   const chartData     = insightsData?.[groupBy] || [];
   const grandTotal    = chartData.reduce((s, x) => s + x.total, 0);
@@ -360,7 +550,6 @@ export default function Insights() {
     setTxError(null);
   };
 
-  /* ── Styles ── */
   const s = {
     page: {
       padding: '28px 32px',
@@ -368,51 +557,9 @@ export default function Insights() {
       minHeight: '100vh',
       fontFamily: "'Inter', 'system-ui', sans-serif",
       transition: 'margin-right 0.28s cubic-bezier(0.4,0,0.2,1)',
+      overflow: 'visible',
     },
-    pageHeader: {
-      display: 'flex', justifyContent: 'space-between',
-      alignItems: 'flex-start', marginBottom: '24px',
-    },
-    title:    { margin: 0, fontSize: '22px', fontWeight: 800, color: T.text, letterSpacing: '-0.4px' },
-    subtitle: { margin: '4px 0 0', fontSize: '13px', color: T.muted },
-    tabs: {
-      display: 'flex', gap: '2px',
-      background: T.indigoDim, padding: '4px', borderRadius: '10px',
-    },
-    tab: (active) => ({
-      padding: '7px 18px', border: 'none', borderRadius: '8px',
-      cursor: 'pointer', fontSize: '13px', fontWeight: 700,
-      transition: 'all 0.18s ease',
-      background: active ? T.indigo : 'transparent',
-      color:      active ? T.white  : '#7c3aed',
-      boxShadow:  active ? '0 2px 8px rgba(79,70,229,0.3)' : 'none',
-    }),
-    statsRow:  { display: 'flex', gap: '16px', marginBottom: '20px' },
-    filterBar: {
-      display: 'flex', gap: '10px', flexWrap: 'wrap',
-      alignItems: 'center', marginBottom: '24px',
-      padding: '14px 18px',
-      background: T.surface,
-      borderRadius: '12px',
-      border: `1px solid ${T.border}`,
-      boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-    },
-    divider: { width: '1px', height: '24px', background: T.border, margin: '0 4px', flexShrink: 0 },
-    accChip: (active) => ({
-      display: 'flex', alignItems: 'center', gap: '5px',
-      cursor: 'pointer', padding: '5px 11px', borderRadius: '7px',
-      border: '1.5px solid',
-      borderColor: active ? T.indigo : T.border,
-      background:  active ? T.indigoDim : T.white,
-      fontSize: '12px', fontWeight: 700,
-      color: active ? T.indigo : T.muted,
-      transition: 'all 0.15s',
-      userSelect: 'none',
-    }),
-    dot: (color) => ({
-      width: '8px', height: '8px', borderRadius: '50%',
-      background: color, flexShrink: 0, boxShadow: `0 0 0 2px ${color}33`,
-    }),
+    statsRow: { display: 'flex', gap: '16px', marginBottom: '20px' },
     chartsGrid: {
       display: 'grid', gridTemplateColumns: '3fr 2fr',
       gap: '20px', marginBottom: '20px',
@@ -439,6 +586,10 @@ export default function Insights() {
       padding: '11px 14px', textAlign: right ? 'right' : 'left',
       borderBottom: `1px solid ${T.borderSub}`, verticalAlign: 'middle',
     }),
+    dot: (color) => ({
+      width: '8px', height: '8px', borderRadius: '50%',
+      background: color, flexShrink: 0, boxShadow: `0 0 0 2px ${color}33`,
+    }),
   };
 
   const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
@@ -451,28 +602,13 @@ export default function Insights() {
   );
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', overflow: 'visible' }}>
       <div style={{ ...s.page, flex: 1, marginRight: trayOpen ? '380px' : '0' }}>
         <style>{`
           @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
           @keyframes spin    { to { transform: rotate(360deg); } }
           .ins-row:hover { background: #fafbff !important; cursor: pointer; }
         `}</style>
-
-        {/* ── Page header ── */}
-        <div style={s.pageHeader}>
-          <div>
-            <h1 style={s.title}>Spending Insights</h1>
-            <p style={s.subtitle}>Understand where your money goes</p>
-          </div>
-          <div style={s.tabs}>
-            {GROUP_TABS.map(g => (
-              <button key={g.key} onClick={() => setGroupBy(g.key)} style={s.tab(groupBy === g.key)}>
-                {g.label}
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* ── Stat cards ── */}
         <div style={s.statsRow}>
@@ -500,44 +636,6 @@ export default function Insights() {
           />
         </div>
 
-        {/* ── Filter bar ── */}
-        <div style={s.filterBar}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Period
-            </span>
-            <DateRangePicker
-              value={range}
-              onChange={setRange}
-              showTime={false}
-              align="left"
-              placeholder="All Time"
-            />
-          </div>
-
-          <div style={s.divider} />
-
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Accounts
-            </span>
-            {accounts.map(acc => {
-              const active = selectedAccountIds.includes(acc.id);
-              const last4  = acc.accountNumber?.slice(-4)
-                          ?? acc.maskedAccountNumber?.replace(/X/gi, '')?.slice(-4)
-                          ?? '????';
-              return (
-                <label key={acc.id} style={s.accChip(active)}>
-                  <input type="checkbox" checked={active} onChange={() => toggleAccount(acc.id)} style={{ display: 'none' }} />
-                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: active ? T.indigo : T.border, flexShrink: 0 }} />
-                  {acc.bankName}
-                  <span style={{ opacity: 0.6, fontWeight: 500 }}>···{last4}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-
         {/* ── Content ── */}
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -561,8 +659,6 @@ export default function Insights() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-            {/* Charts row */}
             <div style={s.chartsGrid}>
               {/* Bar chart */}
               <div style={s.card}>

@@ -90,7 +90,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     return BadRequest();
 
                 // Mask account number before saving for safety
-                account.AccountNumber = Account.Mask(account.AccountNumber);
+                account.AccountNumber = account.AccountNumber;
 
                 await DbHelper.SaveAsync(account);
 

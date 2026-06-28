@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { useAccount } from '../context/useAccount';
 import api from '../api/client';
 import { Bar } from 'react-chartjs-2';
@@ -11,8 +12,9 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-// ── Replaced react-datepicker with your custom DateRangePicker ──────────
-import DateRangePicker from '../components/DateRangePicker'; // adjust path as needed
+// ── Same DateRangePicker component used on the Insights page ────────────
+import DateRangePicker from '../components/Daterangepicker';
+import { FilterGroup, FilterPill } from '../components/PageHeader';
 import './Trends.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -41,11 +43,36 @@ const formatShort = (v) => {
 
 const VISIBLE_GROUPS = 8;
 
-const Trends = () => {
-  const [period, setPeriod] = useState('week');
+/* ─── TrendsFilters — rendered in Layout's PageHeader filter row ───────── */
+export function TrendsFilters({ period, setPeriod, dateRange, setDateRange }) {
+  return (
+    <>
+      <FilterGroup label="Period" style={{ position: 'relative', zIndex: 500 }}>
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          showTime={false}
+          align="left"
+          placeholder="All Time"
+        />
+      </FilterGroup>
 
-  // ── Date range now uses the DateRangePicker shape ─────────────────────
-  const [dateRange, setDateRange] = useState({ start: null, end: null, preset: 'ALL' });
+      <FilterGroup label="View">
+        {['day', 'week', 'month'].map(p => (
+          <FilterPill key={p} active={period === p} onClick={() => setPeriod(p)}>
+            {p.charAt(0).toUpperCase() + p.slice(1)}
+          </FilterPill>
+        ))}
+      </FilterGroup>
+    </>
+  );
+}
+
+const Trends = () => {
+  const {
+    trendsPeriod: period       = 'week',
+    trendsRange:  dateRange    = { start: null, end: null, preset: 'ALL' },
+  } = useOutletContext() ?? {};
 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -327,26 +354,6 @@ const Trends = () => {
 
   return (
     <div className="trends-container">
-
-      {/* Header */}
-      <div className="trends-header">
-        {/* ── Custom DateRangePicker replaces react-datepicker ───────── */}
-        <DateRangePicker
-          value={dateRange}
-          onChange={setDateRange}
-          showTime={false}
-          placeholder="Filter by date range"
-          size="sm"
-        />
-
-        <div className="filter-group">
-          {['day', 'week', 'month'].map(p => (
-            <button key={p} onClick={() => setPeriod(p)} className={period === p ? 'active' : ''}>
-              {p.charAt(0).toUpperCase() + p.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Summary cards */}
       <div className="summary-stats">
