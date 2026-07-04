@@ -5,3 +5,8 @@ Client/node_modules/
 /BankStatementAnalytics/bin/Debug/net10.0
 /BankStatementAnalytics/obj
 /.vs/ProjectEvaluation
+/.vs
+/BankStatementAnalytics/bin/Release/net10.0
+/BankStatementAnalytics/Uploads
+/Publish
+/Setup

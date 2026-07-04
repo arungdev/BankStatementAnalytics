@@ -5,12 +5,19 @@ using BankStatementAnalytics.Services;
 using BankStatementAnalytics.Services.Parser;
 using System.Text.Json.Serialization;
 using Common.Framework.Logging;
+using Common.Framework.Web;
 using System;
+using System.Threading;
 
 var builder = WebApplication.CreateBuilder(args);
 
 Log.Initialize("log4net.config");
 Log.Info(AppContext.BaseDirectory);
+
+// Named mutex so the Inno Setup installer (AppMutex) can detect a running
+// instance and prompt to close it before install/uninstall. Held in a static
+// field so it isn't garbage-collected while the app runs.
+AppMutexHolder.Handle = new Mutex(false, "Global\\BankStatementAnalytics.exe");
 // MVC
 builder.Services.AddControllersWithViews();
 
@@ -48,19 +55,8 @@ var app = builder.Build();
 
 app.UseCors("React");
 
-// Global Error Logging Middleware
-app.Use(async (context, next) =>
-{
-    try
-    {
-        await next();
-    }
-    catch (Exception ex)
-    {
-        Log.Error($"Unhandled API exception: {context.Request.Method} {context.Request.Path}", ex);
-        throw;
-    }
-});
+// Global exception handling: logs unhandled exceptions and returns a 500 response.
+app.UseApiExceptionHandling();
 
 // Initialize NHibernate
 _ = NHibernateHelper.SessionFactory;
@@ -87,3 +83,8 @@ app.MapControllers();
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+internal static class AppMutexHolder
+{
+    public static Mutex? Handle;
+}
