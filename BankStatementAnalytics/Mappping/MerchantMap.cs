@@ -13,11 +13,13 @@ namespace BankStatementAnalytics.Mapping
 
             Id(x => x.Id, m => m.Generator(Generators.Identity));
 
-            Property(x => x.Name, m => { m.Length(250); m.NotNullable(true); });
+            Property(x => x.OwnerUserId, m => m.Index("IX_Merchant_OwnerUserId"));
+
+            Property(x => x.Name, m => { m.Length(250); m.NotNullable(true); m.Index("IX_Merchant_Name_BankCode"); });
             Property(x => x.FriendlyName, m => m.Length(250));
             Property(x => x.Category, m => m.Length(100));
             Property(x => x.SubCategory, m => m.Length(100));
-            Property(x => x.BankCode, m => m.Length(20));
+            Property(x => x.BankCode, m => { m.Length(20); m.Index("IX_Merchant_Name_BankCode"); });
             Property(x => x.Notes, m => m.Length(500));
             Property(x => x.CreatedOn);
             Property(x => x.UpdatedOn);
@@ -38,7 +40,11 @@ namespace BankStatementAnalytics.Mapping
                 m.Table("CounterPartyAliases");
                 m.Key(k => k.Column("CounterPartyId"));
                 m.Lazy(CollectionLazy.Lazy);
-            }, r => r.Element(e => e.Column("AliasName")));
+            }, r => r.Element(e => e.Column(c =>
+            {
+                c.Name("AliasName");
+                c.Index("IX_CounterPartyAliases_AliasName");
+            })));
         }
     }
 }

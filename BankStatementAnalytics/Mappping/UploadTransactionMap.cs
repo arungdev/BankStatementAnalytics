@@ -17,6 +17,7 @@ namespace BankStatementAnalytics.Mappping
             {
                 m.Type<GuidToStringType>();
                 m.Length(50);
+                m.Index("IX_UploadTransactions_UploadId");
             });
             Property(x => x.Amount);
             Property(x => x.Description, m => m.Length(1000));

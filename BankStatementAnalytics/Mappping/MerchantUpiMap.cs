@@ -18,6 +18,7 @@ namespace BankStatementAnalytics.Mapping
                 m.Column("CounterPartyId");
                 m.NotNullable(true);
                 m.Fetch(FetchKind.Select);
+                m.Index("IX_MerchantUpis_CounterPartyId");
             });
 
             Property(x => x.UpiId, m =>
@@ -25,6 +26,7 @@ namespace BankStatementAnalytics.Mapping
                 m.Column("UpiId");
                 m.Length(100);
                 m.NotNullable(true);
+                m.Index("IX_MerchantUpis_UpiId");
             });
 
             Property(x => x.CreatedOn);

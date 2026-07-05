@@ -13,12 +13,12 @@ namespace BankStatementAnalytics.Mappping
 
             ComposedId(m =>
             {
-                m.Property(x => x.AccountId);
+                m.Property(x => x.AccountId, p => p.Index("IX_BankTransactions_Account_Date"));
                 m.Property(x => x.BankReference);
                 m.Property(x => x.BankType, p => p.Length(10));
             });
 
-            Property(x => x.TransactionDate);
+            Property(x => x.TransactionDate, m => m.Index("IX_BankTransactions_Account_Date"));
             Property(x => x.ValueDate);
 
             Property(x => x.TransactionType, m => m.Length(10));
@@ -35,6 +35,7 @@ namespace BankStatementAnalytics.Mappping
             {
                 m.Type<GuidToStringType>();
                 m.Length(50);
+                m.Index("IX_BankTransactions_UploadId");
             });
             Property(x => x.UpiReference, m => m.Length(50));
             Property(x => x.BankCode, m => m.Length(20));
@@ -53,6 +54,7 @@ namespace BankStatementAnalytics.Mappping
                 m.Column("CounterPartyId");
                 m.NotNullable(false);
                 m.Fetch(FetchKind.Join);
+                m.Index("IX_BankTransactions_CounterPartyId");
             });
         }
     }
