@@ -1,0 +1,13 @@
+services:
+  bankstatementanalytics:
+    build: .
+    image: bankstatementanalytics:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - bsa-data:/app/Data
+      - bsa-uploads:/app/Uploads
+
+volumes:
+  bsa-data:
+  bsa-uploads:
