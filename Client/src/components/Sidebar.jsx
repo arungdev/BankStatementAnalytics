@@ -1,16 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
-  FiGrid, FiUsers, FiRepeat, FiUpload,
-  FiChevronDown, FiChevronRight, FiPlus,
-  FiTrendingUp, FiPieChart,
+  FiGrid, FiUsers, FiRepeat,
+  FiChevronDown, FiChevronRight,
+  FiTrendingUp, FiPieChart, FiLogOut,
   FiChevronsLeft, FiChevronsRight,
 } from 'react-icons/fi';
+import { useAuth } from '../context/useAuth';
 import './Sidebar.css';
 
-const Sidebar = ({ accounts = [], selectedAccountId, onAccountChange, onAddAccount }) => {
-  const [isOpen, setIsOpen]       = useState(true);
+const NARROW_BREAKPOINT = 900;
+
+const Sidebar = () => {
+  const [isOpen, setIsOpen]       = useState(() => typeof window === 'undefined' || window.innerWidth > NARROW_BREAKPOINT);
   const [isDashOpen, setDashOpen] = useState(true);
+  const { username, role, logout } = useAuth();
+
+  // ── Auto-collapse on narrow viewports; user can still toggle manually ──
+  useEffect(() => {
+    const handleResize = () => setIsOpen(window.innerWidth > NARROW_BREAKPOINT);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <aside className={`sidebar ${isOpen ? 'sidebar--open' : 'sidebar--closed'}`}>
@@ -86,33 +97,26 @@ const Sidebar = ({ accounts = [], selectedAccountId, onAccountChange, onAddAccou
             </NavLink>
           </li>
 
-          {/* Upload */}
-          <li>
-            <NavLink to="/upload" className="nav-item-header" title="Upload Statement">
-              <FiUpload size={16} />
-              {isOpen && <span>Upload Statement</span>}
-            </NavLink>
-          </li>
-
         </ul>
       </nav>
 
-      {/* Account selector */}
-      {isOpen && accounts.length > 0 && (
-        <div className="sidebar-section">
-          <p className="sidebar-section-title">Selected Account</p>
-          <select
-            className="account-select"
-            value={selectedAccountId || ''}
-            onChange={e => onAccountChange(Number(e.target.value))}
+      {/* Current user + logout */}
+      {username && (
+        <div className="sidebar-section" style={{ marginTop: 'auto' }}>
+          {isOpen && (
+            <p className="sidebar-section-title" style={{ marginBottom: '4px' }}>
+              {username} · {role}
+            </p>
+          )}
+          <button
+            className="nav-item-header"
+            style={{ width: '100%', border: 'none', background: 'none', cursor: 'pointer' }}
+            onClick={() => logout()}
+            title="Log out"
           >
-            <option value="" disabled>Select an account...</option>
-            {accounts.map(acc => (
-              <option key={acc.id} value={acc.id}>
-                {acc.accountHolderName || acc.bankName} ({acc.accountNumber?.slice(-4) || '****'})
-              </option>
-            ))}
-          </select>
+            <FiLogOut size={16} />
+            {isOpen && <span>Log out</span>}
+          </button>
         </div>
       )}
     </aside>

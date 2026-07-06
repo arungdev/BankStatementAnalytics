@@ -2,10 +2,14 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "rea
 import { useEffect, useState } from "react";
 import api from "./api/client";
 import { useAccount } from "./context/useAccount";
+import { useAuth } from "./context/useAuth";
 import CreateAccount from "./components/CreateAccount";
 import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
+import AccountFilter from "./components/AccountFilter";
+import Login from "./pages/Login";
+import Setup from "./pages/Setup";
 import { InsightsFilters } from "./pages/Insights";
 import { TrendsFilters } from "./pages/Trends";
 import { TransactionsFilters } from "./pages/Transactions";
@@ -19,17 +23,35 @@ import Insights from "./pages/Insights";
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Navigate to="/transactions" replace />} />
-          <Route path="/trends" element={<Trends />} />
-          <Route path="/transactions" element={<Transactions />} />
-          <Route path="/merchants" element={<Merchants />} />
-          <Route path="/upload" element={<UploadStatement />} />
-          <Route path="/insights" element={<Insights />} />
-        </Route>
-      </Routes>
+      <AuthGate />
     </BrowserRouter>
+  );
+}
+
+function AuthGate() {
+  const { loading, isAuthenticated, needsSetup } = useAuth();
+
+  if (loading) return null;
+
+  return (
+    <Routes>
+      <Route
+        path="/setup"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <Setup />}
+      />
+      <Route
+        path="/login"
+        element={needsSetup ? <Navigate to="/setup" replace /> : (isAuthenticated ? <Navigate to="/" replace /> : <Login />)}
+      />
+      <Route element={needsSetup ? <Navigate to="/setup" replace /> : (isAuthenticated ? <Layout /> : <Navigate to="/login" replace />)}>
+        <Route path="/" element={<Navigate to="/transactions" replace />} />
+        <Route path="/trends" element={<Trends />} />
+        <Route path="/transactions" element={<Transactions />} />
+        <Route path="/merchants" element={<Merchants />} />
+        <Route path="/upload" element={<UploadStatement />} />
+        <Route path="/insights" element={<Insights />} />
+      </Route>
+    </Routes>
   );
 }
 
@@ -112,28 +134,28 @@ function Layout() {
       setGroupBy={setInsightGroupBy}
     />
     : isTrends
-      ? <TrendsFilters
-        period={trendsPeriod}
-        setPeriod={setTrendsPeriod}
-        dateRange={trendsRange}
-        setDateRange={setTrendsRange}
-      />
-      : isTransactions
-        ? <TransactionsFilters
-          dateRange={transactionsRange}
-          setDateRange={setTransactionsRange}
+      ? <>
+        <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
+        <TrendsFilters
+          period={trendsPeriod}
+          setPeriod={setTrendsPeriod}
+          dateRange={trendsRange}
+          setDateRange={setTrendsRange}
         />
+      </>
+      : isTransactions
+        ? <>
+          <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
+          <TransactionsFilters
+            dateRange={transactionsRange}
+            setDateRange={setTransactionsRange}
+          />
+        </>
         : undefined;
 
   return (
     <div className="app">
-      <Sidebar
-        accounts={accounts}
-        selectedAccountId={selectedAccountId}
-        onAccountChange={setSelectedAccountId}
-        onAddAccount={() => setShowCreate(true)}
-        onAccountCreated={fetchAccounts}
-      />
+      <Sidebar />
 
       <main className="main">
         <PageHeader
@@ -183,6 +205,8 @@ function Layout() {
           onClose={() => setIsSettings(false)}
           onAddAccount={() => setShowCreate(true)}
           onAccountCreated={fetchAccounts}
+          accounts={accounts}
+          setAccounts={setAccounts}
         />
         <section className="content">
           <Outlet context={{

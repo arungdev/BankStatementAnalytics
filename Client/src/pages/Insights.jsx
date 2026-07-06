@@ -7,6 +7,9 @@ import {
 } from 'recharts';
 import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
+import StatCard from '../components/StatCard';
+import EmptyState from '../components/EmptyState';
+import { currencyFormatter as fmt, currencyFormatterFull as fmtFull } from '../utils/format';
 
 /* ─── Design tokens ─────────────────────────────────────────────────────── */
 const T = {
@@ -16,7 +19,7 @@ const T = {
   indigoMid:  '#818cf8',
   indigoSoft: '#a5b4fc',
   surface:    '#ffffff',
-  bg:         '#f8f9fb',
+  bg:         '#f3f4f6',
   cardDark:   '#1e1b4b',
   sidebarBg:  '#0f1117',
   border:     '#e5e7eb',
@@ -41,14 +44,6 @@ const GROUP_TABS = [
   { key: 'byMerchant', label: 'Merchants',  singular: 'Merchant'  },
   { key: 'byTag',      label: 'Tags',       singular: 'Tag'       },
 ];
-
-const fmt = new Intl.NumberFormat('en-IN', {
-  style: 'currency', currency: 'INR', minimumFractionDigits: 0,
-});
-
-const fmtFull = new Intl.NumberFormat('en-IN', {
-  style: 'currency', currency: 'INR', minimumFractionDigits: 2,
-});
 
 const fmtK = v => v >= 100000
   ? `₹${(v / 100000).toFixed(1)}L`
@@ -83,22 +78,6 @@ const ChartTooltip = ({ active, payload }) => {
     </div>
   );
 };
-
-/* ─── Stat Card ─────────────────────────────────────────────────────────── */
-const StatCard = ({ label, value, sub, accent }) => (
-  <div style={{
-    background: T.cardDark,
-    borderRadius: '14px',
-    padding: '20px 24px',
-    flex: 1,
-    minWidth: 0,
-    boxShadow: '0 4px 20px rgba(79,70,229,0.15)',
-  }}>
-    <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: T.indigoSoft, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</p>
-    <p style={{ margin: '8px 0 4px', fontSize: '22px', fontWeight: 800, color: T.white, letterSpacing: '-0.5px' }}>{value}</p>
-    {sub && <p style={{ margin: 0, fontSize: '12px', color: accent || T.muted }}>{sub}</p>}
-  </div>
-);
 
 /* ─── Transaction Tray ──────────────────────────────────────────────────── */
 const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loading, error, accounts }) => {
@@ -182,15 +161,7 @@ const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loa
                 <p style={{ margin: 0, fontSize: '13px', color: T.red }}>{error}</p>
               </div>
             ) : txArray.length === 0 ? (
-              <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-                <div style={{
-                  width: '44px', height: '44px', borderRadius: '50%',
-                  background: T.bg, display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', margin: '0 auto 12px', fontSize: '20px',
-                }}>📭</div>
-                <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: T.text }}>No transactions</p>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: T.muted }}>Nothing found for this period.</p>
-              </div>
+              <EmptyState icon="📭" title="No transactions" subtitle="Nothing found for this period." compact />
             ) : (
               txArray.map((tx, i) => (
                 <div
@@ -571,7 +542,6 @@ export default function Insights() {
     },
     cardTitle: { margin: '0 0 18px', fontSize: '13px', fontWeight: 700, color: T.text, letterSpacing: '-0.1px' },
     emptyState: {
-      textAlign: 'center', padding: '64px 24px',
       background: T.surface, borderRadius: '14px',
       border: `1px solid ${T.border}`,
     },
@@ -653,9 +623,11 @@ export default function Insights() {
           </div>
         ) : chartData.length === 0 ? (
           <div style={s.emptyState}>
-            <div style={{ fontSize: '40px', marginBottom: '12px' }}>📊</div>
-            <p style={{ margin: 0, fontWeight: 700, color: T.text, fontSize: '15px' }}>No spending data</p>
-            <p style={{ margin: '6px 0 0', color: T.muted, fontSize: '13px' }}>Try adjusting your date range or selecting more accounts.</p>
+            <EmptyState
+              icon="📊"
+              title="No spending data"
+              subtitle="Try adjusting your date range or selecting more accounts."
+            />
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

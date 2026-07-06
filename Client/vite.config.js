@@ -12,9 +12,12 @@ export default defineConfig({
     port: 5007,
     proxy: {
       "/api": {
-        target: "https://localhost:7187", // NOTE: Update this to match your actual ASP.NET Core backend URL/Port
+        // http://localhost:5000 is bound by both the "http" and "https" launch
+        // profiles (see Properties/launchSettings.json), so this works regardless
+        // of which profile `dotnet run` was started with.
+        target: "http://localhost:5000",
         changeOrigin: true,
-        secure: false, // Set to false to accept self-signed dev certificates from .NET
+        secure: false, // Accept self-signed dev certificates from .NET
       },
     },
   },

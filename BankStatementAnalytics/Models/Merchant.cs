@@ -1,9 +1,12 @@
 // Models/CounterParty.cs
+using Common.Framework.Tenancy;
+
 namespace BankStatementAnalytics.Models
 {
-    public class Merchant
+    public class Merchant : IOwnedEntity
     {
         public virtual int Id { get; set; }
+        public virtual long? OwnerUserId { get; set; }
         public virtual string Name { get; set; } = string.Empty;
         public virtual string? FriendlyName { get; set; }
         public virtual string? Category { get; set; }

@@ -2,10 +2,19 @@ import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import api from "../api/client";
 import { useAccount } from "../context/useAccount";
-import { FiDownload } from "react-icons/fi";
+import { useAuth } from "../context/useAuth";
+import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw } from "react-icons/fi";
+import UploadStatement from "./UploadStatement";
+import { getUploads, revertStatement } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
 import DateRangePicker from "../components/Daterangepicker";
 import { FilterGroup } from "../components/PageHeader";
+import Pagination from "../components/Pagination";
+import Button from "../components/ui/Button";
+import Badge from "../components/ui/Badge";
+import EmptyState from "../components/ui/EmptyState";
+import Drawer from "../components/ui/Drawer";
+import { currencyFormatter } from "../utils/format";
 
 /* ─── TransactionsFilters — rendered in Layout's PageHeader filter row ──── */
 export function TransactionsFilters({ dateRange, setDateRange }) {
@@ -23,6 +32,7 @@ export function TransactionsFilters({ dateRange, setDateRange }) {
 }
 
 export default function Transactions() {
+  const { isAdmin } = useAuth();
   const { selectedAccountId, selectedAccount } = useAccount();
   console.log('selectedAccount:', selectedAccount);
 
@@ -45,8 +55,44 @@ export default function Transactions() {
   // Sidebar state
   const [selectedTx, setSelectedTx] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(450);
-  const [isResizing, setIsResizing] = useState(false);
   const [tags, setTags] = useState([]);
+
+  // Upload modal + a bump to force the transaction list to re-fetch after an upload
+  const [showUpload, setShowUpload] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Last-uploaded-statement RHS drawer
+  const [lastUpload, setLastUpload] = useState(null);
+  const [showLastUpload, setShowLastUpload] = useState(false);
+  const [loadingLastUpload, setLoadingLastUpload] = useState(false);
+
+  const openLastUpload = () => {
+    setSelectedTx(null);            // only one RHS panel at a time
+    setShowLastUpload(true);
+    setLoadingLastUpload(true);
+    getUploads()
+      .then(res => {
+        const forAccount = (res.data || [])
+          .filter(u => String(u.accountId) === String(selectedAccountId))
+          .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+        setLastUpload(forAccount[0] || null);
+      })
+      .catch(() => setLastUpload(null))
+      .finally(() => setLoadingLastUpload(false));
+  };
+
+  const handleRevertLastUpload = async () => {
+    if (!lastUpload?.id) return;
+    if (!window.confirm(`Revert "${lastUpload.fileName}"? Its imported transactions will be removed.`)) return;
+    try {
+      await revertStatement(lastUpload.id);
+      setShowLastUpload(false);
+      setLastUpload(null);
+      setRefreshKey(k => k + 1);
+    } catch {
+      alert("Could not revert this upload. Please try again.");
+    }
+  };
 
   useEffect(() => {
     api.get('/categories')
@@ -57,29 +103,6 @@ export default function Transactions() {
       .then(res => setTags(res.data || []))
       .catch(err => console.error("Failed to load tags", err));
   }, []);
-
-  // Handle dragging the sidebar to resize
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!isResizing) return;
-      const newWidth = window.innerWidth - e.clientX;
-      if (newWidth >= 300 && newWidth <= window.innerWidth - 50) {
-        setSidebarWidth(newWidth);
-      }
-    };
-    const handleMouseUp = () => setIsResizing(false);
-
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.userSelect = 'none';
-    }
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.userSelect = '';
-    };
-  }, [isResizing]);
 
   // ── Helper: Date → "yyyy-MM-dd" string in local time ──────────────────
   const toLocalDate = (d) =>
@@ -93,7 +116,12 @@ export default function Transactions() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId) {
+      setLoading(false);
+      setTx([]);
+      setTotalTransactions(0);
+      return;
+    }
     setLoading(true);
 
     const { start: startDate, end: endDate } = dateRange;
@@ -146,7 +174,7 @@ export default function Transactions() {
         console.error(err);
         setLoading(false);
       });
-  }, [selectedAccountId, currentPage, dateRange, itemsPerPage]);
+  }, [selectedAccountId, currentPage, dateRange, itemsPerPage, refreshKey]);
 
   if (loading) {
     return (
@@ -157,11 +185,18 @@ export default function Transactions() {
     );
   }
 
+  if (!selectedAccountId) {
+    return (
+      <EmptyState
+        title="No account selected"
+        message="Add or select an account to see transactions."
+      />
+    );
+  }
+
   // Pagination logic
   const totalPages = Math.ceil(totalTransactions / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-
-  const handleItemsPerPageChange = (e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); };
 
   const handleCategoryChange = (t, selectedValue) => {
     const previousCategory = t.category;
@@ -308,24 +343,27 @@ export default function Transactions() {
   );
 
   return (
-    <div>
+    <div style={{ marginRight: (selectedTx || showLastUpload) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
       {/* ── Action strip — title/date-filter now live in the shared header ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-        <button
-          onClick={handleExportCSV}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '13px', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer', color: '#374151', fontWeight: 500 }}
-        >
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
+        {isAdmin && (
+          <Button onClick={() => setShowUpload(true)} style={{ fontSize: 'var(--text-sm)' }}>
+            <FiUploadCloud size={14} /> Upload Statement
+          </Button>
+        )}
+        <Button onClick={openLastUpload} style={{ fontSize: 'var(--text-sm)' }}>
+          <FiFileText size={14} /> Last Upload
+        </Button>
+        <Button onClick={handleExportCSV} style={{ fontSize: 'var(--text-sm)' }}>
           <FiDownload size={14} /> Export CSV
-        </button>
+        </Button>
 
-        <div className="badge blue" style={{ padding: '10px 18px', fontSize: '13px', fontWeight: 700 }}>
-          {totalTransactions} Total Transactions
-        </div>
+        <Badge variant="blue">{totalTransactions} Total Transactions</Badge>
       </div>
 
       <div className="table-container" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
         <table>
-          <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f9fafb', zIndex: 10, boxShadow: 'inset 0 -1px 0 #e5e7eb' }}>
+          <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--gray-50)', zIndex: 10, boxShadow: 'inset 0 -1px 0 var(--border-color)' }}>
             <tr>
               <th>Date</th>
               <th>Merchant</th>
@@ -340,20 +378,22 @@ export default function Transactions() {
             {tx.map((t, index) => (
               <tr
                 key={t.id || index}
-                onClick={() => setSelectedTx(t)}
-                style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
-                onMouseOver={e => e.currentTarget.style.backgroundColor = '#f9fafb'}
-                onMouseOut={e => e.currentTarget.style.backgroundColor = ''}
+                onClick={() => { setShowLastUpload(false); setSelectedTx(t); }}
+                style={{
+                  cursor: 'pointer',
+                  backgroundColor: selectedTx && selectedTx.id === t.id ? 'var(--primary-light)' : undefined,
+                }}
               >
                 <td style={{ fontWeight: 600 }}>{new Date(t.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                 <td style={{ fontWeight: 600 }}>{t.merchant}</td>
-                <td className="text-red">{t.debit ? `₹${t.debit.toLocaleString('en-IN')}` : "-"}</td>
-                <td className="text-green">{t.credit ? `₹${t.credit.toLocaleString('en-IN')}` : "-"}</td>
+                <td className="text-red">{t.debit ? currencyFormatter.format(t.debit) : "-"}</td>
+                <td className="text-green">{t.credit ? currencyFormatter.format(t.credit) : "-"}</td>
                 <td onClick={(e) => e.stopPropagation()}>
                   <select
                     value={t.subCategory || t.category || ''}
                     onChange={(e) => handleCategoryChange(t, e.target.value)}
-                    style={{ padding: '3px 6px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '12px', color: t.category ? '#374151' : '#9ca3af', background: '#fff' }}
+                    className="field-select"
+                    style={{ padding: '3px 6px', fontSize: '12px', color: t.category ? 'var(--gray-700)' : 'var(--gray-400)', width: 'auto' }}
                   >
                     {renderCategoryOptions()}
                   </select>
@@ -361,19 +401,19 @@ export default function Transactions() {
                 <td>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                     {(t.tags || []).map(tag => (
-                      <span key={tag} style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 7px', borderRadius: '10px', fontSize: '11px', fontWeight: 600 }}>
+                      <span key={tag} style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 7px', borderRadius: 'var(--radius-full)', fontSize: '11px', fontWeight: 600 }}>
                         #{tag}
                       </span>
                     ))}
                   </div>
                 </td>
-                <td><span className="badge green">Completed</span></td>
+                <td><Badge variant="green">Completed</Badge></td>
               </tr>
             ))}
             {tx.length === 0 && (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', padding: '48px 24px', color: '#9ca3af', fontStyle: 'italic' }}>
-                  No transactions found for the selected filters.
+                <td colSpan="7" style={{ padding: 0 }}>
+                  <EmptyState message="No transactions found for the selected filters." />
                 </td>
               </tr>
             )}
@@ -382,160 +422,188 @@ export default function Transactions() {
       </div>
 
       {/* Pagination Controls */}
-      {totalTransactions > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '16px', background: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-            {totalPages > 1 && (
-              <div style={{ fontSize: '13px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>Items per page:</span>
-                <select
-                  value={itemsPerPage}
-                  onChange={handleItemsPerPageChange}
-                  style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none', background: '#f9fafb' }}
-                >
-                  <option value={5}>5</option>
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        itemsPerPage={itemsPerPage}
+        currentCount={tx.length}
+        totalCount={totalTransactions}
+        startIndex={startIndex}
+        itemLabel="transactions"
+        onPageChange={setCurrentPage}
+        onItemsPerPageChange={(size) => { setItemsPerPage(size); setCurrentPage(1); }}
+      />
+
+      {/* RHS detail drawer — non-modal so the list & sidebar stay interactive */}
+      <Drawer
+        open={!!selectedTx}
+        onClose={() => setSelectedTx(null)}
+        title="Transaction Details"
+        width={sidebarWidth}
+        onWidthChange={setSidebarWidth}
+        modal={false}
+      >
+        {selectedTx && (
+          <>
+            <div style={{ textAlign: 'center', padding: '16px 0', borderBottom: '1px solid var(--border-color)', marginBottom: '24px' }}>
+              <div style={{ fontSize: '36px', fontWeight: 700, color: selectedTx.credit ? 'var(--success)' : 'var(--danger)' }}>
+                {selectedTx.credit ? '+' : '-'}{currencyFormatter.format(Math.max(selectedTx.credit, selectedTx.debit))}
               </div>
-            )}
-            <div style={{ fontSize: '13px', color: '#6b7280' }}>
-              {totalPages > 1
-                ? <>Showing <span style={{ fontWeight: 600, color: '#111827' }}>{tx.length > 0 ? startIndex + 1 : 0}</span> to <span style={{ fontWeight: 600, color: '#111827' }}>{startIndex + tx.length}</span> of <span style={{ fontWeight: 600, color: '#111827' }}>{totalTransactions}</span> transactions</>
-                : <><span style={{ fontWeight: 600, color: '#111827' }}>{totalTransactions}</span> transaction{totalTransactions !== 1 ? 's' : ''}</>
-              }
-            </div>
-          </div>
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button className="btn small" disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
-                Previous
-              </button>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151', padding: '0 8px' }}>
-                Page {currentPage} of {totalPages}
-              </span>
-              <button className="btn small" disabled={currentPage >= totalPages || totalPages === 0} onClick={() => setCurrentPage(p => Math.min(totalPages || 1, p + 1))}>
-                Next
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* RHS Sidebar Overlay */}
-      {selectedTx && (
-        <>
-          <div
-            onClick={() => setSelectedTx(null)}
-            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 999 }}
-          />
-          <div style={{
-            position: 'fixed', top: 0, right: 0, bottom: 0, width: `${sidebarWidth}px`, maxWidth: '100vw',
-            backgroundColor: '#fff', boxShadow: '-4px 0 15px rgba(0,0,0,0.1)',
-            zIndex: 1000, display: 'flex', flexDirection: 'column'
-          }}>
-            {/* Resize Handle */}
-            <div
-              onMouseDown={() => setIsResizing(true)}
-              style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '6px', cursor: 'ew-resize', backgroundColor: isResizing ? '#3b82f6' : 'transparent', zIndex: 1001, transition: 'background-color 0.2s' }}
-            />
-
-            {/* Header */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb' }}>
-              <h2 style={{ margin: 0, fontSize: '18px', color: '#111827' }}>Transaction Details</h2>
-              <button onClick={() => setSelectedTx(null)} style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: '28px', color: '#6b7280', lineHeight: 1 }}>&times;</button>
+              <div style={{ color: 'var(--gray-600)', marginTop: '8px', fontSize: '16px', fontWeight: 500 }}>
+                {selectedTx.merchant}
+              </div>
             </div>
 
-            {/* Content */}
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-              <div style={{ textAlign: 'center', padding: '16px 0', borderBottom: '1px solid #e5e7eb', marginBottom: '24px' }}>
-                <div style={{ fontSize: '36px', fontWeight: 700, color: selectedTx.credit ? '#10b981' : '#ef4444' }}>
-                  {selectedTx.credit ? '+' : '-'}₹{Math.max(selectedTx.credit, selectedTx.debit).toLocaleString('en-IN')}
-                </div>
-                <div style={{ color: '#4b5563', marginTop: '8px', fontSize: '16px', fontWeight: 500 }}>
-                  {selectedTx.merchant}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Date</div>
+                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{new Date(selectedTx.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Mode</div>
+                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{selectedTx.mode || '-'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Reference / UPI ID</div>
+                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500, wordBreak: 'break-all' }}>{selectedTx.upiReference || '-'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Balance</div>
+                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{selectedTx.balance ? currencyFormatter.format(selectedTx.balance) : '-'}</div>
+              </div>
+              <div style={{ gridColumn: 'span 2' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Description / Notes</div>
+                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{selectedTx.description || '-'}</div>
+              </div>
+              <div style={{ gridColumn: 'span 2' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
+                <div style={{ marginTop: '8px' }}>
+                  <select
+                    value={selectedTx.subCategory || selectedTx.category || ''}
+                    onChange={(e) => handleCategoryChange(selectedTx, e.target.value)}
+                    className="field-select"
+                    disabled={!isAdmin}
+                    style={{ color: selectedTx.category ? 'var(--gray-700)' : 'var(--gray-400)' }}
+                  >
+                    {renderCategoryOptions()}
+                  </select>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
-                <div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Date</div>
-                  <div style={{ marginTop: '4px', color: '#111827', fontWeight: 500 }}>{new Date(selectedTx.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Mode</div>
-                  <div style={{ marginTop: '4px', color: '#111827', fontWeight: 500 }}>{selectedTx.mode || '-'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Reference / UPI ID</div>
-                  <div style={{ marginTop: '4px', color: '#111827', fontWeight: 500, wordBreak: 'break-all' }}>{selectedTx.upiReference || '-'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Balance</div>
-                  <div style={{ marginTop: '4px', color: '#111827', fontWeight: 500 }}>{selectedTx.balance ? `₹${selectedTx.balance.toLocaleString('en-IN')}` : '-'}</div>
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Description / Notes</div>
-                  <div style={{ marginTop: '4px', color: '#111827', fontWeight: 500 }}>{selectedTx.description || '-'}</div>
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
-                  <div style={{ marginTop: '8px' }}>
-                    <select
-                      value={selectedTx.subCategory || selectedTx.category || ''}
-                      onChange={(e) => handleCategoryChange(selectedTx, e.target.value)}
-                      style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', color: selectedTx.category ? '#374151' : '#9ca3af', background: '#fff', width: '100%' }}
-                    >
-                      {renderCategoryOptions()}
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ gridColumn: 'span 2' }}>
-                  <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Tags</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                    {(selectedTx.tags || []).map(tag => (
-                      <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
-                        #{tag}
+              <div style={{ gridColumn: 'span 2' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Tags</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                  {(selectedTx.tags || []).map(tag => (
+                    <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: 'var(--radius-full)', fontSize: '12px', fontWeight: 600 }}>
+                      #{tag}
+                      {isAdmin && (
                         <span onClick={() => handleRemoveTag(tag)} style={{ cursor: 'pointer', color: '#93c5fd', fontWeight: 700, fontSize: '14px', lineHeight: 1 }}>×</span>
-                      </span>
-                    ))}
-                  </div>
-                  <input
-                    type="text"
-                    list={`tags-list-${selectedTx.id}`}
-                    placeholder="+ Add a tag"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && e.target.value.trim()) {
-                        const newTag = e.target.value.trim().toLowerCase();
-                        const currentTags = selectedTx.tags || [];
-                        if (!currentTags.includes(newTag)) handleTagChange([...currentTags, newTag]);
-                        e.target.value = '';
-                        e.preventDefault();
-                      }
-                    }}
-                    onChange={(e) => {
-                      const matched = tags.find(t => t.name.toLowerCase() === e.target.value.toLowerCase());
-                      if (matched) {
-                        const currentTags = selectedTx.tags || [];
-                        if (!currentTags.includes(matched.name)) handleTagChange([...currentTags, matched.name]);
-                        e.target.value = '';
-                      }
-                    }}
-                    style={{ marginTop: '8px', width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
-                  />
-                  <datalist id={`tags-list-${selectedTx.id}`}>
-                    {tags.filter(tag => !(selectedTx.tags || []).includes(tag.name)).map(tag => (
-                      <option key={tag.id} value={tag.name} />
-                    ))}
-                  </datalist>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                {isAdmin && (
+                <input
+                  type="text"
+                  list={`tags-list-${selectedTx.id}`}
+                  placeholder="+ Add a tag"
+                  className="field-input"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.target.value.trim()) {
+                      const newTag = e.target.value.trim().toLowerCase();
+                      const currentTags = selectedTx.tags || [];
+                      if (!currentTags.includes(newTag)) handleTagChange([...currentTags, newTag]);
+                      e.target.value = '';
+                      e.preventDefault();
+                    }
+                  }}
+                  onChange={(e) => {
+                    const matched = tags.find(t => t.name.toLowerCase() === e.target.value.toLowerCase());
+                    if (matched) {
+                      const currentTags = selectedTx.tags || [];
+                      if (!currentTags.includes(matched.name)) handleTagChange([...currentTags, matched.name]);
+                      e.target.value = '';
+                    }
+                  }}
+                  style={{ marginTop: '8px' }}
+                />
+                )}
+                <datalist id={`tags-list-${selectedTx.id}`}>
+                  {tags.filter(tag => !(selectedTx.tags || []).includes(tag.name)).map(tag => (
+                    <option key={tag.id} value={tag.name} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+          </>
+        )}
+      </Drawer>
+
+      {/* Last uploaded statement — RHS drawer */}
+      <Drawer
+        open={showLastUpload}
+        onClose={() => setShowLastUpload(false)}
+        title="Last Uploaded Statement"
+        width={sidebarWidth}
+        onWidthChange={setSidebarWidth}
+        modal={false}
+      >
+        {loadingLastUpload ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '40px' }}>Loading...</div>
+        ) : !lastUpload ? (
+          <EmptyState message="No statements have been uploaded for this account yet." />
+        ) : (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 0 20px', borderBottom: '1px solid var(--border-color)', marginBottom: '20px' }}>
+              <FiFileText size={28} color="var(--primary)" />
+              <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-main)', wordBreak: 'break-all' }}>
+                {lastUpload.fileName}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Uploaded On</div>
+                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>
+                  {new Date(lastUpload.uploadedAt).toLocaleString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Transactions Imported</div>
+                <div style={{ marginTop: '4px' }}>
+                  <Badge variant="blue">{lastUpload.transactionCount ?? 0}</Badge>
                 </div>
               </div>
             </div>
+
+            {isAdmin && (
+              <button className="btn danger small" onClick={handleRevertLastUpload}>
+                <FiRotateCcw size={12} /> Revert this upload
+              </button>
+            )}
           </div>
-        </>
+        )}
+      </Drawer>
+
+      {/* Upload statement modal — scoped to the selected account, refreshes the list on success */}
+      {showUpload && (
+        <div
+          onClick={() => setShowUpload(false)}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.4)', zIndex: 20000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '40px 16px' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: 'var(--surface)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', width: '760px', maxWidth: '100%', padding: '24px', position: 'relative' }}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setShowUpload(false)}
+              aria-label="Close"
+              style={{ position: 'absolute', top: '16px', right: '20px', zIndex: 1 }}
+            >&times;</button>
+            <UploadStatement onUploaded={() => setRefreshKey(k => k + 1)} showHistory={false} />
+          </div>
+        </div>
       )}
     </div>
   );

@@ -15,6 +15,8 @@
 
   <ItemGroup>
     <PackageReference Include="NHibernate" Version="5.6.1" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
+    <PackageReference Include="Npgsql" Version="8.0.3" />
   </ItemGroup>
 
 	<ItemGroup>
@@ -46,6 +48,19 @@
     <Message Importance="high" Text="Installing npm dependencies and building React client..." />
     <Exec Command="npm install" WorkingDirectory="..\Client" />
     <Exec Command="npm run build" WorkingDirectory="..\Client" />
+  </Target>
+
+  <!-- Copies the bundled embedded-PostgreSQL binaries (Common.Framework/Installer/PgBundle) into
+       the build output so local dev (dotnet build/run) can use Database:Embedded=true too, not
+       just an installed copy. Skipped once already present, so a clean build pays the ~150MB
+       copy cost once, not on every incremental build. -->
+  <Target Name="CopyPgsqlBundle" AfterTargets="Build" Condition="!Exists('$(OutDir)pgsql\bin\postgres.exe')">
+    <Message Importance="high" Text="Copying embedded PostgreSQL bundle to output (one-time, ~150MB)..." />
+    <Exec Command="robocopy &quot;$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle&quot; &quot;$(OutDir)pgsql&quot; /E /NFL /NDL /NJH /NJS /NC /NS"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="RobocopyExitCode" />
+    </Exec>
+    <Error Condition="'$(RobocopyExitCode)' &gt;= '8'" Text="robocopy failed while copying the PostgreSQL bundle (exit code $(RobocopyExitCode))." />
   </Target>
 
 </Project>

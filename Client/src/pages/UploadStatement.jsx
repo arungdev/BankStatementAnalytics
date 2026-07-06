@@ -1,10 +1,13 @@
 import { useEffect, useState, useRef } from "react";
 import { useAccount } from "../context/useAccount";
+import { useAuth } from "../context/useAuth";
 import { uploadStatement, revertStatement, getUploads } from "../api/statements";
 import api from "../api/client";
 import { FiUploadCloud, FiFileText, FiTrash2, FiCheckCircle, FiAlertCircle, FiRotateCcw } from "react-icons/fi";
+import Badge from "../components/ui/Badge";
 
-export default function UploadStatement() {
+export default function UploadStatement({ onUploaded, showHistory = true } = {}) {
+  const { isAdmin } = useAuth();
   const [accounts, setAccounts]           = useState([]);
   const [selectedAccount, setSelectedAccount] = useState("");
   const [file, setFile]                   = useState(null);
@@ -117,6 +120,9 @@ export default function UploadStatement() {
         transactionCount: res?.data?.transactionCount || 0,
         response: res?.data,
       }, ...prev]);
+
+      // Let a host page (e.g. Transactions) refresh its list after a successful upload.
+      onUploaded?.();
     } catch (err) {
       console.error(err);
       setMessage("Upload failed. Please try again.");
@@ -149,19 +155,19 @@ export default function UploadStatement() {
         <h1 style={{ marginBottom: 0 }}>Upload Statement</h1>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
         {/* Upload Form Card */}
-        <div style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '32px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', maxWidth: '700px' }}>
+        <div className="card" style={{ maxWidth: '700px', display: 'block' }}>
           <form onSubmit={handleSubmit}>
 
             {/* Account selector */}
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Select Account</label>
+            <div style={{ marginBottom: 'var(--space-6)' }}>
+              <label style={{ display: 'block', fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--gray-700)', marginBottom: 'var(--space-2)' }}>Select Account</label>
               <select
                 value={selectedAccount}
                 onChange={(e) => setSelectedAccount(e.target.value)}
                 disabled={!!selectedAccountId}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px', outline: 'none', backgroundColor: selectedAccountId ? '#f9fafb' : '#fff' }}
+                className="field-select"
               >
                 <option value="">Select an account...</option>
                 {accounts.map((acc) => (
@@ -171,28 +177,28 @@ export default function UploadStatement() {
                 ))}
               </select>
               {selectedAccountId && (
-                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>Using the currently active account.</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>Using the currently active account.</div>
               )}
             </div>
 
             {/* File drop zone */}
-            <div style={{ marginBottom: '32px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Statement File</label>
+            <div style={{ marginBottom: 'var(--space-8)' }}>
+              <label style={{ display: 'block', fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--gray-700)', marginBottom: 'var(--space-2)' }}>Statement File</label>
 
               {!selectedAccount ? (
-                <div style={{ border: '2px dashed #e5e7eb', borderRadius: '8px', padding: '48px 20px', textAlign: 'center', backgroundColor: '#f3f4f6' }}>
-                  <FiUploadCloud size={44} color="#d1d5db" style={{ marginBottom: '16px' }} />
-                  <p style={{ margin: 0, fontSize: '15px', color: '#9ca3af', fontWeight: 600 }}>Select an account first</p>
+                <div style={{ border: '2px dashed var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '48px 20px', textAlign: 'center', backgroundColor: 'var(--gray-100)' }}>
+                  <FiUploadCloud size={44} color="var(--gray-300)" style={{ marginBottom: 'var(--space-4)' }} />
+                  <p style={{ margin: 0, fontSize: 'var(--text-md)', color: 'var(--gray-400)', fontWeight: 600 }}>Select an account first</p>
                 </div>
               ) : !file ? (
                 <div
-                  style={{ position: 'relative', border: '2px dashed #d1d5db', borderRadius: '8px', padding: '48px 20px', textAlign: 'center', backgroundColor: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s ease' }}
-                  onMouseOver={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#eff6ff'; }}
-                  onMouseOut={e => { e.currentTarget.style.borderColor = '#d1d5db'; e.currentTarget.style.backgroundColor = '#f9fafb'; }}
+                  style={{ position: 'relative', border: '2px dashed var(--gray-300)', borderRadius: 'var(--radius-sm)', padding: '48px 20px', textAlign: 'center', backgroundColor: 'var(--gray-50)', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                  onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'var(--primary-light)'; }}
+                  onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--gray-300)'; e.currentTarget.style.backgroundColor = 'var(--gray-50)'; }}
                 >
-                  <FiUploadCloud size={44} color="#9ca3af" style={{ marginBottom: '16px' }} />
-                  <p style={{ margin: '0 0 8px 0', fontSize: '15px', color: '#4b5563', fontWeight: 600 }}>Click to browse or drag and drop</p>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#9ca3af' }}>
+                  <FiUploadCloud size={44} color="var(--gray-400)" style={{ marginBottom: 'var(--space-4)' }} />
+                  <p style={{ margin: '0 0 8px 0', fontSize: 'var(--text-md)', color: 'var(--gray-600)', fontWeight: 600 }}>Click to browse or drag and drop</p>
+                  <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--gray-400)' }}>
                     {loadingFormats
                       ? 'Loading supported formats...'
                       : `${formats.label} format supported${formats.bankName ? ` for ${formats.bankName}` : ''}`
@@ -207,17 +213,17 @@ export default function UploadStatement() {
                   />
                 </div>
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', padding: '16px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
-                  <FiFileText color="#3b82f6" size={28} style={{ marginRight: '16px' }} />
+                <div style={{ display: 'flex', alignItems: 'center', padding: 'var(--space-4)', backgroundColor: 'var(--primary-light)', borderRadius: 'var(--radius-sm)', border: '1px solid #bfdbfe' }}>
+                  <FiFileText color="var(--primary)" size={28} style={{ marginRight: 'var(--space-4)' }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#1e3a8a' }}>{file.name}</div>
-                    <div style={{ fontSize: '12px', color: '#60a5fa', marginTop: '4px' }}>{(file.size / 1024).toFixed(1)} KB</div>
+                    <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: '#1e3a8a' }}>{file.name}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: '#60a5fa', marginTop: '4px' }}>{(file.size / 1024).toFixed(1)} KB</div>
                   </div>
                   <button
                     type="button"
                     onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; setProgress(null); setMessage(null); }}
-                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '8px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    onMouseOver={e => e.currentTarget.style.backgroundColor = '#fee2e2'}
+                    style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--danger-light)'}
                     onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
                     title="Remove file"
                   >
@@ -229,27 +235,27 @@ export default function UploadStatement() {
 
             {/* Progress bar */}
             {progress !== null && (
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: progress === 100 ? '#10b981' : '#374151' }}>
+              <div style={{ marginBottom: 'var(--space-6)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: progress === 100 ? 'var(--success)' : 'var(--gray-700)' }}>
                     {progress === 100 ? 'Upload Complete' : 'Uploading...'}
                   </span>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: progress === 100 ? '#10b981' : '#3b82f6' }}>{progress}%</span>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: progress === 100 ? 'var(--success)' : 'var(--primary)' }}>{progress}%</span>
                 </div>
-                <div style={{ height: '8px', backgroundColor: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${progress}%`, backgroundColor: progress === 100 ? '#10b981' : '#3b82f6', transition: 'width 0.3s ease' }} />
+                <div className="progress">
+                  <div className="progress-bar" style={{ width: `${progress}%`, background: progress === 100 ? 'var(--success)' : 'var(--primary)' }} />
                 </div>
               </div>
             )}
 
             {/* Message */}
             {message && (
-              <div style={{ marginBottom: '24px', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', backgroundColor: message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#fef2f2' : '#ecfdf5', color: message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#991b1b' : '#065f46', border: `1px solid ${message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#f87171' : '#34d399'}` }}>
+              <div style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', backgroundColor: message.includes('failed') || message.includes('Only') || message.includes('Please') ? 'var(--danger-light)' : 'var(--success-light)', color: message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#991b1b' : '#065f46', border: `1px solid ${message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#f87171' : '#34d399'}` }}>
                 {message.includes('failed') || message.includes('Only') || message.includes('Please')
-                  ? <FiAlertCircle size={18} style={{ marginRight: '8px' }} />
-                  : <FiCheckCircle size={18} style={{ marginRight: '8px' }} />
+                  ? <FiAlertCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
+                  : <FiCheckCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
                 }
-                <span style={{ fontSize: '14px', fontWeight: 500 }}>{message}</span>
+                <span style={{ fontSize: 'var(--text-base)', fontWeight: 500 }}>{message}</span>
               </div>
             )}
 
@@ -258,7 +264,8 @@ export default function UploadStatement() {
               <button
                 className="btn primary"
                 type="submit"
-                disabled={loading || !file || loadingFormats || !selectedAccount}
+                disabled={loading || !file || loadingFormats || !selectedAccount || !isAdmin}
+                title={isAdmin ? undefined : "Viewers cannot upload statements"}
                 style={{ flex: 1, padding: '12px', fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
               >
                 {loading ? <span className="spinner" style={{ width: '16px', height: '16px', borderTopColor: '#fff', borderRightColor: '#fff' }}></span> : <FiUploadCloud size={18} />}
@@ -269,12 +276,12 @@ export default function UploadStatement() {
         </div>
 
         {/* Upload History */}
-        {filteredUploads.length > 0 && (
+        {showHistory && filteredUploads.length > 0 && (
           <div>
-            <h2 style={{ fontSize: '18px', color: '#111827', marginBottom: '16px', marginTop: 0 }}>Upload History</h2>
-            <div className="table-container" style={{ backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+            <h2 style={{ fontSize: 'var(--text-lg)', color: 'var(--text-main)', marginBottom: 'var(--space-4)', marginTop: 0 }}>Upload History</h2>
+            <div className="table-container">
               <table>
-                <thead style={{ backgroundColor: '#f9fafb' }}>
+                <thead>
                   <tr>
                     <th>File</th>
                     <th>Date</th>
@@ -286,23 +293,24 @@ export default function UploadStatement() {
                   {filteredUploads.map((u) => (
                     <tr key={`${u.id || u.time}-${u.fileName}`}>
                       <td>
-                        <div style={{ fontWeight: 500, color: '#374151' }}>{u.fileName}</div>
-                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                        <div style={{ fontWeight: 500, color: 'var(--gray-700)' }}>{u.fileName}</div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>
                           {accounts.find(a => String(a.id) === String(u.accountId))?.bankName || u.accountId}
                         </div>
                       </td>
-                      <td style={{ fontSize: '13px' }}>
+                      <td style={{ fontSize: 'var(--text-sm)' }}>
                         {new Date(u.time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </td>
-                      <td><span className="badge blue">{u.transactionCount}</span></td>
+                      <td><Badge variant="blue">{u.transactionCount}</Badge></td>
                       <td style={{ textAlign: 'right' }}>
-                        <button
-                          className="btn danger small"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          onClick={() => { if (window.confirm('Are you sure you want to revert this upload?')) handleRevert(u); }}
-                        >
-                          <FiRotateCcw size={12} /> Revert
-                        </button>
+                        {isAdmin && (
+                          <button
+                            className="btn danger small"
+                            onClick={() => { if (window.confirm('Are you sure you want to revert this upload?')) handleRevert(u); }}
+                          >
+                            <FiRotateCcw size={12} /> Revert
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

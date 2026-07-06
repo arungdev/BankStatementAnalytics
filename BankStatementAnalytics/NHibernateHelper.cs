@@ -1,11 +1,11 @@
 using System.IO;
 using System;
 using NHibernate;
+using Microsoft.Extensions.Configuration;
 using BankStatementAnalytics.Mapping;
 using BankStatementAnalytics.Mappping;
 using Common.Framework.Auth;
 using Common.Framework.Data;
-using Common.Framework.Data.Sqlite;
 using Common.Framework.Logging;
 
 namespace BankStatementAnalytics
@@ -22,9 +22,30 @@ namespace BankStatementAnalytics
                 }
                 catch (InvalidOperationException)
                 {
-                    var dataDir = Common.Framework.AppPaths.ResolveAppDirectory();
-                    dataDir = Path.Combine(dataDir, "Data");
+                    var appDir = Common.Framework.AppPaths.ResolveAppDirectory();
+                    var dataDir = Path.Combine(appDir, "Data");
                     var dbPath = Path.Combine(dataDir, "DataBase.db");
+
+                    // Layer config the same way the ASP.NET host does: base file, then the
+                    // environment-specific override, then environment variables. This lets a
+                    // Development override change the DB provider, and lets secrets like the
+                    // Postgres password come from an env var (Database__PostgresConnectionString)
+                    // instead of being committed in appsettings.json.
+                    var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+                    var config = new ConfigurationBuilder()
+                        .SetBasePath(appDir)
+                        .AddJsonFile("appsettings.json", optional: true)
+                        .AddJsonFile($"appsettings.{env}.json", optional: true)
+                        .AddEnvironmentVariables()
+                        .Build();
+
+                    var isPostgres = string.Equals(config["Database:Provider"], "Postgres", StringComparison.OrdinalIgnoreCase);
+                    var isEmbedded = isPostgres && string.Equals(config["Database:Embedded"], "true", StringComparison.OrdinalIgnoreCase);
+
+                    if (isEmbedded)
+                    {
+                        EmbeddedPostgresManager.EnsureStarted(appDir, databaseName: "bankstatements");
+                    }
 
                     NHibernateManager.Initialize(dbPath, mapper =>
                     {
@@ -38,16 +59,15 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<CategoryMap>();
                         mapper.AddMapping<SubCategoryMap>();
                         mapper.AddMapping<TagMap>();
-                    }, null, db =>
-                    {
-                        db.ConnectionString = $"Data Source={dbPath};Password=\"x'{DatabaseEncryptionKey.Hex}'\"";
-                        db.Driver<MicrosoftDataSqliteDriver>();
-                        db.ConnectionProvider<SqlCipherConnectionProvider>();
-                        db.Dialect<MicrosoftDataSqliteDialect>();
-                        // Microsoft.Data.Sqlite's GetSchema("DataTypes") isn't implemented, which is
-                        // what NHibernate uses to auto-import reserved keywords; skip that step.
-                        db.KeywordsAutoImport = NHibernate.Cfg.Hbm2DDLKeyWords.None;
-                    });
+                    }, null,
+                    isPostgres
+                        ? db =>
+                        {
+                            db.ConnectionString = isEmbedded ? EmbeddedPostgresManager.ConnectionString : config["Database:PostgresConnectionString"];
+                            db.Driver<NHibernate.Driver.NpgsqlDriver>();
+                            db.Dialect<NHibernate.Dialect.PostgreSQL83Dialect>();
+                        }
+                        : null);
 
                     return NHibernateManager.SessionFactory;
                 }

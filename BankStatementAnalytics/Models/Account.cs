@@ -1,11 +1,15 @@
 
 using BankStatementAnalytics.EnumClass;
+using Common.Framework.Tenancy;
 
 namespace BankStatementAnalytics.Models
 {
-    public class Account
+    public class Account : IOwnedEntity
     {
         public virtual long Id { get; set; }
+
+        // The user who owns this account; null only for rows created before multi-user support existed.
+        public virtual long? OwnerUserId { get; set; }
 
         // Stored account number (will be masked before persistence)
         public virtual string AccountNumber { get; set; } = string.Empty;

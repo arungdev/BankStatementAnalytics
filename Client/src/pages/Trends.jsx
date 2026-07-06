@@ -15,24 +15,23 @@ import {
 // ── Same DateRangePicker component used on the Insights page ────────────
 import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
+import StatCard from '../components/StatCard';
+import EmptyState from '../components/EmptyState';
+import { currencyFormatter } from '../utils/format';
 import './Trends.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-// ── Chart colour tokens (light theme) ────────────────────────────────────
+// ── Chart colour tokens — aligned with the app's --success/--danger palette ──
 const C = {
-  green: '#16a34a',
-  greenFill: 'rgba(22,163,74,0.72)',
-  red: '#dc2626',
-  redFill: 'rgba(220,38,38,0.70)',
+  green: '#10b981',
+  greenFill: 'rgba(16,185,129,0.72)',
+  red: '#ef4444',
+  redFill: 'rgba(239,68,68,0.70)',
   grid: '#f0f2f4',
   tickColor: '#9ca3af',
   tooltipBg: '#1e293b',
 };
-
-const currencyFormatter = new Intl.NumberFormat('en-IN', {
-  style: 'currency', currency: 'INR', minimumFractionDigits: 0,
-});
 
 const formatShort = (v) => {
   if (v >= 10000000) return (v / 10000000).toFixed(1) + 'Cr';
@@ -210,7 +209,7 @@ const Trends = () => {
     max: visibleYMax,
     grid: { color: C.grid, borderDash: [3, 5], drawTicks: false },
     ticks: showTicks
-      ? { callback: formatShort, maxTicksLimit: 5, font: { size: 10.5, family: "'DM Sans'" }, color: C.tickColor, padding: 6 }
+      ? { callback: formatShort, maxTicksLimit: 5, font: { size: 10.5, family: "'Inter'" }, color: C.tickColor, padding: 6 }
       : { display: false },
     border: { display: false },
   });
@@ -279,8 +278,8 @@ const Trends = () => {
         cornerRadius: 10,
         titleColor: '#f1f5f9',
         bodyColor: '#94a3b8',
-        titleFont: { size: 12, weight: '600', family: "'DM Sans'" },
-        bodyFont: { size: 12, family: "'DM Sans'" },
+        titleFont: { size: 12, weight: '600', family: "'Inter'" },
+        bodyFont: { size: 12, family: "'Inter'" },
         callbacks: {
           label: ctx => `  ${ctx.dataset.label}  ${currencyFormatter.format(ctx.parsed.y)}`,
           afterBody: (items) => {
@@ -297,7 +296,7 @@ const Trends = () => {
       y: makeYScale(false),
       x: {
         grid: { display: false },
-        ticks: { font: { size: 10.5, family: "'DM Sans'" }, color: C.tickColor, maxRotation: 0 },
+        ticks: { font: { size: 10.5, family: "'Inter'" }, color: C.tickColor, maxRotation: 0 },
         border: { display: false },
       },
     },
@@ -317,11 +316,11 @@ const Trends = () => {
     if (!data.length) {
       return (
         <div className="chart-empty">
-          <svg width="44" height="44" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18M7 16l4-4 4 4 4-4" />
-          </svg>
-          <p>No data for this period</p>
-          <span>Select an account or adjust the date range.</span>
+          <EmptyState
+            icon="📈"
+            title="No data for this period"
+            subtitle="Select an account or adjust the date range."
+          />
         </div>
       );
     }
@@ -357,20 +356,23 @@ const Trends = () => {
 
       {/* Summary cards */}
       <div className="summary-stats">
-        <div className="summary-card">
-          <span className="summary-title">Total Income</span>
-          <span className="summary-value income">{currencyFormatter.format(summary.totalIncome)}</span>
-        </div>
-        <div className="summary-card">
-          <span className="summary-title">Total Spends</span>
-          <span className="summary-value spend">{currencyFormatter.format(summary.totalSpends)}</span>
-        </div>
-        <div className={`summary-card ${netPositive ? 'net-positive' : 'net-negative'}`}>
-          <span className="summary-title">Net Flow</span>
-          <span className={`summary-value ${netPositive ? 'income' : 'spend'}`}>
-            {netPositive ? '+' : ''}{currencyFormatter.format(summary.netFlow)}
-          </span>
-        </div>
+        <StatCard
+          label="Total Income"
+          value={currencyFormatter.format(summary.totalIncome)}
+          valueColor="#34d399"
+        />
+        <StatCard
+          label="Total Spends"
+          value={currencyFormatter.format(summary.totalSpends)}
+          valueColor="#f87171"
+        />
+        <StatCard
+          label="Net Flow"
+          value={`${netPositive ? '+' : ''}${currencyFormatter.format(summary.netFlow)}`}
+          valueColor={netPositive ? '#34d399' : '#f87171'}
+          sub={netPositive ? 'Positive cash flow' : 'Negative cash flow'}
+          accent={netPositive ? '#34d399' : '#f87171'}
+        />
       </div>
 
       {/* Chart */}
@@ -424,8 +426,7 @@ const Trends = () => {
                 </div>
               ) : drillTransactions.length === 0 ? (
                 <div className="chart-empty">
-                  <p>No transactions found</p>
-                  <span>for {drillDown.label}.</span>
+                  <EmptyState icon="📭" title="No transactions found" subtitle={`for ${drillDown.label}.`} compact />
                 </div>
               ) : (
                 <table className="drilldown-table">

@@ -11,10 +11,6 @@ using System;
 using System.IO;
 using System.Threading;
 
-// Registers the SQLCipher-enabled native SQLite provider before any Microsoft.Data.Sqlite
-// connection is opened, so the "Password=x'...'" key on the connection string is honored.
-SQLitePCL.Batteries_V2.Init();
-
 var builder = WebApplication.CreateBuilder(args);
 
 Log.Initialize("log4net.config");
@@ -43,16 +39,20 @@ var allowedOrigins = new[]
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:5175",
+    "http://localhost:5008",
 };
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("React", policy =>
     {
-        policy.WithOrigins(allowedOrigins)
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
+        policy.AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+
+        if (builder.Environment.IsDevelopment())
+            // Any localhost port in dev, so the Vite port doesn't need enumerating.
+            policy.SetIsOriginAllowed(o => Uri.TryCreate(o, UriKind.Absolute, out var u) && u.IsLoopback);
+        else
+            policy.WithOrigins(allowedOrigins);
     });
 });
 builder.Services.AddControllers()
@@ -79,6 +79,9 @@ app.UseApiExceptionHandling();
 // Initialize NHibernate
 _ = NHibernateHelper.SessionFactory;
 
+// Gracefully stop the embedded PostgreSQL process (if it was started) on shutdown.
+app.Lifetime.ApplicationStopping.Register(() => Common.Framework.Data.EmbeddedPostgresManager.Stop());
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
@@ -100,6 +103,9 @@ app.UseRoleGate(options =>
 {
     options.FullAccessRole = nameof(AppRole.Admin);
     options.AllowedOrigins = allowedOrigins;
+    // In dev the SPA runs on a localhost port that varies (Vite); accept any loopback
+    // origin so uploads/mutations aren't blocked. Production stays strict.
+    options.AllowLoopbackOrigins = app.Environment.IsDevelopment();
 });
 
 app.UseAuthorization();
@@ -107,8 +113,11 @@ app.UseAuthorization();
 // Map API controllers that use [Route("...")] attributes
 app.MapControllers();
 
-// Forward any requests that don't match an API endpoint to the React frontend
-app.MapFallbackToFile("index.html");
+// Forward any requests that don't match an API endpoint to the React frontend.
+// Must be anonymous: the SPA shell has to load so its own login/setup screens can
+// run and call the [AllowAnonymous] /api/auth/* endpoints. Without this, the global
+// RequireAuthenticatedUser fallback policy 401s index.html and the app never boots.
+app.MapFallbackToFile("index.html").AllowAnonymous();
 
 app.Run();
 

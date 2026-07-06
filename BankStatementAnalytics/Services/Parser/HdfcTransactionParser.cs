@@ -344,7 +344,7 @@ namespace BankStatementAnalytics.Services.Parser
 
             if (!string.IsNullOrWhiteSpace(counterPartyName))
                 tx.CounterParty = _counterPartyService.ResolveOrCreate(
-                    counterPartyName, tx.BankCode, upiId: tx.UpiVpa);
+                    counterPartyName, tx.BankCode, tx.AccountId, upiId: tx.UpiVpa);
 
             if (string.IsNullOrWhiteSpace(tx.BankReference) || tx.BankReference == "0")
                 tx.BankReference = GenerateReference(tx);

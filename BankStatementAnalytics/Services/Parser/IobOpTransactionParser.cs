@@ -187,6 +187,7 @@ namespace BankStatementAnalytics.Services.Parser
                 tx.CounterParty = _counterPartyService.ResolveOrCreate(
                     counterPartyName,
                     tx.BankCode,
+                    tx.AccountId,
                     upiId: null);
 
             return tx;

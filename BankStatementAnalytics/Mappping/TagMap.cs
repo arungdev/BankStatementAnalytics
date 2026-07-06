@@ -10,6 +10,7 @@ namespace BankStatementAnalytics.Mappping
         {
             Table("Tags");
             Id(x => x.Id, m => m.Generator(Generators.Native));
+            Property(x => x.OwnerUserId, m => m.Index("IX_Tags_OwnerUserId"));
             Property(x => x.Name, m => m.Length(100));
         }
     }

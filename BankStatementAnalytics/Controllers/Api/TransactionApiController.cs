@@ -19,7 +19,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public IActionResult GetByAccount(int accountId)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
-            if (account == null || account.OwnerUserId != CurrentUserId)
+            if (!Owns(account))
                 return NotFound();
 
             var transactions = DbHelper.FetchByCriteria<BankTransaction>(
@@ -55,7 +55,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest("Invalid request.");
 
             var account = DbHelper.GetById<Account>(request.AccountId);
-            if (account == null || account.OwnerUserId != CurrentUserId)
+            if (!Owns(account))
                 return NotFound();
 
             using var session = DbHelper.GetSession();
@@ -90,7 +90,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest("Invalid request.");
 
             var account = DbHelper.GetById<Account>(request.AccountId);
-            if (account == null || account.OwnerUserId != CurrentUserId)
+            if (!Owns(account))
                 return NotFound();
 
             using var session = DbHelper.GetSession();

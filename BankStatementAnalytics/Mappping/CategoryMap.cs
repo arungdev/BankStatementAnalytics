@@ -12,6 +12,8 @@ namespace BankStatementAnalytics.Mappping
 
             Id(x => x.Id, m => m.Generator(Generators.Identity));
 
+            Property(x => x.OwnerUserId, m => m.Index("IX_Categories_OwnerUserId"));
+
             Property(x => x.Name, m => { m.Length(250); m.NotNullable(true); });
 
             // One-to-many: Category → SubCategories

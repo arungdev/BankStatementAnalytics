@@ -2,7 +2,7 @@ using BankStatementAnalytics.Data;
 using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using Common.Framework.Data;
-using Common.Framework.Logging;
+using Common.Framework.Web;
 using Microsoft.AspNetCore.Mvc;
 using System;
 
@@ -10,14 +10,14 @@ namespace BankStatementAnalytics.Controllers.Api
 {
     [ApiController]
     [Route("api/accounts")]
-    public class AccountApiController : ControllerBase
+    public class AccountApiController : TenantControllerBase
     {
         // GET: api/accounts/{id}/supported-formats
         [HttpGet("{id}/supported-formats")]
         public IActionResult GetSupportedFormats(int id)
         {
             var account = DbHelper.GetById<Account>((long)id);
-            if (account == null) return NotFound();
+            if (!Owns(account)) return NotFound();
 
             var formats = account.BankName switch
             {
@@ -47,61 +47,39 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public IActionResult GetAll()
         {
-            try
-            {
-                var accounts = DbHelper.GetAll<Account>()
-                    .Select(a => new { a.Id, a.AccountHolderName, a.BankName, MaskedAccountNumber = a.MaskedAccountNumber });
-                return Ok(accounts);
-            }
-            catch (Exception ex)
-            {
-                Log.Exception(ex);
-                return StatusCode(500, "Internal server error");
-            }
+            var accounts = DbHelper.GetAll<Account>()
+                .Where(a => a.OwnerUserId == CurrentUserId)
+                .Select(a => new { a.Id, a.AccountHolderName, a.BankName, MaskedAccountNumber = a.MaskedAccountNumber });
+            return Ok(accounts);
         }
 
         // GET: api/accounts/{id}
         [HttpGet("{id}")]
         public IActionResult GetById(int id)
         {
-            try
-            {
-                var account = DbHelper.GetById<Account>((long)id);
-                if (account == null)
-                    return NotFound();
+            var account = DbHelper.GetById<Account>((long)id);
+            if (!Owns(account))
+                return NotFound();
 
-                var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
-                return Ok(dto);
-            }
-            catch (Exception ex)
-            {
-                Log.Exception(ex);
-                return StatusCode(500, "Internal server error");
-            }
+            var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
+            return Ok(dto);
         }
 
         // POST: api/accounts
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Account account)
         {
-            try
-            {
-                if (account == null)
-                    return BadRequest();
+            if (account == null)
+                return BadRequest();
 
-                // Mask account number before saving for safety
-                account.AccountNumber = account.AccountNumber;
+            // Mask account number before saving for safety
+            account.AccountNumber = account.AccountNumber;
+            account.OwnerUserId = CurrentUserId;
 
-                await DbHelper.SaveAsync(account);
+            await DbHelper.SaveAsync(account);
 
-                var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
-                return CreatedAtAction(nameof(GetById), new { id = account.Id }, dto);
-            }
-            catch (Exception ex)
-            {
-                Log.Exception(ex);
-                return StatusCode(500, "Internal server error");
-            }
+            var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
+            return CreatedAtAction(nameof(GetById), new { id = account.Id }, dto);
         }
     }
 }

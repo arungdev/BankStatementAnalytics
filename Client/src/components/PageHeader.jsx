@@ -30,7 +30,6 @@ export default function PageHeader({
   filters,          // ReactNode — shown in the second row; row hidden if absent
   actions,          // ReactNode — extra buttons beside the gear (left of gear)
   onSettings,       // () => void
-  settingsOpen,     // bool — passed to keep button state in sync (optional)
 }) {
   return (
     <header style={{

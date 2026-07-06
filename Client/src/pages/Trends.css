@@ -1,40 +1,33 @@
-/* ── Design tokens — aligned with dashboard.css ─────────────────────────── */
+/* ── Design tokens — aliased onto the shared app tokens from index.css ──── */
 :root {
-  --bg:           #f3f4f6;
-  --surface:      #ffffff;
-  --surface-2:    #f3f4f6;
-  --border:       #e5e7eb;
+  /* --bg and --surface are intentionally not redeclared here — inherited as-is from index.css */
+  --surface-2:    var(--gray-100);
+  --border:       var(--border-color);
   --border-soft:  #f0f2f4;
 
-  --ink:          #111827;
-  --ink-2:        #6b7280;
-  --ink-3:        #9ca3af;
+  --ink:          var(--text-main);
+  --ink-2:        var(--text-muted);
+  --ink-3:        var(--gray-400);
 
-  --primary:      #4f46e5;
   --primary-2:    #7c3aed;
-  --primary-light: #eef2ff;
   --primary-mid:  rgba(79,70,229,0.12);
 
-  --green:        #22c55e;
-  --green-light:  #dcfce7;
-  --green-mid:    rgba(34,197,94,0.12);
+  --green:        var(--success);
+  --green-light:  var(--success-light);
+  --green-mid:    rgba(16,185,129,0.12);
 
-  --red:          #ef4444;
-  --red-light:    #fee2e2;
+  --red:          var(--danger);
+  --red-light:    var(--danger-light);
   --red-mid:      rgba(239,68,68,0.10);
 
-  --amber:        #d97706;
+  --amber:        var(--warning);
   --amber-mid:    rgba(217,119,6,0.10);
 
-  --radius-sm:    8px;
-  --radius-md:    12px;
-  --radius-lg:    12px;
+  --font-display: 'Inter', sans-serif;
+  --font-body:    'Inter', sans-serif;
 
-  --font-display: sans-serif;
-  --font-body:    sans-serif;
-
-  --shadow-card:  0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-hover: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-card:  var(--shadow-sm);
+  --shadow-hover: var(--shadow-md);
 }
 
 /* ── Base ────────────────────────────────────────────────────────────────── */
@@ -53,41 +46,13 @@
 
 /* ── Summary cards ───────────────────────────────────────────────────────── */
 .summary-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
   position: relative;
   z-index: 1;
 }
-
-.summary-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--surface);
-  border-radius: var(--radius-md);
-  padding: 24px;
-  box-shadow: var(--shadow-card);
-}
-
-.summary-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-2);
-  text-transform: none;
-  letter-spacing: normal;
-}
-.summary-value {
-  font-family: var(--font-display);
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: normal;
-  line-height: 1.2;
-  color: var(--ink);
-}
-.summary-value.income { color: var(--green); }
-.summary-value.spend  { color: var(--red); }
+.summary-stats > * { min-width: 220px; }
 
 /* ── Chart card ──────────────────────────────────────────────────────────── */
 .trends-chart-card {
@@ -109,7 +74,7 @@
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
-  color: #374151;
+  color: var(--ink);
   margin: 0;
 }
 .chart-legend     { display: flex; gap: 18px; font-size: 12px; color: var(--ink-2); font-weight: 500; }
@@ -376,11 +341,8 @@
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
 .chart-empty {
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  height: 100%; gap: 10px;
-  color: #9ca3af; font-size: 1.1rem; font-style: italic; text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
 }
-.chart-empty svg  { opacity: 0.45; margin-bottom: 4px; }
-.chart-empty p    { font-style: normal; font-weight: 600; font-size: 16px; color: var(--ink-2); margin: 0; }
-.chart-empty span { font-size: 13px; font-style: normal; }

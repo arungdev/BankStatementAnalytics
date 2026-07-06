@@ -15,6 +15,8 @@ namespace BankStatementAnalytics.Mappping
                 m.Generator(Generators.Identity);
             });
 
+            Property(x => x.OwnerUserId, m => m.Index("IX_Accounts_OwnerUserId"));
+
             Property(x => x.AccountNumber, m =>
             {
                 m.Length(50);

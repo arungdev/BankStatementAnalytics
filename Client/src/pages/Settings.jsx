@@ -1,10 +1,16 @@
 import { useState, useEffect } from "react";
+import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX } from "react-icons/fi";
 import api from "../api/client";
+import { useAccount } from "../context/useAccount";
+import { useAuth } from "../context/useAuth";
+import ProfileSettings from "../components/ProfileSettings";
+import "./Settings.css";
 
-export default function Settings({ isOpen, onClose, onAddAccount }) {
-  const [activeTab, setActiveTab] = useState('categories');
+export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreated, accounts = [], setAccounts }) {
+  const { selectedAccountId, setSelectedAccountId } = useAccount();
+  const { isAdmin } = useAuth();
+  const [activeTab, setActiveTab] = useState('accounts');
   const [categories, setCategories] = useState([]);
-  const [accounts, setAccounts] = useState([]);
 
   // Category states
   const [newCatName, setNewCatName] = useState("");
@@ -19,19 +25,20 @@ export default function Settings({ isOpen, onClose, onAddAccount }) {
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editAccountName, setEditAccountName] = useState("");
 
- useEffect(() => {
-  if (isOpen) {
-    fetchCategories();
-    fetchAccounts();
-  }
-}, [isOpen]);
+  const fetchCategories = async () => {
+    try {
+      const res = await api.get("/categories");
+      setCategories(res.data || []);
+    } catch (err) {
+      console.error("Failed to load categories", err);
+    }
+  };
 
-// Re-fetch accounts when window regains focus (e.g. after Create Account popup closes)
-useEffect(() => {
-  const onFocus = () => { if (isOpen) fetchAccounts(); };
-  window.addEventListener('focus', onFocus);
-  return () => window.removeEventListener('focus', onFocus);
-}, [isOpen]);
+  useEffect(() => {
+    if (isOpen) {
+      fetchCategories();
+    }
+  }, [isOpen]);
 
   // Lock background scroll while modal is open
   useEffect(() => {
@@ -45,38 +52,40 @@ useEffect(() => {
     };
   }, [isOpen]);
 
-  const fetchCategories = async () => {
-    try {
-      const res = await api.get("/categories");
-      setCategories(res.data || []);
-    } catch (err) {
-      console.error("Failed to load categories", err);
-    }
-  };
-
-  const fetchAccounts = async () => {
-    try {
-      const res = await api.get("/statements/accounts");
-      setAccounts(res.data || []);
-    } catch (err) {
-      console.error("Failed to load accounts", err);
-    }
-  };
+  // Close on Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   const handleAddCategory = async () => {
-    if (!newCatName.trim()) return;
+    const name = newCatName.trim();
+    if (!name) return;
+    if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      alert(`A category named "${name}" already exists.`);
+      return;
+    }
     try {
-      const res = await api.post("/categories", { name: newCatName.trim() });
+      const res = await api.post("/categories", { name });
       setCategories([...categories, res.data]);
       setNewCatName("");
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add category. Please try again.");
+    }
   };
 
-  const handleDeleteCategory = async (id) => {
+  const handleDeleteCategory = async (id, name) => {
+    if (!window.confirm(`Delete category "${name}"? Transactions using it will become uncategorized.`)) return;
     try {
       await api.delete(`/categories/${id}`);
       setCategories(categories.filter(c => c.id !== id));
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete category. Please try again.");
+    }
   };
 
   const handleUpdateCategory = async (id) => {
@@ -85,33 +94,44 @@ useEffect(() => {
       await api.put(`/categories/${id}`, { name: editCatName.trim() });
       setCategories(categories.map(c => c.id === id ? { ...c, name: editCatName.trim() } : c));
       setEditingCatId(null);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update category. Please try again.");
+    }
   };
 
   const handleAddSubCategory = async (catId) => {
-    if (!newSubCatName.trim()) return;
+    const name = newSubCatName.trim();
+    if (!name) return;
     try {
-      await api.post(`/categories/${catId}/subcategories`, { name: newSubCatName.trim() });
+      await api.post(`/categories/${catId}/subcategories`, { name });
       setCategories(categories.map(c =>
-        c.id === catId ? { ...c, subCategories: [...c.subCategories, newSubCatName.trim()] } : c
+        c.id === catId ? { ...c, subCategories: [...(c.subCategories || []), name] } : c
       ));
       setNewSubCatName("");
       setActiveSubCatInputId(null);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to add sub-category. Please try again.");
+    }
   };
 
   const handleDeleteSubCategory = async (catId, subCatIndex, subCatName) => {
+    if (!window.confirm(`Delete sub-category "${subCatName}"?`)) return;
     try {
       await api.delete(`/categories/${catId}/subcategories/${encodeURIComponent(subCatName)}`);
       setCategories(categories.map(c => {
         if (c.id === catId) {
-          const newSub = [...c.subCategories];
+          const newSub = [...(c.subCategories || [])];
           newSub.splice(subCatIndex, 1);
           return { ...c, subCategories: newSub };
         }
         return c;
       }));
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete sub-category. Please try again.");
+    }
   };
 
   const handleUpdateAccount = async (id) => {
@@ -120,7 +140,7 @@ useEffect(() => {
       await api.put(`/accounts/${id}`, { accountHolderName: editAccountName.trim() });
       setAccounts(accounts.map(a => a.id === id ? { ...a, accountHolderName: editAccountName.trim() } : a));
       setEditingAccountId(null);
-      window.location.reload();
+      onAccountCreated?.();
     } catch (err) {
       console.error("Failed to update account", err);
       alert("Failed to update account. Please try again.");
@@ -132,7 +152,8 @@ useEffect(() => {
     try {
       await api.delete(`/accounts/${id}`);
       setAccounts(accounts.filter(a => a.id !== id));
-      window.location.reload();
+      if (selectedAccountId === id) setSelectedAccountId(null);
+      onAccountCreated?.();
     } catch (err) {
       console.error("Failed to delete account", err);
       alert("Failed to delete account. Please try again.");
@@ -141,296 +162,285 @@ useEffect(() => {
 
   if (!isOpen) return null;
 
-  const scrollAreaStyle = {
-    flex: 1,
-    overflowY: 'auto',
-  };
+  const TABS = [
+    { id: 'accounts', label: 'Accounts', icon: <FiCreditCard size={17} /> },
+    { id: 'categories', label: 'Categories', icon: <FiTag size={17} /> },
+    { id: 'profile', label: 'Profile', icon: <FiUser size={17} /> },
+  ];
 
-  const tabWrapperStyle = {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
+  const HEADERS = {
+    accounts: { title: 'Manage Accounts', subtitle: 'Add, rename, or remove your linked bank accounts.' },
+    categories: { title: 'Categories', subtitle: 'Organize your spending into categories and sub-categories.' },
+    profile: { title: 'Profile', subtitle: 'Manage your account and personal details.' },
   };
-
-  const sidebarTabStyle = (tab) => ({
-    padding: '12px 24px',
-    textAlign: 'left',
-    background: activeTab === tab ? '#eff6ff' : 'transparent',
-    color: activeTab === tab ? '#2563eb' : '#4b5563',
-    border: 'none',
-    borderRight: activeTab === tab ? '3px solid #3b82f6' : '3px solid transparent',
-    cursor: 'pointer',
-    fontWeight: activeTab === tab ? 600 : 400,
-    fontSize: '15px',
-  });
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999,
-        }}
-      />
+      <div className="settings-backdrop" onClick={onClose} />
 
-      {/* Modal */}
-      <div style={{
-        position: 'fixed', top: '50%', left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '900px', maxWidth: '95vw',
-        height: '650px', maxHeight: '95vh',
-        backgroundColor: '#fff', borderRadius: '8px',
-        zIndex: 10000, boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-        display: 'flex', overflow: 'hidden',
-      }}>
-
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute', top: '16px', right: '20px',
-            cursor: 'pointer', background: 'none', border: 'none',
-            fontSize: '28px', color: '#6b7280', lineHeight: 1, zIndex: 10,
-          }}
-        >&times;</button>
-
-        {/* LHS Sidebar */}
-        <div style={{
-          width: '240px', backgroundColor: '#f9fafb',
-          borderRight: '1px solid #e5e7eb', padding: '32px 0',
-          display: 'flex', flexDirection: 'column',
-          overflowY: 'hidden', flexShrink: 0,
-        }}>
-          <h2 style={{ margin: '0 0 24px 24px', fontSize: '20px', color: '#111827' }}>Settings</h2>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <button onClick={() => setActiveTab('general')} style={sidebarTabStyle('general')}>General</button>
-            <button onClick={() => setActiveTab('accounts')} style={sidebarTabStyle('accounts')}>Accounts</button>
-            <button onClick={() => setActiveTab('categories')} style={sidebarTabStyle('categories')}>Categories</button>
-            <button onClick={() => setActiveTab('profile')} style={sidebarTabStyle('profile')}>Profile</button>
+      <div className="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
+        {/* Sidebar */}
+        <aside className="settings-sidebar">
+          <div className="settings-brand">
+            <FiSettings size={20} />
+            Settings
           </div>
-        </div>
+          <nav className="settings-nav">
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                className={`settings-nav-item${activeTab === tab.id ? ' active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
 
-        {/* RHS Content */}
-        <div style={{
-          flex: 1, padding: '32px',
-          height: '100%', boxSizing: 'border-box', overflow: 'hidden',
-        }}>
+        {/* Main panel */}
+        <div className="settings-main">
+          <button
+            className="modal-close settings-close"
+            onClick={onClose}
+            title="Close"
+            aria-label="Close settings"
+          >
+            <FiX size={16} />
+          </button>
 
-          {/* ── General ── */}
-          {activeTab === 'general' && (
-            <div style={tabWrapperStyle}>
-              <h1 style={{ margin: '0 0 24px', fontSize: '24px' }}>General Settings</h1>
-              <div style={scrollAreaStyle}>
-                <p style={{ color: '#6b7280' }}>Application-wide settings can be configured here.</p>
-              </div>
+          <header className="settings-header">
+            <div className="settings-header-text">
+              <h1 className="settings-title">{HEADERS[activeTab].title}</h1>
+              <p className="settings-subtitle">{HEADERS[activeTab].subtitle}</p>
             </div>
-          )}
+            {activeTab === 'accounts' && isAdmin && (
+              <button
+                className="btn primary small"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                onClick={() => setTimeout(() => { if (onAddAccount) onAddAccount(); }, 150)}
+              >
+                <FiPlus size={15} /> Add Account
+              </button>
+            )}
+          </header>
 
-          {/* ── Profile ── */}
-          {activeTab === 'profile' && (
-            <div style={tabWrapperStyle}>
-              <h1 style={{ margin: '0 0 24px', fontSize: '24px' }}>Profile Settings</h1>
-              <div style={scrollAreaStyle}>
-                <p style={{ color: '#6b7280' }}>User account and preferences can be configured here.</p>
-              </div>
-            </div>
-          )}
+          <div className="settings-body">
 
-          {/* ── Accounts ── */}
-          {activeTab === 'accounts' && (
-            <div style={tabWrapperStyle}>
-              {/* Heading row with Add Account button */}
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                marginBottom: '24px',
-                position: 'sticky', top: 0,
-                backgroundColor: '#fff', zIndex: 5,
-                paddingBottom: '4px',
-              }}>
-                <h1 style={{ margin: 0, fontSize: '24px' }}>Manage Accounts</h1>
-                <button
-                  className="btn primary small"
-                  onClick={() => {
-                    setTimeout(() => {
-                      if (onAddAccount) onAddAccount();
-                    }, 150);
-                  }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginRight: '40px' }}
-                >
-                  + Add Account
-                </button>
-              </div>
+            {/* ── Profile ── */}
+            {activeTab === 'profile' && <ProfileSettings />}
 
-              <div style={scrollAreaStyle}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {accounts.map(acc => (
-                    <div key={acc.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        {editingAccountId === acc.id ? (
-                          <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                            <input
-                              type="text"
-                              value={editAccountName}
-                              onChange={(e) => setEditAccountName(e.target.value.slice(0, 50))}
-                              maxLength={50}
-                              style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px' }}
-                            />
-                          </div>
-                        ) : (
-                          <h3 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>
-                            {acc.accountHolderName || acc.bankName}
-                          </h3>
-                        )}
-                        <p style={{ margin: 0, color: '#6b7280', fontSize: '14px' }}>
-                          {acc.bankName} ending in {acc.accountNumber?.slice(-4) || '****'}
-                        </p>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        {editingAccountId === acc.id ? (
-                          <>
-                            <button className="btn primary small" onClick={() => handleUpdateAccount(acc.id)}>Save</button>
-                            <button className="btn small" onClick={() => setEditingAccountId(null)}>Cancel</button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              className="btn small"
-                              onClick={() => { setEditingAccountId(acc.id); setEditAccountName(acc.accountHolderName || ''); }}
-                            >
-                              Edit Name
-                            </button>
-                            <button className="btn danger small" onClick={() => handleDeleteAccount(acc.id)}>Delete</button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {accounts.length === 0 && (
-                    <div style={{ textAlign: 'center', color: '#6b7280', padding: '32px' }}>
-                      No accounts found.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Categories ── */}
-          {activeTab === 'categories' && (
-            <div style={tabWrapperStyle}>
-              <h1 style={{
-                margin: '0 0 24px', fontSize: '24px',
-                position: 'sticky', top: 0,
-                backgroundColor: '#fff', zIndex: 5, paddingBottom: '4px',
-              }}>
-                Categories
-              </h1>
-
-              <div style={scrollAreaStyle}>
-                {/* Add new category */}
-                <div className="card" style={{ marginBottom: '32px' }}>
-                  <h3 style={{ marginTop: 0 }}>Add New Category</h3>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      type="text"
-                      placeholder="Category Name"
-                      value={newCatName}
-                      onChange={(e) => setNewCatName(e.target.value)}
-                      style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '4px', flex: 1 }}
-                    />
-                    <button className="btn primary" onClick={handleAddCategory}>Add Category</button>
+            {/* ── Accounts ── */}
+            {activeTab === 'accounts' && (
+              accounts.length === 0 ? (
+                <div className="settings-empty">
+                  <FiCreditCard size={36} />
+                  <div className="settings-empty-title">No accounts yet</div>
+                  <div className="settings-empty-sub">
+                    {isAdmin ? 'Click “Add Account” to link your first bank account.' : 'No accounts have been added.'}
                   </div>
                 </div>
-
-                {/* Category list */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {categories.map(cat => (
-                    <div key={cat.id} className="card">
-                      {/* Category header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        {editingCatId === cat.id ? (
-                          <div style={{ display: 'flex', gap: '8px', flex: 1, marginRight: '16px' }}>
-                            <input
-                              type="text"
-                              value={editCatName}
-                              onChange={(e) => setEditCatName(e.target.value)}
-                              style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '4px', flex: 1 }}
-                            />
-                            <button className="btn" style={{ padding: '6px 12px' }} onClick={() => handleUpdateCategory(cat.id)}>Save</button>
-                            <button className="btn" style={{ padding: '6px 12px' }} onClick={() => setEditingCatId(null)}>Cancel</button>
+              ) : (
+                <div className="settings-list">
+                  {accounts.map(acc => (
+                    <div key={acc.id} className="settings-row">
+                      <div className="settings-row-head">
+                        <div className="settings-row-main">
+                          <div className="settings-avatar">
+                            {(acc.bankName || acc.accountHolderName || '?').charAt(0)}
                           </div>
-                        ) : (
-                          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            {cat.name}
-                            <button
-                              style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13px', textDecoration: 'underline' }}
-                              onClick={() => { setEditingCatId(cat.id); setEditCatName(cat.name); }}
-                            >
-                              Edit
-                            </button>
-                          </h3>
-                        )}
-                        <button className="btn danger small" onClick={() => handleDeleteCategory(cat.id)}>Delete</button>
-                      </div>
-
-                      {/* Sub-categories */}
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>
-                          Sub-Categories
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                          {cat.subCategories.map((sub, idx) => (
-                            <span
-                              key={idx}
-                              className="badge"
-                              style={{ backgroundColor: '#f3f4f6', color: '#374151', padding: '6px 10px', fontSize: '13px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '6px' }}
-                            >
-                              {sub}
-                              <button
-                                onClick={() => handleDeleteSubCategory(cat.id, idx, sub)}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontWeight: 'bold', lineHeight: 1 }}
-                              >
-                                &times;
-                              </button>
-                            </span>
-                          ))}
+                          <div style={{ minWidth: 0 }}>
+                            {editingAccountId === acc.id ? (
+                              <input
+                                type="text"
+                                value={editAccountName}
+                                onChange={(e) => setEditAccountName(e.target.value.slice(0, 50))}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleUpdateAccount(acc.id);
+                                  if (e.key === 'Escape') { e.stopPropagation(); setEditingAccountId(null); }
+                                }}
+                                maxLength={50}
+                                autoFocus
+                                className="field-input"
+                              />
+                            ) : (
+                              <h3 className="settings-row-title">{acc.accountHolderName || acc.bankName}</h3>
+                            )}
+                            <p className="settings-row-sub">
+                              {acc.bankName} ending in {acc.accountNumber?.slice(-4) || '****'}
+                            </p>
+                          </div>
                         </div>
 
-                        {activeSubCatInputId === cat.id ? (
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                            <input
-                              type="text"
-                              placeholder="New Sub-Category"
-                              value={newSubCatName}
-                              onChange={(e) => setNewSubCatName(e.target.value)}
-                              style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
-                            />
-                            <button className="btn primary small" onClick={() => handleAddSubCategory(cat.id)}>Add</button>
-                            <button className="btn small" onClick={() => setActiveSubCatInputId(null)}>Cancel</button>
+                        {isAdmin && (
+                          <div className="settings-row-actions">
+                            {editingAccountId === acc.id ? (
+                              <>
+                                <button className="btn primary small" onClick={() => handleUpdateAccount(acc.id)}>Save</button>
+                                <button className="btn small" onClick={() => setEditingAccountId(null)}>Cancel</button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  className="btn small"
+                                  onClick={() => { setEditingAccountId(acc.id); setEditAccountName(acc.accountHolderName || ''); }}
+                                >
+                                  Rename
+                                </button>
+                                <button className="btn danger small" onClick={() => handleDeleteAccount(acc.id)}>Delete</button>
+                              </>
+                            )}
                           </div>
-                        ) : (
-                          <button
-                            onClick={() => { setActiveSubCatInputId(cat.id); setNewSubCatName(""); }}
-                            style={{ marginTop: '12px', padding: '4px 8px', fontSize: '12px', backgroundColor: '#fff', border: '1px dashed #d1d5db', borderRadius: '4px', cursor: 'pointer', color: '#6b7280' }}
-                          >
-                            + Add Sub-Category
-                          </button>
                         )}
                       </div>
                     </div>
                   ))}
-                  {categories.length === 0 && (
-                    <div style={{ textAlign: 'center', color: '#6b7280', padding: '32px' }}>
-                      No categories defined. Add one above!
-                    </div>
-                  )}
                 </div>
-              </div>
-            </div>
-          )}
+              )
+            )}
 
+            {/* ── Categories ── */}
+            {activeTab === 'categories' && (
+              <>
+                {isAdmin && (
+                  <div className="settings-add-card">
+                    <label className="settings-add-card-label">Add a new category</label>
+                    <div className="settings-add-row">
+                      <input
+                        type="text"
+                        placeholder="e.g. Groceries, Rent, Travel…"
+                        value={newCatName}
+                        onChange={(e) => setNewCatName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategory(); }}
+                        maxLength={50}
+                        className="field-input"
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        className="btn primary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+                        onClick={handleAddCategory}
+                      >
+                        <FiPlus size={15} /> Add
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {categories.length === 0 ? (
+                  <div className="settings-empty">
+                    <FiTag size={36} />
+                    <div className="settings-empty-title">No categories defined</div>
+                    <div className="settings-empty-sub">
+                      {isAdmin ? 'Add one above to start organizing your transactions.' : 'No categories have been added.'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="settings-list">
+                    {categories.map(cat => (
+                      <div key={cat.id} className="settings-row">
+                        {/* Category header */}
+                        <div className="settings-row-head">
+                          {editingCatId === cat.id ? (
+                            <div className="settings-inline-edit">
+                              <input
+                                type="text"
+                                value={editCatName}
+                                onChange={(e) => setEditCatName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleUpdateCategory(cat.id);
+                                  if (e.key === 'Escape') { e.stopPropagation(); setEditingCatId(null); }
+                                }}
+                                maxLength={50}
+                                autoFocus
+                                className="field-input"
+                                style={{ flex: 1 }}
+                              />
+                              <button className="btn primary small" onClick={() => handleUpdateCategory(cat.id)}>Save</button>
+                              <button className="btn small" onClick={() => setEditingCatId(null)}>Cancel</button>
+                            </div>
+                          ) : (
+                            <h3 className="settings-row-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {cat.name}
+                              {isAdmin && (
+                                <button
+                                  className="settings-edit-link"
+                                  title="Rename category"
+                                  onClick={() => { setEditingCatId(cat.id); setEditCatName(cat.name); }}
+                                >
+                                  <FiEdit2 size={14} />
+                                </button>
+                              )}
+                            </h3>
+                          )}
+                          {isAdmin && editingCatId !== cat.id && (
+                            <div className="settings-row-actions">
+                              <button className="btn danger small" onClick={() => handleDeleteCategory(cat.id, cat.name)}>Delete</button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sub-categories */}
+                        <div className="subcat-section">
+                          <div className="subcat-label">Sub-Categories</div>
+                          <div className="subcat-chips">
+                            {(cat.subCategories || []).map((sub, idx) => (
+                              <span key={idx} className="subcat-chip">
+                                {sub}
+                                {isAdmin && (
+                                  <button
+                                    className="subcat-chip-remove"
+                                    onClick={() => handleDeleteSubCategory(cat.id, idx, sub)}
+                                    title={`Remove ${sub}`}
+                                    aria-label={`Remove ${sub}`}
+                                  >
+                                    <FiX size={13} />
+                                  </button>
+                                )}
+                              </span>
+                            ))}
+                            {(cat.subCategories || []).length === 0 && activeSubCatInputId !== cat.id && (
+                              <span className="subcat-empty">None yet</span>
+                            )}
+                          </div>
+
+                          {isAdmin && (activeSubCatInputId === cat.id ? (
+                            <div className="subcat-add-row">
+                              <input
+                                type="text"
+                                placeholder="New sub-category"
+                                value={newSubCatName}
+                                onChange={(e) => setNewSubCatName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleAddSubCategory(cat.id);
+                                  if (e.key === 'Escape') { e.stopPropagation(); setActiveSubCatInputId(null); }
+                                }}
+                                maxLength={50}
+                                autoFocus
+                                className="field-input"
+                                style={{ fontSize: 'var(--text-sm)' }}
+                              />
+                              <button className="btn primary small" onClick={() => handleAddSubCategory(cat.id)}>Add</button>
+                              <button className="btn small" onClick={() => setActiveSubCatInputId(null)}>Cancel</button>
+                            </div>
+                          ) : (
+                            <button
+                              className="subcat-add-btn"
+                              onClick={() => { setActiveSubCatInputId(cat.id); setNewSubCatName(""); }}
+                            >
+                              <FiPlus size={13} /> Add Sub-Category
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+          </div>
         </div>
       </div>
     </>

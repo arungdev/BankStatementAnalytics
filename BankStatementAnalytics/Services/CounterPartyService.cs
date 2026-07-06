@@ -10,10 +10,15 @@ namespace BankStatementAnalytics.Services
         public Merchant ResolveOrCreate(
             string name,
             string? bankCode,
+            long accountId,
             string? upiId = null)
         {
             using var session = DbHelper.GetSession();
             using var tx = session.BeginTransaction();
+
+            // Merchants are private per user - scope every lookup (and any newly created
+            // Merchant) to whichever user owns this transaction's account.
+            var ownerUserId = session.Get<Account>(accountId)?.OwnerUserId;
 
             Merchant? found = null;
 
@@ -21,7 +26,7 @@ namespace BankStatementAnalytics.Services
             if (!string.IsNullOrWhiteSpace(upiId))
             {
                 found = session.Query<MerchantUpi>()
-                    .Where(u => u.UpiId == upiId)
+                    .Where(u => u.UpiId == upiId && u.CounterParty.OwnerUserId == ownerUserId)
                     .Select(u => u.CounterParty)
                     .FirstOrDefault();
             }
@@ -30,7 +35,8 @@ namespace BankStatementAnalytics.Services
             {
                 // Check if the name matches either the primary Name, or any of the previously merged Aliases
                 found = session.Query<Merchant>()
-                    .FirstOrDefault(x => (x.Name == name && x.BankCode == bankCode) || x.Aliases.Contains(name));
+                    .FirstOrDefault(x => x.OwnerUserId == ownerUserId &&
+                        ((x.Name == name && x.BankCode == bankCode) || x.Aliases.Contains(name)));
             }
 
             // ── 3. Create new ────────────────────────────────────────────────
@@ -40,6 +46,7 @@ namespace BankStatementAnalytics.Services
                 {
                     Name = name,
                     BankCode = bankCode,
+                    OwnerUserId = ownerUserId,
                     CreatedOn = DateTime.Now,
                 };
                 session.Save(found);
