@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX } from "react-icons/fi";
+import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell } from "react-icons/fi";
 import api from "../api/client";
 import { useAccount } from "../context/useAccount";
 import { useAuth } from "../context/useAuth";
 import ProfileSettings from "../components/ProfileSettings";
+import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY } from "../hooks/useBillReminders";
 import "./Settings.css";
 
 export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreated, accounts = [], setAccounts }) {
@@ -24,6 +25,40 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
   // Account states
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editAccountName, setEditAccountName] = useState("");
+
+  // Reminder states (client-side preferences persisted in localStorage)
+  const [remEnabled, setRemEnabled] = useState(() => localStorage.getItem(REMINDERS_ENABLED_KEY) === "true");
+  const [remWindow, setRemWindow] = useState(() => Number(localStorage.getItem(REMINDER_WINDOW_KEY)) || 7);
+  const [notifPermission, setNotifPermission] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+
+  const toggleReminders = async () => {
+    if (remEnabled) {
+      localStorage.setItem(REMINDERS_ENABLED_KEY, "false");
+      setRemEnabled(false);
+      return;
+    }
+    if (typeof Notification === "undefined") {
+      alert("Desktop notifications aren't supported in this browser.");
+      return;
+    }
+    let perm = Notification.permission;
+    if (perm === "default") perm = await Notification.requestPermission();
+    setNotifPermission(perm);
+    if (perm !== "granted") {
+      alert("Please allow notifications in your browser to enable desktop reminders.");
+      return;
+    }
+    localStorage.setItem(REMINDERS_ENABLED_KEY, "true");
+    setRemEnabled(true);
+  };
+
+  const updateWindow = (days) => {
+    const n = Math.max(1, Math.min(31, Number(days) || 7));
+    setRemWindow(n);
+    localStorage.setItem(REMINDER_WINDOW_KEY, String(n));
+  };
 
   const fetchCategories = async () => {
     try {
@@ -165,12 +200,14 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
   const TABS = [
     { id: 'accounts', label: 'Accounts', icon: <FiCreditCard size={17} /> },
     { id: 'categories', label: 'Categories', icon: <FiTag size={17} /> },
+    { id: 'reminders', label: 'Reminders', icon: <FiBell size={17} /> },
     { id: 'profile', label: 'Profile', icon: <FiUser size={17} /> },
   ];
 
   const HEADERS = {
     accounts: { title: 'Manage Accounts', subtitle: 'Add, rename, or remove your linked bank accounts.' },
     categories: { title: 'Categories', subtitle: 'Organize your spending into categories and sub-categories.' },
+    reminders: { title: 'Bill Reminders', subtitle: 'Get a desktop notification when a recurring bill is due soon.' },
     profile: { title: 'Profile', subtitle: 'Manage your account and personal details.' },
   };
 
@@ -230,6 +267,58 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
 
             {/* ── Profile ── */}
             {activeTab === 'profile' && <ProfileSettings />}
+
+            {/* ── Reminders ── */}
+            {activeTab === 'reminders' && (
+              <div className="settings-list">
+                <div className="settings-row">
+                  <div className="settings-row-head">
+                    <div style={{ minWidth: 0 }}>
+                      <h3 className="settings-row-title">Desktop notifications</h3>
+                      <p className="settings-row-sub">
+                        Show a Windows notification when a confirmed bill is due within your reminder window.
+                        Reminders fire while the app is open.
+                      </p>
+                    </div>
+                    <div className="settings-row-actions">
+                      <button
+                        className={`btn small${remEnabled ? '' : ' primary'}`}
+                        onClick={toggleReminders}
+                      >
+                        {remEnabled ? 'Disable' : 'Enable'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {notifPermission === 'denied' && (
+                    <p className="settings-row-sub" style={{ color: 'var(--danger, #ef4444)' }}>
+                      Notifications are blocked in your browser settings. Allow them for this site to use reminders.
+                    </p>
+                  )}
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-row-head">
+                    <div style={{ minWidth: 0 }}>
+                      <h3 className="settings-row-title">Reminder window</h3>
+                      <p className="settings-row-sub">Remind me this many days before a bill is due.</p>
+                    </div>
+                    <div className="settings-row-actions" style={{ alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={remWindow}
+                        onChange={(e) => updateWindow(e.target.value)}
+                        className="field-input"
+                        style={{ width: '72px' }}
+                      />
+                      <span className="settings-row-sub">days</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ── Accounts ── */}
             {activeTab === 'accounts' && (

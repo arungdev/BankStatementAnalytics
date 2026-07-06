@@ -27,6 +27,7 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddScoped<TextService>();
 builder.Services.AddScoped<TransactionRepositoryFactory>();
 builder.Services.AddScoped<CounterPartyService>();
+builder.Services.AddScoped<RecurringBillService>();
 // ── Auto-register all parsers from registry ──────────────────────────────
 foreach (var config in BankParserRegistry.Parsers)
 {

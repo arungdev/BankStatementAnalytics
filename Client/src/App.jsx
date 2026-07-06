@@ -8,6 +8,7 @@ import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
 import AccountFilter from "./components/AccountFilter";
+import NotificationBell from "./components/NotificationBell";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import { InsightsFilters } from "./pages/Insights";
@@ -19,6 +20,8 @@ import Merchants from "./pages/Merchants";
 import UploadStatement from "./pages/UploadStatement";
 import Trends from "./pages/Trends";
 import Insights from "./pages/Insights";
+import Bills from "./pages/Bills";
+import useBillReminders from "./hooks/useBillReminders";
 
 export default function App() {
   return (
@@ -50,6 +53,7 @@ function AuthGate() {
         <Route path="/merchants" element={<Merchants />} />
         <Route path="/upload" element={<UploadStatement />} />
         <Route path="/insights" element={<Insights />} />
+        <Route path="/bills" element={<Bills />} />
       </Route>
     </Routes>
   );
@@ -61,11 +65,15 @@ const PAGE_META = {
   '/merchants': { title: 'Merchants' },
   '/upload': { title: 'Upload Statement' },
   '/insights': { title: 'Spending Insights', subtitle: 'Where your money goes' },
+  '/bills': { title: 'Bills & Reminders', subtitle: 'Upcoming recurring bills' },
 };
 
 function Layout() {
   const location = useLocation();
   const { selectedAccountId, setSelectedAccountId } = useAccount();
+
+  // Fire desktop reminders for bills due soon (opt-in; see Settings → Reminders).
+  useBillReminders();
 
   const [accounts, setAccounts] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -162,6 +170,7 @@ function Layout() {
           title={meta.title}
           subtitle={meta.subtitle}
           filters={filters}
+          actions={<NotificationBell />}
           onSettings={() => setIsSettings(true)}
         />
 
