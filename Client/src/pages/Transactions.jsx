@@ -61,33 +61,32 @@ export default function Transactions() {
   const [showUpload, setShowUpload] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Last-uploaded-statement RHS drawer
-  const [lastUpload, setLastUpload] = useState(null);
-  const [showLastUpload, setShowLastUpload] = useState(false);
-  const [loadingLastUpload, setLoadingLastUpload] = useState(false);
+  // Upload-history RHS drawer
+  const [uploads, setUploads] = useState([]);
+  const [showUploadHistory, setShowUploadHistory] = useState(false);
+  const [loadingUploads, setLoadingUploads] = useState(false);
 
-  const openLastUpload = () => {
+  const openUploadHistory = () => {
     setSelectedTx(null);            // only one RHS panel at a time
-    setShowLastUpload(true);
-    setLoadingLastUpload(true);
+    setShowUploadHistory(true);
+    setLoadingUploads(true);
     getUploads()
       .then(res => {
         const forAccount = (res.data || [])
           .filter(u => String(u.accountId) === String(selectedAccountId))
           .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
-        setLastUpload(forAccount[0] || null);
+        setUploads(forAccount);
       })
-      .catch(() => setLastUpload(null))
-      .finally(() => setLoadingLastUpload(false));
+      .catch(() => setUploads([]))
+      .finally(() => setLoadingUploads(false));
   };
 
-  const handleRevertLastUpload = async () => {
-    if (!lastUpload?.id) return;
-    if (!window.confirm(`Revert "${lastUpload.fileName}"? Its imported transactions will be removed.`)) return;
+  const handleRevert = async (upload) => {
+    if (!upload?.id) return;
+    if (!window.confirm(`Revert "${upload.fileName}"? Its imported transactions will be removed.`)) return;
     try {
-      await revertStatement(lastUpload.id);
-      setShowLastUpload(false);
-      setLastUpload(null);
+      await revertStatement(upload.id);
+      setUploads(prev => prev.filter(u => u.id !== upload.id));
       setRefreshKey(k => k + 1);
     } catch {
       alert("Could not revert this upload. Please try again.");
@@ -343,7 +342,7 @@ export default function Transactions() {
   );
 
   return (
-    <div style={{ marginRight: (selectedTx || showLastUpload) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
+    <div style={{ marginRight: (selectedTx || showUploadHistory) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
       {/* ── Action strip — title/date-filter now live in the shared header ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
         {isAdmin && (
@@ -351,8 +350,8 @@ export default function Transactions() {
             <FiUploadCloud size={14} /> Upload Statement
           </Button>
         )}
-        <Button onClick={openLastUpload} style={{ fontSize: 'var(--text-sm)' }}>
-          <FiFileText size={14} /> Last Upload
+        <Button onClick={openUploadHistory} style={{ fontSize: 'var(--text-sm)' }}>
+          <FiFileText size={14} /> Upload History
         </Button>
         <Button onClick={handleExportCSV} style={{ fontSize: 'var(--text-sm)' }}>
           <FiDownload size={14} /> Export CSV
@@ -378,7 +377,7 @@ export default function Transactions() {
             {tx.map((t, index) => (
               <tr
                 key={t.id || index}
-                onClick={() => { setShowLastUpload(false); setSelectedTx(t); }}
+                onClick={() => { setShowUploadHistory(false); setSelectedTx(t); }}
                 style={{
                   cursor: 'pointer',
                   backgroundColor: selectedTx && selectedTx.id === t.id ? 'var(--primary-light)' : undefined,
@@ -539,48 +538,43 @@ export default function Transactions() {
         )}
       </Drawer>
 
-      {/* Last uploaded statement — RHS drawer */}
+      {/* Upload history — RHS drawer */}
       <Drawer
-        open={showLastUpload}
-        onClose={() => setShowLastUpload(false)}
-        title="Last Uploaded Statement"
+        open={showUploadHistory}
+        onClose={() => setShowUploadHistory(false)}
+        title="Upload History"
         width={sidebarWidth}
         onWidthChange={setSidebarWidth}
         modal={false}
       >
-        {loadingLastUpload ? (
+        {loadingUploads ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '40px' }}>Loading...</div>
-        ) : !lastUpload ? (
+        ) : uploads.length === 0 ? (
           <EmptyState message="No statements have been uploaded for this account yet." />
         ) : (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 0 20px', borderBottom: '1px solid var(--border-color)', marginBottom: '20px' }}>
-              <FiFileText size={28} color="var(--primary)" />
-              <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-main)', wordBreak: 'break-all' }}>
-                {lastUpload.fileName}
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-              <div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Uploaded On</div>
-                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>
-                  {new Date(lastUpload.uploadedAt).toLocaleString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {uploads.map(u => (
+              <div key={u.id} className="card" style={{ padding: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <FiFileText size={22} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{u.fileName}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                      {new Date(u.uploadedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                      <Badge variant="blue">{u.totalCount ?? u.transactionCount ?? 0} total</Badge>
+                      <Badge variant="green">{u.newCount ?? 0} new</Badge>
+                      {isAdmin && (
+                        <button className="btn danger small" onClick={() => handleRevert(u)}>
+                          <FiRotateCcw size={12} /> Revert
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Transactions Imported</div>
-                <div style={{ marginTop: '4px' }}>
-                  <Badge variant="blue">{lastUpload.transactionCount ?? 0}</Badge>
-                </div>
-              </div>
-            </div>
-
-            {isAdmin && (
-              <button className="btn danger small" onClick={handleRevertLastUpload}>
-                <FiRotateCcw size={12} /> Revert this upload
-              </button>
-            )}
+            ))}
           </div>
         )}
       </Drawer>

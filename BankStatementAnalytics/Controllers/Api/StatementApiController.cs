@@ -131,17 +131,25 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Select(g => new { UploadId = g.Key, Count = g.Count() })
                 .ToList();
 
-            var result = uploads.OrderByDescending(u => u.UploadedAt).Select(u => new
+            var result = uploads.OrderByDescending(u => u.UploadedAt).Select(u =>
             {
-                u.Id,
-                u.FileName,
-                u.StoredName,
-                u.AccountId,
-                u.Path,
-                u.UploadedAt,
-                u.TransactionId,
-                TransactionCount = txCounts.FirstOrDefault(c => c.UploadId.HasValue &&
-                 c.UploadId.Value == u.Id)?.Count ?? 0
+                // Legacy uploads (created before total/new tracking) have 0 stored - fall back
+                // to the count of transactions tied to this UploadId for the total.
+                var tiedCount = txCounts.FirstOrDefault(c => c.UploadId.HasValue && c.UploadId.Value == u.Id)?.Count ?? 0;
+                var total = u.TotalCount > 0 ? u.TotalCount : tiedCount;
+                return new
+                {
+                    u.Id,
+                    u.FileName,
+                    u.StoredName,
+                    u.AccountId,
+                    u.Path,
+                    u.UploadedAt,
+                    u.TransactionId,
+                    TotalCount = total,
+                    NewCount = u.NewCount,
+                    TransactionCount = total   // back-compat alias
+                };
             });
 
             return Ok(result);
@@ -158,16 +166,35 @@ namespace BankStatementAnalytics.Controllers.Api
             if (file == null || file.Length == 0)
                 return BadRequest("File is empty");
 
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (ext != ".txt" && ext != ".csv")
+                return BadRequest("Only TXT and CSV files are supported.");
+
+            // Read once so we can both hash (for duplicate detection) and persist the bytes.
+            byte[] bytes;
+            using (var ms = new MemoryStream())
+            {
+                await file.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+            var fileHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+
+            // Reject an exact re-upload of the same file for the same account.
+            using (var checkSession = DbHelper.GetSession())
+            {
+                bool alreadyUploaded = checkSession.Query<Models.Upload>()
+                    .Any(u => u.AccountId == accountId && u.FileHash == fileHash);
+                if (alreadyUploaded)
+                    return Conflict("This statement file has already been uploaded for this account.");
+            }
+
             var folder = Path.Combine(AppContext.BaseDirectory, "Uploads");
             Directory.CreateDirectory(folder);
 
             var storedName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
             var path = Path.Combine(folder, storedName);
 
-            using (var stream = new FileStream(path, FileMode.Create))
-                await file.CopyToAsync(stream);
-
-            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
 
             var uploadId = Guid.NewGuid();
             var upload = new Models.Upload
@@ -177,7 +204,8 @@ namespace BankStatementAnalytics.Controllers.Api
                 StoredName = storedName,
                 AccountId = accountId,
                 Path = $"/Uploads/{storedName}",
-                UploadedAt = DateTime.UtcNow
+                UploadedAt = DateTime.UtcNow,
+                FileHash = fileHash
             };
 
             await DbHelper.SaveAsync(upload);
@@ -196,21 +224,13 @@ namespace BankStatementAnalytics.Controllers.Api
             await DbHelper.UpdateAsync(upload);
 
 
-            if (ext == ".txt")
-            {
-                await _textService.ExtractAsync(path, accountId, uploadId, StatementFileFormat.Txt);
-            }
-            else if (ext == ".csv")
-            {
-                await _textService.ExtractAsync(path, accountId, uploadId, StatementFileFormat.Csv);
-            }
-            else
-            {
-                return BadRequest("Only TXT and CSV files are supported.");
-            }
+            var (total, newCount) = await _textService.ExtractAsync(
+                path, accountId, uploadId,
+                ext == ".csv" ? StatementFileFormat.Csv : StatementFileFormat.Txt);
 
-            using var session = DbHelper.GetSession();
-            int txCount = session.Query<BankTransaction>().Count(t => t.UploadId == uploadId);
+            upload.TotalCount = total;
+            upload.NewCount = newCount;
+            await DbHelper.UpdateAsync(upload);
 
             return Ok(new
             {
@@ -221,7 +241,9 @@ namespace BankStatementAnalytics.Controllers.Api
                 upload.Path,
                 upload.UploadedAt,
                 upload.TransactionId,
-                TransactionCount = txCount
+                TotalCount = total,
+                NewCount = newCount,
+                TransactionCount = total   // back-compat alias
             });
         }
 

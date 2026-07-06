@@ -105,19 +105,21 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
         setProgress(percent);
       });
 
-      setMessage("Upload successful.");
+      const total = res?.data?.totalCount ?? res?.data?.transactionCount ?? 0;
+      const added = res?.data?.newCount ?? total;
+      setMessage(`Upload successful — ${added} new of ${total} transactions imported.`);
       setFile(null);
       setProgress(100);
       if (fileInputRef.current) fileInputRef.current.value = "";
 
-      setTimeout(() => { setProgress(null); setMessage(null); }, 3000);
+      setTimeout(() => { setProgress(null); setMessage(null); }, 4000);
 
       setUploads((prev) => [{
         id: res?.data?.id ?? null,
         fileName: file.name,
         accountId: selectedAccount,
         time: Date.now(),
-        transactionCount: res?.data?.transactionCount || 0,
+        transactionCount: total,
         response: res?.data,
       }, ...prev]);
 
@@ -125,7 +127,9 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
       onUploaded?.();
     } catch (err) {
       console.error(err);
-      setMessage("Upload failed. Please try again.");
+      // Show the server's message (e.g. duplicate-file 409) when present.
+      const serverMsg = err.response?.data;
+      setMessage(typeof serverMsg === "string" && serverMsg ? serverMsg : "Upload failed. Please try again.");
       setProgress(null);
     } finally {
       setLoading(false);
@@ -249,15 +253,18 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
             )}
 
             {/* Message */}
-            {message && (
-              <div style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', backgroundColor: message.includes('failed') || message.includes('Only') || message.includes('Please') ? 'var(--danger-light)' : 'var(--success-light)', color: message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#991b1b' : '#065f46', border: `1px solid ${message.includes('failed') || message.includes('Only') || message.includes('Please') ? '#f87171' : '#34d399'}` }}>
-                {message.includes('failed') || message.includes('Only') || message.includes('Please')
-                  ? <FiAlertCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
-                  : <FiCheckCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
-                }
-                <span style={{ fontSize: 'var(--text-base)', fontWeight: 500 }}>{message}</span>
-              </div>
-            )}
+            {message && (() => {
+              const isError = ['failed', 'Only', 'Please', 'already'].some(k => message.includes(k));
+              return (
+                <div style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', backgroundColor: isError ? 'var(--danger-light)' : 'var(--success-light)', color: isError ? '#991b1b' : '#065f46', border: `1px solid ${isError ? '#f87171' : '#34d399'}` }}>
+                  {isError
+                    ? <FiAlertCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
+                    : <FiCheckCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
+                  }
+                  <span style={{ fontSize: 'var(--text-base)', fontWeight: 500 }}>{message}</span>
+                </div>
+              );
+            })()}
 
             {/* Submit */}
             <div style={{ display: 'flex', gap: '12px' }}>

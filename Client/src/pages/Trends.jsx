@@ -25,12 +25,33 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 // ── Chart colour tokens — aligned with the app's --success/--danger palette ──
 const C = {
   green: '#10b981',
-  greenFill: 'rgba(16,185,129,0.72)',
+  greenTop: 'rgba(16,185,129,0.95)',
+  greenBottom: 'rgba(52,211,153,0.55)',
+  greenHover: '#059669',
   red: '#ef4444',
-  redFill: 'rgba(239,68,68,0.70)',
-  grid: '#f0f2f4',
+  redTop: 'rgba(239,68,68,0.92)',
+  redBottom: 'rgba(248,113,113,0.52)',
+  redHover: '#dc2626',
+  grid: '#eef1f4',
   tickColor: '#9ca3af',
   tooltipBg: '#1e293b',
+};
+
+// ── Vertical fill gradient (top vivid → bottom soft), cached per canvas ─────
+const gradientCache = new WeakMap();
+const makeFill = (top, bottom) => (ctx) => {
+  const { ctx: g, chartArea } = ctx.chart;
+  if (!chartArea) return top;
+  let byKey = gradientCache.get(g);
+  if (!byKey) { byKey = {}; gradientCache.set(g, byKey); }
+  const key = `${top}|${bottom}|${Math.round(chartArea.top)}|${Math.round(chartArea.bottom)}`;
+  if (!byKey[key]) {
+    const grad = g.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    grad.addColorStop(0, top);
+    grad.addColorStop(1, bottom);
+    byKey[key] = grad;
+  }
+  return byKey[key];
 };
 
 const formatShort = (v) => {
@@ -80,7 +101,7 @@ const Trends = () => {
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: Infinity });
   const scrollRef   = useRef(null);
   const debounceRef = useRef(null);
-  const barGroupWidth = period === 'day' ? 150 : 60;
+  const barGroupWidth = period === 'day' ? 84 : 62;
 
   // ── Drill-down modal state ─────────────────────────────────────────────
   const [drillDown, setDrillDown]           = useState(null);
@@ -238,22 +259,24 @@ const Trends = () => {
       {
         label: 'Spends',
         data: data.map(d => d.spend),
-        backgroundColor: C.redFill,
-        hoverBackgroundColor: C.red,
-        borderColor: C.red,
-        borderWidth: { top: 3, left: 0, right: 0, bottom: 0 },
-        borderRadius: { topLeft: 5, topRight: 5 },
+        backgroundColor: makeFill(C.redTop, C.redBottom),
+        hoverBackgroundColor: C.redHover,
+        borderRadius: { topLeft: 6, topRight: 6 },
         borderSkipped: false,
+        maxBarThickness: 30,
+        categoryPercentage: 0.68,
+        barPercentage: 0.92,
       },
       {
         label: 'Income',
         data: data.map(d => d.income),
-        backgroundColor: C.greenFill,
-        hoverBackgroundColor: C.green,
-        borderColor: C.green,
-        borderWidth: { top: 3, left: 0, right: 0, bottom: 0 },
-        borderRadius: { topLeft: 5, topRight: 5 },
+        backgroundColor: makeFill(C.greenTop, C.greenBottom),
+        hoverBackgroundColor: C.greenHover,
+        borderRadius: { topLeft: 6, topRight: 6 },
         borderSkipped: false,
+        maxBarThickness: 30,
+        categoryPercentage: 0.68,
+        barPercentage: 0.92,
       },
     ],
   }), [data]);
@@ -331,7 +354,7 @@ const Trends = () => {
           <Bar data={axisData} options={axisOptions} />
         </div>
         <div className="bars-scroll-panel" ref={scrollRef} onScroll={handleScroll}>
-          <div style={{ position: 'relative', height: '100%', minWidth: `${data.length * barGroupWidth}px` }}>
+          <div style={{ position: 'relative', height: '100%', minWidth: `max(100%, ${data.length * barGroupWidth}px)` }}>
             <Bar data={mainData} options={mainOptions} />
           </div>
         </div>

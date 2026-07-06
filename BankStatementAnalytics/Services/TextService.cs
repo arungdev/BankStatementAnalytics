@@ -34,7 +34,11 @@ namespace BankStatementAnalytics.Services
             _serviceProvider = serviceProvider;
         }
 
-        public async Task ExtractAsync(
+        /// <summary>
+        /// Parses the statement and upserts its transactions. Returns the total number of
+        /// transactions found in the file and how many of them were new (not already imported).
+        /// </summary>
+        public async Task<(int total, int newCount)> ExtractAsync(
             string filePath, int accountId, Guid uploadId, StatementFileFormat format)
         {
             var ext = format == StatementFileFormat.Csv ? ".csv" : ".txt";
@@ -63,7 +67,25 @@ namespace BankStatementAnalytics.Services
                 tx.AccountId = accountId;
             }
 
+            // Figure out how many are genuinely new by comparing against transactions already
+            // stored for this account (identity = AccountId + BankReference + BankType), before
+            // the upsert merges them in.
+            int newCount;
+            using (var session = DbHelper.GetSession())
+            {
+                var existingKeys = session.Query<BankTransaction>()
+                    .Where(t => t.AccountId == accountId)
+                    .Select(t => new { t.BankReference, t.BankType })
+                    .ToList()
+                    .Select(x => $"{x.BankReference}|{x.BankType}")
+                    .ToHashSet();
+
+                newCount = transactions.Count(t => !existingKeys.Contains($"{t.BankReference}|{t.BankType}"));
+            }
+
             await DbHelper.SaveOrUpdateManyAsync(transactions);
+
+            return (transactions.Count, newCount);
         }
 
 

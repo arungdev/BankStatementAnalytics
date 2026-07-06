@@ -23,6 +23,9 @@ namespace BankStatementAnalytics.Mappping
                 m.Type<GuidToStringType>();
                 m.Length(50);
             });
+            Property(x => x.FileHash, m => { m.Length(64); m.Index("IX_Uploads_FileHash"); });
+            Property(x => x.TotalCount);
+            Property(x => x.NewCount);
         }
     }
 }
