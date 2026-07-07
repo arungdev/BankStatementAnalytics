@@ -1,0 +1,213 @@
+using Microsoft.AspNetCore.Mvc;
+using NHibernate.Linq;
+using Common.Framework.Data;
+using Common.Framework.Web;
+using BankStatementAnalytics.Models;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace BankStatementAnalytics.Controllers.Api
+{
+    [ApiController]
+    [Route("api/budgets")]
+    public class BudgetsApiController : TenantControllerBase
+    {
+        // GET: api/budgets?monthsAgo=0 — each budget with the requested month's spend, remaining,
+        // and % used. monthsAgo=0 is the current calendar month, 1 the previous month, etc.
+        [HttpGet]
+        public async Task<IActionResult> GetBudgets([FromQuery] int monthsAgo = 0)
+        {
+            using var session = DbHelper.GetSession();
+
+            var budgets = session.Query<Budget>()
+                .Where(b => b.OwnerUserId == CurrentUserId)
+                .ToList()
+                .OrderBy(b => b.Category, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var (monthStart, monthEnd) = MonthRange(monthsAgo);
+            var spentByCategory = await SpendForMonthAsync(session, monthStart, monthEnd);
+
+            var views = budgets.Select(b =>
+            {
+                spentByCategory.TryGetValue(b.Category, out var spent);
+                var remaining = b.MonthlyLimit - spent;
+                var percent = b.MonthlyLimit > 0 ? (double)(spent / b.MonthlyLimit) * 100 : 0;
+                return new
+                {
+                    id = b.Id,
+                    category = b.Category,
+                    monthlyLimit = b.MonthlyLimit,
+                    spent,
+                    remaining,
+                    percent = Math.Round(percent, 1),
+                    overBudget = spent > b.MonthlyLimit
+                };
+            }).ToList();
+
+            return Ok(new
+            {
+                month = monthStart.ToString("MMMM yyyy"),
+                monthsAgo,
+                isCurrentMonth = monthsAgo == 0,
+                budgets = views
+            });
+        }
+
+        // GET: api/budgets/months — every calendar month from the user's earliest transaction to now,
+        // newest first, as { monthsAgo, label } so the client can offer a month picker.
+        [HttpGet("months")]
+        public async Task<IActionResult> GetMonths()
+        {
+            using var session = DbHelper.GetSession();
+
+            var ownedIds = DbHelper.GetAll<Account>()
+                .Where(a => a.OwnerUserId == CurrentUserId)
+                .Select(a => a.Id)
+                .ToHashSet();
+
+            var (currentStart, _) = MonthRange(0);
+
+            DateTime? earliest = null;
+            if (ownedIds.Count > 0)
+            {
+                earliest = await session.Query<BankTransaction>()
+                    .Where(t => ownedIds.Contains(t.AccountId))
+                    .Select(t => (DateTime?)t.TransactionDate)
+                    .MinAsync();
+            }
+
+            // Always include the current month; extend back to the earliest transaction if there is one.
+            var earliestStart = earliest.HasValue
+                ? new DateTime(earliest.Value.Year, earliest.Value.Month, 1)
+                : currentStart;
+
+            var months = new System.Collections.Generic.List<object>();
+            for (var m = currentStart; m >= earliestStart; m = m.AddMonths(-1))
+            {
+                var monthsAgo = ((currentStart.Year - m.Year) * 12) + (currentStart.Month - m.Month);
+                months.Add(new { monthsAgo, label = m.ToString("MMMM yyyy") });
+            }
+
+            return Ok(months);
+        }
+
+        // POST: api/budgets — create a budget for a category (one per category per user).
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] BudgetDto req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.Category))
+                return BadRequest("Category is required.");
+            if (req.MonthlyLimit <= 0)
+                return BadRequest("MonthlyLimit must be greater than zero.");
+
+            var category = req.Category.Trim();
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var exists = session.Query<Budget>()
+                .Any(b => b.OwnerUserId == CurrentUserId && b.Category == category);
+            if (exists)
+                return Conflict($"A budget for \"{category}\" already exists.");
+
+            var budget = new Budget
+            {
+                OwnerUserId = CurrentUserId,
+                Category = category,
+                MonthlyLimit = req.MonthlyLimit,
+                CreatedOn = DateTime.Now,
+                UpdatedOn = DateTime.Now
+            };
+
+            await session.SaveAsync(budget);
+            await tx.CommitAsync();
+
+            return Ok(new { budget.Id });
+        }
+
+        // PUT: api/budgets/{id} — change the monthly limit.
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] BudgetDto req)
+        {
+            if (req == null || req.MonthlyLimit <= 0)
+                return BadRequest("MonthlyLimit must be greater than zero.");
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var budget = session.Get<Budget>(id);
+            if (!Owns(budget)) return NotFound();
+
+            budget.MonthlyLimit = req.MonthlyLimit;
+            budget.UpdatedOn = DateTime.Now;
+
+            await session.UpdateAsync(budget);
+            await tx.CommitAsync();
+
+            return NoContent();
+        }
+
+        // DELETE: api/budgets/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var budget = session.Get<Budget>(id);
+            if (!Owns(budget)) return NotFound();
+
+            await session.DeleteAsync(budget);
+            await tx.CommitAsync();
+
+            return NoContent();
+        }
+
+        // ── Helpers ──────────────────────────────────────────────────────────
+
+        // Calendar-month window for a month offset back from today (0 = current, 1 = previous, …).
+        // Returns [start, end) with an exclusive upper bound.
+        private static (DateTime start, DateTime end) MonthRange(int monthsAgo)
+        {
+            var offset = monthsAgo < 0 ? 0 : monthsAgo;
+            var now = DateTime.Now;
+            var thisMonth = new DateTime(now.Year, now.Month, 1);
+            var start = thisMonth.AddMonths(-offset);
+            var end = start.AddMonths(1);
+            return (start, end);
+        }
+
+        // Spend per resolved category across all of the user's accounts within [monthStart, monthEnd).
+        private async Task<System.Collections.Generic.Dictionary<string, decimal>> SpendForMonthAsync(
+            NHibernate.ISession session, DateTime monthStart, DateTime monthEnd)
+        {
+            var ownedIds = DbHelper.GetAll<Account>()
+                .Where(a => a.OwnerUserId == CurrentUserId)
+                .Select(a => a.Id)
+                .ToHashSet();
+
+            if (ownedIds.Count == 0)
+                return new System.Collections.Generic.Dictionary<string, decimal>();
+
+            var transactions = await session.Query<BankTransaction>()
+                .Where(t => ownedIds.Contains(t.AccountId)
+                         && t.Debit > 0
+                         && t.TransactionDate >= monthStart
+                         && t.TransactionDate < monthEnd)
+                .Fetch(t => t.CounterParty)
+                .ToListAsync();
+
+            return transactions
+                .GroupBy(t => t.CategoryOverride ?? t.CounterParty?.Category ?? "Uncategorized")
+                .ToDictionary(g => g.Key, g => g.Sum(t => t.Debit));
+        }
+    }
+
+    public class BudgetDto
+    {
+        public string Category { get; set; } = string.Empty;
+        public decimal MonthlyLimit { get; set; }
+    }
+}

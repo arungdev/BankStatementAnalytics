@@ -15,22 +15,46 @@ namespace BankStatementAnalytics.Controllers.Api
     public class DashboardApiController : TenantControllerBase
     {
         [HttpGet]
-        public async Task<IActionResult> GetDashboardData([FromQuery] int accountId)
+        public async Task<IActionResult> GetDashboardData(
+            [FromQuery] int accountId,
+            [FromQuery] string accountIds = null)
         {
-            if (accountId == 0)
+            // Resolve the accounts to aggregate: either the comma-separated
+            // "All accounts" list or a single accountId, filtered to owned.
+            var ownedIds = DbHelper.GetAll<Account>()
+                .Where(a => a.OwnerUserId == CurrentUserId)
+                .Select(a => a.Id)
+                .ToHashSet();
+
+            List<long> ids;
+            if (!string.IsNullOrWhiteSpace(accountIds))
+            {
+                ids = accountIds.Split(',')
+                    .Select(s => long.TryParse(s.Trim(), out var id) ? id : 0)
+                    .Where(id => id > 0 && ownedIds.Contains(id))
+                    .ToList();
+            }
+            else if (accountId != 0 && ownedIds.Contains(accountId))
+            {
+                ids = new List<long> { accountId };
+            }
+            else if (accountId != 0)
+            {
+                return NotFound();
+            }
+            else
             {
                 return Ok(null); // Frontend handles null data
             }
 
-            var account = DbHelper.GetById<Account>((long)accountId);
-            if (!Owns(account))
-                return NotFound();
+            if (!ids.Any())
+                return Ok(null);
 
             using var session = DbHelper.GetSession();
 
-            // Fetch all transactions for the account (HDFC + IOB unified)
+            // Fetch all transactions for the account(s) (HDFC + IOB unified)
             var transactions = await session.Query<BankTransaction>()
-                .Where(t => t.AccountId == accountId)
+                .Where(t => ids.Contains(t.AccountId))
                 .Fetch(t => t.CounterParty) // Eagerly fetch CounterParty
                 .ToListAsync();
 

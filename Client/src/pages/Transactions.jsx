@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import api from "../api/client";
+import usePersistedState from "../hooks/usePersistedState";
 import { useAccount } from "../context/useAccount";
+import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { useAuth } from "../context/useAuth";
 import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
@@ -14,7 +16,25 @@ import Button from "../components/ui/Button";
 import Badge from "../components/ui/Badge";
 import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
+import Avatar from "../components/ui/Avatar";
 import { currencyFormatter } from "../utils/format";
+
+/* ─── Design tokens — aligned with Overview / Merchants / Insights ───────── */
+const T = {
+  indigo:     '#4f46e5',
+  indigoDim:  '#eef2ff',
+  surface:    '#ffffff',
+  bg:         '#f3f4f6',
+  border:     '#e5e7eb',
+  borderSub:  '#f0f1f3',
+  text:       '#111827',
+  muted:      '#6b7280',
+  faint:      '#9ca3af',
+  red:        '#ef4444',
+  green:      '#10b981',
+  blue:       '#2563eb',
+  blueDim:    '#eff6ff',
+};
 
 /* ─── TransactionsFilters — rendered in Layout's PageHeader filter row ──── */
 export function TransactionsFilters({ dateRange, setDateRange }) {
@@ -38,19 +58,25 @@ export default function Transactions() {
 
   // ── Date filter now lives in Layout, shared with the header row ───────
   const {
+    accounts = [],
     transactionsRange: dateRange = { start: null, end: null, preset: 'ALL' },
   } = useOutletContext() ?? {};
 
+  // Transactions are viewed one account at a time. "All accounts" isn't offered
+  // here, so fall back to the first account rather than a dead-end state.
+  const effectiveAccountId =
+    selectedAccountId === ALL_ACCOUNTS ? (accounts[0]?.id ?? null) : selectedAccountId;
+
   const [tx, setTx] = useState([]);
-  const [loading, setLoading] = useState(!selectedAccountId);
+  const [loading, setLoading] = useState(!effectiveAccountId);
   const [totalTransactions, setTotalTransactions] = useState(0);
 
   // Categories from API
   const [categories, setCategories] = useState([]);
 
-  // Pagination state
+  // Pagination state (itemsPerPage persists across reloads; page resets to 1)
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = usePersistedState('transactionsPerPage', 10);
 
   // Sidebar state
   const [selectedTx, setSelectedTx] = useState(null);
@@ -73,7 +99,7 @@ export default function Transactions() {
     getUploads()
       .then(res => {
         const forAccount = (res.data || [])
-          .filter(u => String(u.accountId) === String(selectedAccountId))
+          .filter(u => String(u.accountId) === String(effectiveAccountId))
           .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
         setUploads(forAccount);
       })
@@ -113,9 +139,8 @@ export default function Transactions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange.start, dateRange.end]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!selectedAccountId) {
+    if (!effectiveAccountId) {
       setLoading(false);
       setTx([]);
       setTotalTransactions(0);
@@ -130,7 +155,7 @@ export default function Transactions() {
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
 
-    api.get(`/statements/${selectedAccountId}?${params.toString()}`)
+    api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
         let allTx = [];
         let isServerPaginated = false;
@@ -173,7 +198,7 @@ export default function Transactions() {
         console.error(err);
         setLoading(false);
       });
-  }, [selectedAccountId, currentPage, dateRange, itemsPerPage, refreshKey]);
+  }, [effectiveAccountId, currentPage, dateRange, itemsPerPage, refreshKey]);
 
   if (loading) {
     return (
@@ -184,7 +209,7 @@ export default function Transactions() {
     );
   }
 
-  if (!selectedAccountId) {
+  if (!effectiveAccountId) {
     return (
       <EmptyState
         title="No account selected"
@@ -232,7 +257,7 @@ export default function Transactions() {
     );
 
     api.patch(`/transactions/category`, {
-      AccountId: selectedAccountId,
+      AccountId: effectiveAccountId,
       BankReference: t.id,
       BankType: t.bankType,
       Category: resolvedCategory,
@@ -262,7 +287,7 @@ export default function Transactions() {
     ));
 
     api.patch(`/transactions/tags`, {
-      AccountId: selectedAccountId,
+      AccountId: effectiveAccountId,
       BankReference: selectedTx.id,
       BankType: selectedTx.bankType,
       Tags: updatedTags
@@ -280,13 +305,38 @@ export default function Transactions() {
     handleTagChange((selectedTx.tags || []).filter(t => t !== tagToRemove));
   };
 
+  const handleNoteChange = (newNote) => {
+    const trimmed = (newNote ?? '').trim();
+    const previousNote = selectedTx.note;
+    if (trimmed === (previousNote || '')) return; // nothing changed
+
+    setSelectedTx(prev => ({ ...prev, note: trimmed }));
+    setTx(prev => prev.map(item =>
+      item.id === selectedTx.id ? { ...item, note: trimmed } : item
+    ));
+
+    api.patch(`/transactions/note`, {
+      AccountId: effectiveAccountId,
+      BankReference: selectedTx.id,
+      BankType: selectedTx.bankType,
+      Note: trimmed
+    }).catch(err => {
+      console.error("Failed to update note", err);
+      alert("Failed to update note. Please try again.");
+      setSelectedTx(prev => ({ ...prev, note: previousNote }));
+      setTx(prev => prev.map(item =>
+        item.id === selectedTx.id ? { ...item, note: previousNote } : item
+      ));
+    });
+  };
+
   const handleExportCSV = () => {
     const { start: startDate, end: endDate } = dateRange;
     const params = new URLSearchParams({ pageSize: 0 });
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
 
-    api.get(`/statements/${selectedAccountId}?${params.toString()}`)
+    api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
         let allTx = Array.isArray(res.data) ? res.data : (res.data.transactions || []);
         if (allTx.length === 0) return alert("No transactions to export.");
@@ -343,6 +393,49 @@ export default function Transactions() {
 
   return (
     <div style={{ marginRight: (selectedTx || showUploadHistory) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
+      <style>{`
+        .tx-row {
+          display: grid;
+          grid-template-columns: 76px minmax(0,1fr) 168px 128px;
+          align-items: center;
+          gap: 16px;
+          padding: 13px 20px;
+          border-bottom: 1px solid ${T.borderSub};
+          cursor: pointer;
+          transition: background 0.12s;
+        }
+        .tx-row:hover { background: ${T.bg}; }
+        .tx-row.selected { background: ${T.indigoDim}; }
+        .tx-row:last-child { border-bottom: none; }
+        .tx-head {
+          display: grid;
+          grid-template-columns: 76px minmax(0,1fr) 168px 128px;
+          gap: 16px;
+          padding: 12px 20px;
+          font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; color: ${T.faint};
+          border-bottom: 1px solid ${T.border};
+          background: ${T.bg};
+        }
+        .tx-cat-select {
+          width: 100%; max-width: 100%;
+          padding: 5px 8px; font-size: 12px; font-weight: 600;
+          border: 1px solid ${T.border}; border-radius: 8px;
+          background: ${T.surface}; font-family: inherit;
+          outline: none; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .tx-cat-select:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
+        .tx-tag {
+          display: inline-flex; align-items: center; gap: 4px;
+          background: ${T.blueDim}; color: ${T.blue};
+          padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
+        }
+        @media (max-width: 720px) {
+          .tx-row, .tx-head { grid-template-columns: 60px minmax(0,1fr) 110px; }
+          .tx-col-cat { display: none; }
+        }
+      `}</style>
+
       {/* ── Action strip — title/date-filter now live in the shared header ── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
         {isAdmin && (
@@ -360,64 +453,81 @@ export default function Transactions() {
         <Badge variant="blue">{totalTransactions} Total Transactions</Badge>
       </div>
 
-      <div className="table-container" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
-        <table>
-          <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--gray-50)', zIndex: 10, boxShadow: 'inset 0 -1px 0 var(--border-color)' }}>
-            <tr>
-              <th>Date</th>
-              <th>Merchant</th>
-              <th>Debit</th>
-              <th>Credit</th>
-              <th>Category</th>
-              <th>Tags</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tx.map((t, index) => (
-              <tr
-                key={t.id || index}
-                onClick={() => { setShowUploadHistory(false); setSelectedTx(t); }}
-                style={{
-                  cursor: 'pointer',
-                  backgroundColor: selectedTx && selectedTx.id === t.id ? 'var(--primary-light)' : undefined,
-                }}
-              >
-                <td style={{ fontWeight: 600 }}>{new Date(t.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                <td style={{ fontWeight: 600 }}>{t.merchant}</td>
-                <td className="text-red">{t.debit ? currencyFormatter.format(t.debit) : "-"}</td>
-                <td className="text-green">{t.credit ? currencyFormatter.format(t.credit) : "-"}</td>
-                <td onClick={(e) => e.stopPropagation()}>
-                  <select
-                    value={t.subCategory || t.category || ''}
-                    onChange={(e) => handleCategoryChange(t, e.target.value)}
-                    className="field-select"
-                    style={{ padding: '3px 6px', fontSize: '12px', color: t.category ? 'var(--gray-700)' : 'var(--gray-400)', width: 'auto' }}
-                  >
-                    {renderCategoryOptions()}
-                  </select>
-                </td>
-                <td>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {(t.tags || []).map(tag => (
-                      <span key={tag} style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 7px', borderRadius: 'var(--radius-full)', fontSize: '11px', fontWeight: 600 }}>
-                        #{tag}
-                      </span>
-                    ))}
+      <div style={{
+        background: T.surface, border: `1px solid ${T.border}`,
+        borderRadius: '14px', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden',
+      }}>
+        <div className="tx-head">
+          <span>Date</span>
+          <span>Merchant</span>
+          <span className="tx-col-cat">Category</span>
+          <span style={{ textAlign: 'right' }}>Amount</span>
+        </div>
+
+        <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
+          {tx.length === 0 ? (
+            <EmptyState icon="🧾" title="No transactions" message="No transactions found for the selected filters." />
+          ) : (
+            tx.map((t, index) => {
+              const isCredit = t.credit > 0;
+              const d = new Date(t.transactionDate);
+              const catValue = t.subCategory || t.category || '';
+              const tags = t.tags || [];
+              return (
+                <div
+                  key={t.id || index}
+                  className={`tx-row${selectedTx && selectedTx.id === t.id ? ' selected' : ''}`}
+                  onClick={() => { setShowUploadHistory(false); setSelectedTx(t); }}
+                >
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '17px', fontWeight: 800, color: T.text, lineHeight: 1.1 }}>
+                      {d.toLocaleDateString('en-IN', { day: '2-digit' })}
+                    </div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: T.faint, textTransform: 'uppercase' }}>
+                      {d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })}
+                    </div>
                   </div>
-                </td>
-                <td><Badge variant="green">Completed</Badge></td>
-              </tr>
-            ))}
-            {tx.length === 0 && (
-              <tr>
-                <td colSpan="7" style={{ padding: 0 }}>
-                  <EmptyState message="No transactions found for the selected filters." />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                    <Avatar name={t.merchant || '?'} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{
+                        fontSize: '14px', fontWeight: 700, color: T.text,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {t.merchant || '—'}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', minWidth: 0 }}>
+                        <span style={{ fontSize: '12px', color: T.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {t.mode || 'Transfer'}
+                        </span>
+                        {tags.slice(0, 2).map(tag => (
+                          <span key={tag} className="tx-tag">#{tag}</span>
+                        ))}
+                        {tags.length > 2 && <span style={{ fontSize: '11px', color: T.faint }}>+{tags.length - 2}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="tx-col-cat" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={catValue}
+                      onChange={(e) => handleCategoryChange(t, e.target.value)}
+                      className="tx-cat-select"
+                      style={{ color: t.category ? T.text : T.faint }}
+                    >
+                      {renderCategoryOptions()}
+                    </select>
+                  </div>
+
+                  <div style={{ textAlign: 'right', fontSize: '15px', fontWeight: 800, color: isCredit ? T.green : T.red, letterSpacing: '-0.3px' }}>
+                    {isCredit ? '+' : '−'}{currencyFormatter.format(Math.max(t.credit, t.debit))}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       {/* Pagination Controls */}
@@ -444,11 +554,15 @@ export default function Transactions() {
       >
         {selectedTx && (
           <>
-            <div style={{ textAlign: 'center', padding: '16px 0', borderBottom: '1px solid var(--border-color)', marginBottom: '24px' }}>
-              <div style={{ fontSize: '36px', fontWeight: 700, color: selectedTx.credit ? 'var(--success)' : 'var(--danger)' }}>
-                {selectedTx.credit ? '+' : '-'}{currencyFormatter.format(Math.max(selectedTx.credit, selectedTx.debit))}
+            <div style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px',
+              padding: '8px 0 22px', borderBottom: `1px solid ${T.border}`, marginBottom: '24px',
+            }}>
+              <Avatar name={selectedTx.merchant || '?'} size={52} />
+              <div style={{ fontSize: '34px', fontWeight: 800, letterSpacing: '-0.5px', color: selectedTx.credit ? T.green : T.red }}>
+                {selectedTx.credit ? '+' : '−'}{currencyFormatter.format(Math.max(selectedTx.credit, selectedTx.debit))}
               </div>
-              <div style={{ color: 'var(--gray-600)', marginTop: '8px', fontSize: '16px', fontWeight: 500 }}>
+              <div style={{ color: T.muted, fontSize: '15px', fontWeight: 600, textAlign: 'center' }}>
                 {selectedTx.merchant}
               </div>
             </div>
@@ -471,7 +585,7 @@ export default function Transactions() {
                 <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{selectedTx.balance ? currencyFormatter.format(selectedTx.balance) : '-'}</div>
               </div>
               <div style={{ gridColumn: 'span 2' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Description / Notes</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Description</div>
                 <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{selectedTx.description || '-'}</div>
               </div>
               <div style={{ gridColumn: 'span 2' }}>
@@ -532,6 +646,25 @@ export default function Transactions() {
                     <option key={tag.id} value={tag.name} />
                   ))}
                 </datalist>
+              </div>
+
+              <div style={{ gridColumn: 'span 2' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Note</div>
+                {isAdmin ? (
+                  <textarea
+                    key={selectedTx.id}
+                    defaultValue={selectedTx.note || ''}
+                    placeholder="Add a note for this transaction…"
+                    className="field-input"
+                    rows={3}
+                    onBlur={(e) => handleNoteChange(e.target.value)}
+                    style={{ marginTop: '8px', width: '100%', resize: 'vertical' }}
+                  />
+                ) : (
+                  <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500, whiteSpace: 'pre-wrap' }}>
+                    {selectedTx.note || '-'}
+                  </div>
+                )}
               </div>
             </div>
           </>

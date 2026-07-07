@@ -4,7 +4,7 @@ import {
   FiGrid, FiUsers, FiRepeat,
   FiChevronDown, FiChevronRight,
   FiTrendingUp, FiPieChart, FiLogOut,
-  FiChevronsLeft, FiChevronsRight, FiBell,
+  FiChevronsLeft, FiChevronsRight, FiBell, FiHome, FiTarget,
 } from 'react-icons/fi';
 import { useAuth } from '../context/useAuth';
 import api from '../api/client';
@@ -75,6 +75,12 @@ const Sidebar = () => {
             {(isDashOpen || !isOpen) && (
               <ul className={`submenu${!isOpen ? ' submenu--compact' : ''}`}>
                 <li>
+                  <NavLink to="/" end title="Overview">
+                    <FiHome size={!isOpen ? 16 : 13} />
+                    {isOpen && <span>Overview</span>}
+                  </NavLink>
+                </li>
+                <li>
                   <NavLink to="/trends" title="Trends">
                     <FiTrendingUp size={!isOpen ? 16 : 13} />
                     {isOpen && <span>Trends</span>}
@@ -103,6 +109,14 @@ const Sidebar = () => {
             <NavLink to="/transactions" className="nav-item-header" title="Transactions">
               <FiRepeat size={16} />
               {isOpen && <span>Transactions</span>}
+            </NavLink>
+          </li>
+
+          {/* Budgets */}
+          <li>
+            <NavLink to="/budgets" className="nav-item-header" title="Budgets">
+              <FiTarget size={16} />
+              {isOpen && <span>Budgets</span>}
             </NavLink>
           </li>
 

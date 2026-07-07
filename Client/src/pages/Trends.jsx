@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAccount } from '../context/useAccount';
+import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import { Bar } from 'react-chartjs-2';
 import {
@@ -17,6 +18,7 @@ import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
+import Drawer from '../components/ui/Drawer';
 import { currencyFormatter } from '../utils/format';
 import './Trends.css';
 
@@ -90,6 +92,7 @@ export function TrendsFilters({ period, setPeriod, dateRange, setDateRange }) {
 
 const Trends = () => {
   const {
+    accounts:     accounts    = [],
     trendsPeriod: period       = 'week',
     trendsRange:  dateRange    = { start: null, end: null, preset: 'ALL' },
   } = useOutletContext() ?? {};
@@ -97,6 +100,7 @@ const Trends = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const { selectedAccountId } = useAccount();
+  const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
 
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: Infinity });
   const scrollRef   = useRef(null);
@@ -107,6 +111,7 @@ const Trends = () => {
   const [drillDown, setDrillDown]           = useState(null);
   const [drillTransactions, setDrillTransactions] = useState([]);
   const [drillLoading, setDrillLoading]     = useState(false);
+  const [drillWidth, setDrillWidth]         = useState(720);
 
   // ── Helper: Date → "yyyy-MM-dd" string in local time ──────────────────
   const toLocalDate = (d) =>
@@ -115,11 +120,17 @@ const Trends = () => {
   // ── Fetch ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedAccountId) { setLoading(false); setData([]); return; }
+
+    // "All accounts" aggregates across every owned account; otherwise a single id.
+    const allIds = accounts.map(a => a.id).join(',');
+    if (isAllAccounts && !allIds) { setLoading(false); setData([]); return; }
     setLoading(true);
 
     const { start: startDate, end: endDate } = dateRange;
 
-    const params = new URLSearchParams({ accountId: selectedAccountId, period });
+    const params = new URLSearchParams({ period });
+    if (isAllAccounts) params.append('accountIds', allIds);
+    else               params.append('accountId', selectedAccountId);
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
 
@@ -145,7 +156,7 @@ const Trends = () => {
       })
       .catch(() => setData([]))
       .finally(() => setLoading(false));
-  }, [period, selectedAccountId, dateRange]);
+  }, [period, selectedAccountId, dateRange, accounts, isAllAccounts]);
 
   useEffect(() => {
     setVisibleRange({ start: 0, end: Math.min(VISIBLE_GROUPS, data.length) });
@@ -213,11 +224,21 @@ const Trends = () => {
 
     const params = new URLSearchParams({ startDate: bStart, endDate: bEnd, pageSize: 0 });
 
-    api.get(`/statements/${selectedAccountId}?${params.toString()}`)
-      .then(res => setDrillTransactions(res.data?.transactions || []))
+    // The statements endpoint is single-account, so for "all" we fan out over
+    // every account and merge the bucket's transactions.
+    const idsToFetch = isAllAccounts ? accounts.map(a => a.id) : [selectedAccountId];
+
+    Promise.all(
+      idsToFetch.map(id =>
+        api.get(`/statements/${id}?${params.toString()}`)
+          .then(res => res.data?.transactions || [])
+          .catch(() => [])
+      )
+    )
+      .then(results => setDrillTransactions(results.flat()))
       .catch(() => setDrillTransactions([]))
       .finally(() => setDrillLoading(false));
-  }, [data, selectedAccountId, getBucketRange]);
+  }, [data, selectedAccountId, isAllAccounts, accounts, getBucketRange]);
 
   const closeDrillDown = () => {
     setDrillDown(null);
@@ -375,7 +396,10 @@ const Trends = () => {
   }, [drillTransactions]);
 
   return (
-    <div className="trends-container">
+    <div
+      className="trends-container"
+      style={{ marginRight: drillDown ? drillWidth : 0, transition: 'margin-right 0.2s ease' }}
+    >
 
       {/* Summary cards */}
       <div className="summary-stats">
@@ -410,17 +434,19 @@ const Trends = () => {
         <div className="chart-wrapper">{renderChart()}</div>
       </div>
 
-      {/* Drill-down modal */}
-      {drillDown && (
-        <div className="drilldown-backdrop" onClick={closeDrillDown}>
-          <div className="drilldown-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="drilldown-header">
-              <div>
-                <h3>{drillDown.label}</h3>
-                <span className="drilldown-range">{drillDown.start} → {drillDown.end}</span>
-              </div>
-              <button className="drilldown-close" onClick={closeDrillDown}>&times;</button>
-            </div>
+      {/* Drill-down — RHS slide-in drawer (shared shell with Transactions) */}
+      <Drawer
+        open={!!drillDown}
+        onClose={closeDrillDown}
+        title={drillDown?.label || ''}
+        width={drillWidth}
+        onWidthChange={setDrillWidth}
+        minWidth={420}
+        modal={false}
+      >
+        {drillDown && (
+          <>
+            <div className="drilldown-range-row">{drillDown.start} → {drillDown.end}</div>
 
             {!drillLoading && drillTransactions.length > 0 && (
               <div className="drilldown-summary">
@@ -452,49 +478,47 @@ const Trends = () => {
                   <EmptyState icon="📭" title="No transactions found" subtitle={`for ${drillDown.label}.`} compact />
                 </div>
               ) : (
-                <table className="drilldown-table">
-                  <colgroup>
-                    <col style={{ width: '110px' }} />
-                    <col style={{ width: 'auto' }} />
-                    <col style={{ width: '160px' }} />
-                    <col style={{ width: '110px' }} />
-                    <col style={{ width: '110px' }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Description</th>
-                      <th>Merchant</th>
-                      <th className="num">Debit</th>
-                      <th className="num">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {drillTransactions.map((t, i) => {
-                      const debit    = t.Debit    ?? t.debit    ?? 0;
-                      const credit   = t.Credit   ?? t.credit   ?? 0;
-                      const date     = t.TransactionDate ?? t.transactionDate;
-                      const desc     = t.Description    ?? t.description;
-                      const merchant = t.Merchant       ?? t.merchant;
-                      return (
-                        <tr key={t.Id ?? t.id ?? i}>
-                          <td className="cell-date">
+                <div className="drill-cards">
+                  {drillTransactions.map((t, i) => {
+                    const debit    = t.Debit    ?? t.debit    ?? 0;
+                    const credit   = t.Credit   ?? t.credit   ?? 0;
+                    const date     = t.TransactionDate ?? t.transactionDate;
+                    const desc     = t.Description    ?? t.description;
+                    const merchant = t.Merchant       ?? t.merchant;
+                    const isCredit = credit > 0;
+                    const amount   = isCredit ? credit : debit;
+                    const name     = merchant && merchant !== '-' ? merchant : (desc || '—');
+                    const initials = name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+                    const hue      = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+                    return (
+                      <div className="drill-card" key={t.Id ?? t.id ?? i}>
+                        <div
+                          className="drill-card-avatar"
+                          style={{ background: `hsl(${hue} 70% 92%)`, color: `hsl(${hue} 55% 38%)` }}
+                        >
+                          {initials}
+                        </div>
+                        <div className="drill-card-main">
+                          <div className="drill-card-merchant" title={name}>{name}</div>
+                          {desc && desc !== name && (
+                            <div className="drill-card-desc" title={desc}>{desc}</div>
+                          )}
+                          <div className="drill-card-date">
                             {date ? new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
-                          </td>
-                          <td className="cell-desc"     title={desc     || ''}>{desc     || '-'}</td>
-                          <td className="cell-merchant" title={merchant || ''}>{merchant && merchant !== '-' ? merchant : '-'}</td>
-                          <td className="num">{debit  > 0 ? <span className="text-red">{currencyFormatter.format(debit)}</span>   : <span className="cell-muted">-</span>}</td>
-                          <td className="num">{credit > 0 ? <span className="text-green">{currencyFormatter.format(credit)}</span> : <span className="cell-muted">-</span>}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+                        <div className={`drill-card-amount ${isCredit ? 'income' : 'spend'}`}>
+                          {isCredit ? '+' : '-'}{currencyFormatter.format(amount)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Drawer>
 
     </div>
   );

@@ -2,6 +2,7 @@ using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services.Parser;
 using Common.Framework.Data;
+using Common.Framework.Logging;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BankStatementAnalytics.Services
@@ -66,10 +67,6 @@ namespace BankStatementAnalytics.Services
                 tx.UploadId = uploadId;
                 tx.AccountId = accountId;
             }
-
-            // Figure out how many are genuinely new by comparing against transactions already
-            // stored for this account (identity = AccountId + BankReference + BankType), before
-            // the upsert merges them in.
             int newCount;
             using (var session = DbHelper.GetSession())
             {

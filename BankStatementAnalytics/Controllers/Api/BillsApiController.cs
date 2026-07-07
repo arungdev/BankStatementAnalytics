@@ -52,6 +52,24 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(_service.GetMatchingTransactions(CurrentUserId, bill));
         }
 
+        // POST: api/bills/suggestion-transactions — historical debits behind an unconfirmed
+        // suggestion (no bill row exists yet, so it's matched by key + expected amount).
+        [HttpPost("suggestion-transactions")]
+        public IActionResult GetSuggestionTransactions([FromBody] BillDto req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.MatchKey))
+                return BadRequest("matchKey is required.");
+
+            var probe = new RecurringBill
+            {
+                OwnerUserId = CurrentUserId,
+                MatchKey = req.MatchKey.Trim(),
+                ExpectedAmount = req.ExpectedAmount
+            };
+
+            return Ok(_service.GetMatchingTransactions(CurrentUserId, probe));
+        }
+
         // POST: api/bills — confirm a suggestion or add a bill manually.
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] BillDto req)

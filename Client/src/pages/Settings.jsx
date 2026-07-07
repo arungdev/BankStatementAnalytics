@@ -4,7 +4,7 @@ import api from "../api/client";
 import { useAccount } from "../context/useAccount";
 import { useAuth } from "../context/useAuth";
 import ProfileSettings from "../components/ProfileSettings";
-import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY } from "../hooks/useBillReminders";
+import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
 import "./Settings.css";
 
 export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreated, accounts = [], setAccounts }) {
@@ -52,12 +52,29 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
     }
     localStorage.setItem(REMINDERS_ENABLED_KEY, "true");
     setRemEnabled(true);
+    // Immediately confirm it works so the user sees a toast the moment they opt in.
+    sendTestNotification();
   };
 
   const updateWindow = (days) => {
     const n = Math.max(1, Math.min(31, Number(days) || 7));
     setRemWindow(n);
     localStorage.setItem(REMINDER_WINDOW_KEY, String(n));
+  };
+
+  const handleTestNotification = async () => {
+    const res = await sendTestNotification();
+    if (res.ok) return; // toast shown
+    setNotifPermission(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+    if (res.reason === "unsupported") {
+      alert("Desktop notifications aren't supported in this browser.");
+    } else if (res.reason === "denied") {
+      alert("Notifications are blocked for this site. Allow them in your browser's site settings (the icon in the address bar), then try again.");
+    } else if (res.reason === "default") {
+      alert("Notification permission wasn't granted. Click Enable and choose Allow when prompted.");
+    } else {
+      alert("Could not show a notification: " + (res.error || "unknown error"));
+    }
   };
 
   const fetchCategories = async () => {
@@ -280,7 +297,10 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                         Reminders fire while the app is open.
                       </p>
                     </div>
-                    <div className="settings-row-actions">
+                    <div className="settings-row-actions" style={{ gap: '8px' }}>
+                      <button className="btn small" onClick={handleTestNotification}>
+                        Send test
+                      </button>
                       <button
                         className={`btn small${remEnabled ? '' : ' primary'}`}
                         onClick={toggleReminders}
@@ -292,9 +312,14 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
 
                   {notifPermission === 'denied' && (
                     <p className="settings-row-sub" style={{ color: 'var(--danger, #ef4444)' }}>
-                      Notifications are blocked in your browser settings. Allow them for this site to use reminders.
+                      Notifications are blocked in your browser settings. Allow them for this site (click the icon in the address bar) to use reminders.
                     </p>
                   )}
+                  <p className="settings-row-sub" style={{ marginTop: '8px' }}>
+                    Tip: if a toast doesn't pop up, check Windows notification settings —
+                    turn off Focus assist / Do not disturb, and make sure notifications are on
+                    for your browser. The toast may also appear in the Windows Action Center.
+                  </p>
                 </div>
 
                 <div className="settings-row">
@@ -315,6 +340,42 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                       />
                       <span className="settings-row-sub">days</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* Diagnostics — tells you exactly why a toast can't show */}
+                <div className="settings-row">
+                  <div style={{ minWidth: 0 }}>
+                    <h3 className="settings-row-title">Diagnostics</h3>
+                    {(() => {
+                      const supported = typeof Notification !== 'undefined';
+                      const secure = typeof window !== 'undefined' && window.isSecureContext;
+                      const perm = supported ? Notification.permission : 'n/a';
+                      const embedded = /electron|vscode/i.test(navigator.userAgent);
+                      const rows = [
+                        ['Notifications API', supported ? 'available' : 'NOT available', supported],
+                        ['Secure context', secure ? 'yes' : 'NO (needs https or localhost)', secure],
+                        ['Permission', perm, perm === 'granted'],
+                        ['Reminders enabled', remEnabled ? 'yes' : 'no', remEnabled],
+                        ['Origin', typeof window !== 'undefined' ? window.location.origin : '-', true],
+                        ['Embedded browser', embedded ? 'YES — use a real browser' : 'no', !embedded],
+                      ];
+                      return (
+                        <div style={{ marginTop: '8px', fontSize: '12px', fontFamily: 'monospace', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 16px' }}>
+                          {rows.map(([k, v, ok]) => (
+                            <div key={k} style={{ display: 'contents' }}>
+                              <span style={{ color: 'var(--text-muted, #6b7280)' }}>{k}</span>
+                              <span style={{ color: ok ? 'var(--success, #16a34a)' : 'var(--danger, #ef4444)', fontWeight: 600 }}>{String(v)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                    <p className="settings-row-sub" style={{ marginTop: '10px' }}>
+                      If any row above is red, that's the cause. Web notifications do not work in
+                      VS Code's Simple Browser or embedded webviews — open the app in Chrome/Edge at{' '}
+                      <code>http://localhost:5000</code>.
+                    </p>
                   </div>
                 </div>
               </div>

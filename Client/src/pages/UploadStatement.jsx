@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useAccount } from "../context/useAccount";
+import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { useAuth } from "../context/useAuth";
 import { uploadStatement, revertStatement, getUploads } from "../api/statements";
 import api from "../api/client";
@@ -20,6 +21,9 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
   const fileInputRef = useRef(null);
 
   const { selectedAccountId } = useAccount();
+  // Uploads target a single account; ignore the global "All accounts" selection.
+  const forcedAccountId =
+    selectedAccountId && selectedAccountId !== ALL_ACCOUNTS ? selectedAccountId : null;
 
   // ── Load accounts + upload history ───────────────────────────────────
   useEffect(() => {
@@ -27,8 +31,8 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
     api.get("/statements/accounts").then((res) => {
       if (!mounted) return;
       setAccounts(res.data || []);
-      if (selectedAccountId) {
-        setSelectedAccount(selectedAccountId);
+      if (forcedAccountId) {
+        setSelectedAccount(forcedAccountId);
       } else if ((res.data || []).length > 0) {
         setSelectedAccount(res.data[0].id);
       }
@@ -65,8 +69,8 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
 
   // ── Sync selectedAccount with global context ──────────────────────────
   useEffect(() => {
-    if (selectedAccountId) setSelectedAccount(selectedAccountId);
-  }, [selectedAccountId]);
+    if (forcedAccountId) setSelectedAccount(forcedAccountId);
+  }, [forcedAccountId]);
 
   const acceptAttr = formats.formats.join(',');
 
@@ -170,7 +174,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
               <select
                 value={selectedAccount}
                 onChange={(e) => setSelectedAccount(e.target.value)}
-                disabled={!!selectedAccountId}
+                disabled={!!forcedAccountId}
                 className="field-select"
               >
                 <option value="">Select an account...</option>
@@ -180,7 +184,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                   </option>
                 ))}
               </select>
-              {selectedAccountId && (
+              {forcedAccountId && (
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>Using the currently active account.</div>
               )}
             </div>

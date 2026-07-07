@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiBell, FiCalendar } from "react-icons/fi";
+import { FiBell, FiCalendar, FiCheck, FiRotateCcw } from "react-icons/fi";
 import api from "../api/client";
 import { currencyFormatter } from "../utils/format";
+import Drawer from "./ui/Drawer";
+import EmptyState from "./ui/EmptyState";
+
+const READ_KEY = "bills.readReminders";
 
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -13,41 +17,81 @@ const dueLabel = (days) => {
   return `Due in ${days} days`;
 };
 
+// A reminder is identified per bill + due-cycle so a new month's bill is "unread" again.
+const reminderKey = (b) => {
+  const c = new Date(b.nextDueDate);
+  return `${b.id}.${c.getFullYear()}-${c.getMonth() + 1}`;
+};
+
+const loadReadSet = () => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(READ_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+};
+
+const saveReadSet = (set) => {
+  localStorage.setItem(READ_KEY, JSON.stringify([...set]));
+};
+
 /**
- * Header bell: shows a badge with the number of bills due soon and, on click, a dropdown
- * listing those reminders. Data comes from GET /bills/upcoming (same source as the sidebar badge).
+ * Header bell: opens a right-hand-side panel listing bills due soon. Each reminder can be
+ * marked read/unread (persisted in localStorage); the badge counts only unread reminders.
  */
 export default function NotificationBell() {
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef(null);
+  const [width, setWidth] = useState(420);
+  const [readSet, setReadSet] = useState(loadReadSet);
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const load = () =>
     api.get("/bills/upcoming")
       .then((res) => setItems(res.data || []))
       .catch(() => setItems([]));
+
+  useEffect(() => {
+    load();
   }, []);
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
+  const openPanel = () => {
+    load(); // refresh on open
+    setOpen(true);
+  };
 
   const goToBills = () => {
     setOpen(false);
     navigate("/bills");
   };
 
+  const isRead = (b) => readSet.has(reminderKey(b));
+
+  const setRead = (b, read) => {
+    setReadSet((prev) => {
+      const next = new Set(prev);
+      if (read) next.add(reminderKey(b));
+      else next.delete(reminderKey(b));
+      saveReadSet(next);
+      return next;
+    });
+  };
+
+  const markAllRead = () => {
+    setReadSet((prev) => {
+      const next = new Set(prev);
+      items.forEach((b) => next.add(reminderKey(b)));
+      saveReadSet(next);
+      return next;
+    });
+  };
+
+  const unreadCount = items.filter((b) => !isRead(b)).length;
+
   return (
-    <div ref={wrapRef} style={{ position: "relative" }}>
+    <>
       <button
-        onClick={() => setOpen((p) => !p)}
+        onClick={openPanel}
         title="Reminders"
         style={{
           cursor: "pointer",
@@ -68,7 +112,7 @@ export default function NotificationBell() {
         onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
       >
         <FiBell size={17} />
-        {items.length > 0 && (
+        {unreadCount > 0 && (
           <span
             style={{
               position: "absolute",
@@ -88,89 +132,126 @@ export default function NotificationBell() {
               border: "2px solid #fff",
             }}
           >
-            {items.length}
+            {unreadCount}
           </span>
         )}
       </button>
 
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "44px",
-            right: 0,
-            width: "320px",
-            maxHeight: "420px",
-            overflowY: "auto",
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: "10px",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
-            zIndex: 500,
-          }}
-        >
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid #f3f4f6", fontWeight: 700, fontSize: "13px", color: "#111827" }}>
-            Reminders
-          </div>
-
-          {items.length === 0 ? (
-            <div style={{ padding: "24px 16px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>
-              No bills due soon.
+      <Drawer
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Reminders"
+        width={width}
+        onWidthChange={setWidth}
+      >
+        {items.length === 0 ? (
+          <EmptyState message="No bills due soon." />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+              <span style={{ fontSize: "12px", color: "var(--text-muted, #6b7280)", fontWeight: 600 }}>
+                {unreadCount} unread · {items.length} total
+              </span>
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllRead}
+                  style={{ background: "none", border: "none", color: "#4f46e5", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                >
+                  Mark all as read
+                </button>
+              )}
             </div>
-          ) : (
-            items.map((b) => (
-              <button
-                key={b.id}
-                onClick={goToBills}
-                style={{
-                  display: "flex",
-                  width: "100%",
-                  textAlign: "left",
-                  gap: "10px",
-                  padding: "12px 16px",
-                  borderBottom: "1px solid #f3f4f6",
-                  background: "none",
-                  border: "none",
-                  borderLeft: `3px solid ${b.daysUntilDue <= 2 ? "#ef4444" : "#f59e0b"}`,
-                  cursor: "pointer",
-                }}
-                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#f9fafb")}
-                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: "13px", color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {b.name}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "11px", marginTop: "3px", color: b.daysUntilDue <= 2 ? "#ef4444" : "#b45309", fontWeight: 600 }}>
-                    <FiCalendar size={11} /> {dueLabel(b.daysUntilDue)} · {fmtDate(b.nextDueDate)}
-                  </div>
-                </div>
-                <div style={{ fontWeight: 800, fontSize: "13px", color: "#111827", whiteSpace: "nowrap" }}>
-                  {currencyFormatter.format(b.expectedAmount)}
-                </div>
-              </button>
-            ))
-          )}
 
-          <button
-            onClick={goToBills}
-            style={{
-              display: "block",
-              width: "100%",
-              padding: "10px 16px",
-              background: "none",
-              border: "none",
-              color: "#4f46e5",
-              fontWeight: 700,
-              fontSize: "12px",
-              cursor: "pointer",
-              textAlign: "center",
-            }}
-          >
-            View all bills
-          </button>
-        </div>
-      )}
-    </div>
+            {items.map((b) => {
+              const read = isRead(b);
+              return (
+                <div
+                  key={b.id}
+                  style={{
+                    display: "flex",
+                    gap: "12px",
+                    padding: "14px",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border-color, #e5e7eb)",
+                    borderLeft: `4px solid ${read ? "var(--border-color, #d1d5db)" : b.daysUntilDue <= 2 ? "#ef4444" : "#f59e0b"}`,
+                    background: read ? "var(--gray-50, #f9fafb)" : "var(--surface, #fff)",
+                    opacity: read ? 0.7 : 1,
+                  }}
+                >
+                  {/* Unread dot */}
+                  <span
+                    style={{
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      marginTop: "6px",
+                      flexShrink: 0,
+                      background: read ? "transparent" : "#4f46e5",
+                    }}
+                  />
+
+                  {/* Clickable body → bills page */}
+                  <button
+                    onClick={goToBills}
+                    title="View bill"
+                    style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                  >
+                    <div style={{ fontWeight: read ? 500 : 700, fontSize: "14px", color: "var(--text-main, #111827)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {b.name}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", marginTop: "4px", color: b.daysUntilDue <= 2 && !read ? "#ef4444" : "#b45309", fontWeight: 600 }}>
+                      <FiCalendar size={12} /> {dueLabel(b.daysUntilDue)} · {fmtDate(b.nextDueDate)}
+                    </div>
+                  </button>
+
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
+                    <div style={{ fontWeight: 800, fontSize: "15px", color: "var(--text-main, #111827)", whiteSpace: "nowrap" }}>
+                      {currencyFormatter.format(b.expectedAmount)}
+                    </div>
+                    <button
+                      onClick={() => setRead(b, !read)}
+                      title={read ? "Mark as unread" : "Mark as read"}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        background: "none",
+                        border: "1px solid var(--border-color, #d1d5db)",
+                        borderRadius: "6px",
+                        padding: "3px 8px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        color: "var(--text-muted, #6b7280)",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {read ? <><FiRotateCcw size={11} /> Unread</> : <><FiCheck size={11} /> Read</>}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            <button
+              onClick={goToBills}
+              style={{
+                marginTop: "4px",
+                padding: "10px",
+                background: "none",
+                border: "none",
+                color: "#4f46e5",
+                fontWeight: 700,
+                fontSize: "13px",
+                cursor: "pointer",
+                textAlign: "center",
+              }}
+            >
+              View all bills
+            </button>
+          </div>
+        )}
+      </Drawer>
+    </>
   );
 }

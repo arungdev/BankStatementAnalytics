@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-const PRESETS = [
+export const PRESETS = [
   { label: 'All Time',      value: 'ALL' },
   { label: 'Today',         value: 'TODAY' },
   { label: 'Yesterday',     value: 'YESTERDAY' },
@@ -28,7 +28,7 @@ const addDays    = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n)
 const isSameDay  = (a, b) => a && b && a.toDateString() === b.toDateString();
 const isBetween  = (d, s, e) => d && s && e && d > s && d < e;
 
-function resolvePreset(value) {
+export function resolvePreset(value) {
   const now = new Date();
   const today = startOfDay(now);
   switch (value) {

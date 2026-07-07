@@ -41,7 +41,8 @@ namespace BankStatementAnalytics.Controllers.Api
                 Merchant = t.CounterParty?.Name,
                 Category = t.CategoryOverride ?? t.CounterParty?.Category,
                 SubCategory = t.SubCategoryOverride ?? t.CounterParty?.SubCategory,
-                HasCategoryOverride = !string.IsNullOrEmpty(t.CategoryOverride)
+                HasCategoryOverride = !string.IsNullOrEmpty(t.CategoryOverride),
+                t.Note
             });
 
             return Ok(result);
@@ -117,6 +118,47 @@ namespace BankStatementAnalytics.Controllers.Api
                 Tags = transaction.Tags
             });
         }
+
+        // PATCH: api/transactions/note
+        [HttpPatch("note")]
+        public async Task<IActionResult> UpdateNote([FromBody] UpdateTransactionNoteRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.BankReference))
+                return BadRequest("Invalid request.");
+
+            var account = DbHelper.GetById<Account>(request.AccountId);
+            if (!Owns(account))
+                return NotFound();
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var transaction = session.Query<BankTransaction>()
+                .SingleOrDefault(t => t.AccountId == request.AccountId
+                                    && t.BankReference == request.BankReference
+                                    && t.BankType == request.BankType);
+
+            if (transaction == null)
+                return NotFound();
+
+            transaction.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+
+            await session.UpdateAsync(transaction);
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                Note = transaction.Note
+            });
+        }
+    }
+
+    public class UpdateTransactionNoteRequest
+    {
+        public long AccountId { get; set; }
+        public string BankReference { get; set; } = string.Empty;
+        public string BankType { get; set; } = string.Empty;
+        public string? Note { get; set; }
     }
 
     public class UpdateTransactionTagsRequest

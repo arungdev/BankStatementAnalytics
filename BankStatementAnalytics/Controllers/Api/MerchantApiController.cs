@@ -21,18 +21,34 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             using var session = DbHelper.GetSession();
 
-            var merchants = session.Query<Merchant>()
+            var merchantEntities = session.Query<Merchant>()
                 .Where(x => x.OwnerUserId == CurrentUserId)
                 .FetchMany(x => x.UpiIds)
+                .ToList();
+
+            // Transaction count per merchant, keyed by the (user-specific) merchant id.
+            var txCounts = session.Query<BankTransaction>()
+                .Where(t => t.CounterParty != null)
+                .GroupBy(t => t.CounterParty.Id)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
                 .ToList()
+                .ToDictionary(x => x.Id, x => x.Count);
+
+            var merchants = merchantEntities
                 .Select(merchantEntity => new
                 {
                     Id = merchantEntity.Id,
                     Name = merchantEntity.Name,
+                    FriendlyName = merchantEntity.FriendlyName,
                     Category = merchantEntity.Category,
+                    SubCategory = merchantEntity.SubCategory,
                     UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
-                    Aliases = merchantEntity.Aliases.ToList()
-                }).ToList();
+                    Aliases = merchantEntity.Aliases.ToList(),
+                    TransactionCount = txCounts.TryGetValue(merchantEntity.Id, out var c) ? c : 0
+                })
+                .OrderByDescending(m => m.TransactionCount)
+                .ThenBy(m => m.FriendlyName ?? m.Name)
+                .ToList();
 
             return Ok(merchants);
         }

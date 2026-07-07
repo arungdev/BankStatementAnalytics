@@ -84,7 +84,8 @@ namespace BankStatementAnalytics.Controllers.Api
                     BankType = bankType,
                     Category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
                     SubCategory = t.SubCategoryOverride ?? (t.CounterParty != null ? t.CounterParty.SubCategory : null),
-                    Tags = t.Tags != null ? t.Tags.Split(',').ToList() : new List<string>()
+                    Tags = t.Tags != null ? t.Tags.Split(',').ToList() : new List<string>(),
+                    Note = t.Note
                 });
 
             var paged = await projectedQuery.ToPagedResultAsync(page, pageSize);

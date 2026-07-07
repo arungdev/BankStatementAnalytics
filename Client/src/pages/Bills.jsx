@@ -19,8 +19,10 @@ export default function Bills() {
   const [bills, setBills] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("due");
   const [editing, setEditing] = useState(null); // bill being edited
-  const [selectedBill, setSelectedBill] = useState(null); // bill whose transactions are shown
+  const [selectedBill, setSelectedBill] = useState(null); // bill/suggestion whose transactions are shown
+  const [selectedKind, setSelectedKind] = useState("bill"); // "bill" | "suggestion"
   const [billTxns, setBillTxns] = useState([]);
   const [loadingTxns, setLoadingTxns] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(450);
@@ -68,10 +70,23 @@ export default function Bills() {
 
   const openBill = (bill) => {
     setSelectedBill(bill);
+    setSelectedKind("bill");
     setBillTxns([]);
     setLoadingTxns(true);
     api
       .get(`/bills/${bill.id}/transactions`)
+      .then((res) => setBillTxns(res.data || []))
+      .catch((err) => console.error(err))
+      .finally(() => setLoadingTxns(false));
+  };
+
+  const openSuggestion = (s) => {
+    setSelectedBill(s);
+    setSelectedKind("suggestion");
+    setBillTxns([]);
+    setLoadingTxns(true);
+    api
+      .post("/bills/suggestion-transactions", { name: s.name, matchKey: s.matchKey, expectedAmount: s.expectedAmount })
       .then((res) => setBillTxns(res.data || []))
       .catch((err) => console.error(err))
       .finally(() => setLoadingTxns(false));
@@ -119,15 +134,52 @@ export default function Bills() {
 
   const dueSoon = bills.filter((b) => !b.paidThisCycle && b.daysUntilDue <= 7);
 
+  const TABS = [
+    { id: "due", label: "Due soon", count: dueSoon.length },
+    { id: "bills", label: "Your bills", count: bills.length },
+    { id: "suggestions", label: "Suggested", count: suggestions.length },
+  ];
+
   return (
     <div style={{ marginRight: selectedBill ? drawerWidth : 0, transition: "margin-right 0.2s ease" }}>
+      {/* ── Tab bar ── */}
+      <div style={{ display: "flex", gap: "4px", borderBottom: "1px solid var(--border-color, #e5e7eb)", marginBottom: "24px" }}>
+        {TABS.map((t) => {
+          const active = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 16px",
+                background: "none",
+                border: "none",
+                borderBottom: `2px solid ${active ? "#4f46e5" : "transparent"}`,
+                marginBottom: "-1px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: active ? 700 : 600,
+                color: active ? "#4f46e5" : "var(--gray-600, #6b7280)",
+              }}
+            >
+              {t.id === "due" && <FiBell size={15} />}
+              {t.label}
+              {t.count > 0 && (
+                <span style={{ background: active ? "#eef2ff" : "var(--gray-100, #f3f4f6)", color: active ? "#4f46e5" : "var(--gray-600, #6b7280)", borderRadius: "999px", fontSize: "11px", fontWeight: 700, padding: "1px 8px" }}>
+                  {t.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* ── Due soon ── */}
-      <section style={{ marginBottom: "32px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-          <FiBell size={18} />
-          <h2 style={{ margin: 0, fontSize: "18px" }}>Due soon</h2>
-          {dueSoon.length > 0 && <Badge variant="purple">{dueSoon.length}</Badge>}
-        </div>
+      {activeTab === "due" && (
+      <section>
         {dueSoon.length === 0 ? (
           <EmptyState message="No bills due in the next 7 days." />
         ) : (
@@ -158,14 +210,15 @@ export default function Bills() {
           </div>
         )}
       </section>
+      )}
 
       {/* ── Your bills ── */}
-      <section style={{ marginBottom: "32px" }}>
-        <h2 style={{ fontSize: "18px", marginBottom: "16px" }}>Your bills</h2>
+      {activeTab === "bills" && (
+      <section>
         {bills.length === 0 ? (
-          <EmptyState message="No recurring bills yet. Confirm a suggestion below to start getting reminders." />
+          <EmptyState message="No recurring bills yet. Confirm a suggestion in the Suggested tab to start getting reminders." />
         ) : (
-          <div className="table-container">
+          <div className="table-container" style={{ maxHeight: "calc(100vh - 240px)", overflowY: "auto" }}>
             <table>
               <thead>
                 <tr>
@@ -218,10 +271,11 @@ export default function Bills() {
           </div>
         )}
       </section>
+      )}
 
       {/* ── Suggested bills ── */}
+      {activeTab === "suggestions" && (
       <section>
-        <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>Suggested bills</h2>
         <p style={{ color: "var(--gray-600, #6b7280)", fontSize: "13px", marginTop: 0, marginBottom: "16px" }}>
           Detected from your transaction history — monthly debits that recur on a similar date and amount.
         </p>
@@ -232,11 +286,14 @@ export default function Bills() {
             {suggestions.map((s) => (
               <div
                 key={s.matchKey}
+                onClick={() => openSuggestion(s)}
+                title="View transactions"
                 style={{
-                  border: "1px dashed var(--border-color, #d1d5db)",
+                  border: `1px dashed ${selectedBill === s ? "#4f46e5" : "var(--border-color, #d1d5db)"}`,
                   borderRadius: "10px",
                   padding: "16px",
                   background: "var(--surface, #fff)",
+                  cursor: "pointer",
                 }}
               >
                 <div style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-main, #111827)" }}>{s.name}</div>
@@ -247,10 +304,10 @@ export default function Bills() {
                   ~day {s.dueDayOfMonth} · seen {s.occurrenceCount}× · last {fmtDate(s.lastSeenDate)}
                 </div>
                 <div style={{ display: "flex", gap: "8px" }}>
-                  <button className="btn primary" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }} onClick={() => confirmSuggestion(s)}>
+                  <button className="btn primary" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }} onClick={(e) => { e.stopPropagation(); confirmSuggestion(s); }}>
                     <FiCheck size={14} /> Confirm
                   </button>
-                  <button className="btn" style={{ display: "flex", alignItems: "center", gap: "6px" }} onClick={() => dismissSuggestion(s)}>
+                  <button className="btn" style={{ display: "flex", alignItems: "center", gap: "6px" }} onClick={(e) => { e.stopPropagation(); dismissSuggestion(s); }}>
                     <FiX size={14} /> Dismiss
                   </button>
                 </div>
@@ -259,6 +316,7 @@ export default function Bills() {
           </div>
         )}
       </section>
+      )}
 
       {/* ── Edit modal ── */}
       {editing && (
@@ -284,7 +342,7 @@ export default function Bills() {
       <Drawer
         open={!!selectedBill}
         onClose={closeBill}
-        title="Bill transactions"
+        title={selectedKind === "suggestion" ? "Suggested bill" : "Bill transactions"}
         width={drawerWidth}
         onWidthChange={setDrawerWidth}
         modal={false}
@@ -300,7 +358,9 @@ export default function Bills() {
                 {selectedBill.name}
               </div>
               <div style={{ color: "var(--text-muted)", marginTop: "4px", fontSize: "13px" }}>
-                ~day {selectedBill.dueDayOfMonth} · next due {fmtDate(selectedBill.nextDueDate)}
+                {selectedKind === "suggestion"
+                  ? `~day ${selectedBill.dueDayOfMonth} · seen ${selectedBill.occurrenceCount}× · last ${fmtDate(selectedBill.lastSeenDate)}`
+                  : `~day ${selectedBill.dueDayOfMonth} · next due ${fmtDate(selectedBill.nextDueDate)}`}
               </div>
             </div>
 

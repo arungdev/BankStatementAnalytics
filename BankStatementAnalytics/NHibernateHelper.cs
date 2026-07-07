@@ -60,6 +60,7 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<SubCategoryMap>();
                         mapper.AddMapping<TagMap>();
                         mapper.AddMapping<RecurringBillMap>();
+                        mapper.AddMapping<BudgetMap>();
                     }, null,
                     isPostgres
                         ? db =>
