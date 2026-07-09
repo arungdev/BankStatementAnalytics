@@ -5,6 +5,24 @@ import { currencyFormatter } from "../utils/format";
 import EmptyState from "../components/ui/EmptyState";
 import Badge from "../components/ui/Badge";
 import Drawer from "../components/ui/Drawer";
+import Avatar from "../components/ui/Avatar";
+
+/* ─── Design tokens — aligned with Overview / Merchants / Transactions ───── */
+const T = {
+  indigo:     '#4f46e5',
+  indigoDim:  '#eef2ff',
+  surface:    '#ffffff',
+  bg:         '#f3f4f6',
+  border:     '#e5e7eb',
+  borderSub:  '#f0f1f3',
+  text:       '#111827',
+  muted:      '#6b7280',
+  faint:      '#9ca3af',
+  red:        '#ef4444',
+  amber:      '#f59e0b',
+  amberText:  '#b45309',
+  green:      '#10b981',
+};
 
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -142,6 +160,35 @@ export default function Bills() {
 
   return (
     <div style={{ marginRight: selectedBill ? drawerWidth : 0, transition: "margin-right 0.2s ease" }}>
+      <style>{`
+        .bill-head {
+          display: grid;
+          grid-template-columns: minmax(0,1fr) 80px 120px 150px 120px 80px;
+          gap: 16px;
+          padding: 12px 20px;
+          font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; color: ${T.faint};
+          border-bottom: 1px solid ${T.border};
+          background: ${T.bg};
+        }
+        .bill-row {
+          display: grid;
+          grid-template-columns: minmax(0,1fr) 80px 120px 150px 120px 80px;
+          align-items: center;
+          gap: 16px;
+          padding: 12px 20px;
+          border-bottom: 1px solid ${T.borderSub};
+          cursor: pointer;
+          transition: background 0.12s;
+        }
+        .bill-row:hover { background: ${T.bg}; }
+        .bill-row:last-child { border-bottom: none; }
+        @media (max-width: 760px) {
+          .bill-head, .bill-row { grid-template-columns: minmax(0,1fr) 130px 110px 70px; }
+          .bill-col-day, .bill-col-next { display: none; }
+        }
+      `}</style>
+
       {/* ── Tab bar ── */}
       <div style={{ display: "flex", gap: "4px", borderBottom: "1px solid var(--border-color, #e5e7eb)", marginBottom: "24px" }}>
         {TABS.map((t) => {
@@ -181,32 +228,39 @@ export default function Bills() {
       {activeTab === "due" && (
       <section>
         {dueSoon.length === 0 ? (
-          <EmptyState message="No bills due in the next 7 days." />
+          <EmptyState icon="🎉" title="All clear" message="No bills due in the next 7 days." />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "16px" }}>
-            {dueSoon.map((b) => (
-              <div
-                key={b.id}
-                onClick={() => openBill(b)}
-                title="View transactions"
-                style={{
-                  border: "1px solid var(--border-color, #e5e7eb)",
-                  borderLeft: `4px solid ${b.daysUntilDue <= 2 ? "#ef4444" : "#f59e0b"}`,
-                  borderRadius: "10px",
-                  padding: "16px",
-                  background: "var(--surface, #fff)",
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-main, #111827)" }}>{b.name}</div>
-                <div style={{ fontSize: "22px", fontWeight: 800, margin: "6px 0", color: "var(--text-main, #111827)" }}>
-                  {currencyFormatter.format(b.expectedAmount)}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" }}>
+            {dueSoon.map((b) => {
+              const urgent = b.daysUntilDue <= 2;
+              return (
+                <div
+                  key={b.id}
+                  onClick={() => openBill(b)}
+                  title="View transactions"
+                  style={{ ...cardBase, borderLeft: `4px solid ${urgent ? T.red : T.amber}` }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
+                    <Avatar name={b.name} />
+                    <div style={{ fontWeight: 700, fontSize: "15px", color: T.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {b.name}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: "24px", fontWeight: 800, color: T.text, letterSpacing: "-0.5px" }}>
+                    {currencyFormatter.format(b.expectedAmount)}
+                  </div>
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "12px",
+                    fontSize: "12px", fontWeight: 700,
+                    color: urgent ? T.red : T.amberText,
+                    background: urgent ? "#fef2f2" : "#fffbeb",
+                    padding: "4px 10px", borderRadius: "999px",
+                  }}>
+                    <FiCalendar size={12} /> {dueLabel(b.daysUntilDue)} · {fmtDate(b.nextDueDate)}
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: b.daysUntilDue <= 2 ? "#ef4444" : "#b45309", fontWeight: 600 }}>
-                  <FiCalendar size={13} /> {dueLabel(b.daysUntilDue)} · {fmtDate(b.nextDueDate)}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -216,58 +270,58 @@ export default function Bills() {
       {activeTab === "bills" && (
       <section>
         {bills.length === 0 ? (
-          <EmptyState message="No recurring bills yet. Confirm a suggestion in the Suggested tab to start getting reminders." />
+          <EmptyState icon="🔔" title="No bills yet" message="Confirm a suggestion in the Suggested tab to start getting reminders." />
         ) : (
-          <div className="table-container" style={{ maxHeight: "calc(100vh - 240px)", overflowY: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Bill</th>
-                  <th>Amount</th>
-                  <th>Due day</th>
-                  <th>Next due</th>
-                  <th>Status</th>
-                  <th style={{ width: "90px" }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {bills.map((b) => (
-                  <tr key={b.id} onClick={() => openBill(b)} style={{ cursor: "pointer" }} title="View transactions">
-                    <td style={{ fontWeight: 700, color: "var(--text-main)" }}>{b.name}</td>
-                    <td>{currencyFormatter.format(b.expectedAmount)}</td>
-                    <td>{b.dueDayOfMonth}</td>
-                    <td>{fmtDate(b.nextDueDate)}</td>
-                    <td>
-                      {b.paidThisCycle ? (
-                        <Badge variant="green">Paid this cycle</Badge>
-                      ) : b.daysUntilDue <= 7 ? (
-                        <Badge variant="purple">{dueLabel(b.daysUntilDue)}</Badge>
-                      ) : (
-                        <Badge variant="blue">{dueLabel(b.daysUntilDue)}</Badge>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEditing({ ...b }); }}
-                          title="Edit"
-                          style={iconBtn}
-                        >
-                          <FiEdit2 size={14} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteBill(b); }}
-                          title="Remove"
-                          style={{ ...iconBtn, color: "#ef4444" }}
-                        >
-                          <FiTrash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{
+            background: T.surface, border: `1px solid ${T.border}`,
+            borderRadius: "14px", boxShadow: "0 1px 6px rgba(0,0,0,0.04)", overflow: "hidden",
+          }}>
+            <div className="bill-head">
+              <span>Bill</span>
+              <span className="bill-col-day" style={{ textAlign: "center" }}>Due day</span>
+              <span className="bill-col-next">Next due</span>
+              <span>Status</span>
+              <span style={{ textAlign: "right" }}>Amount</span>
+              <span />
+            </div>
+            <div style={{ maxHeight: "calc(100vh - 300px)", overflowY: "auto" }}>
+              {bills.map((b) => (
+                <div key={b.id} className="bill-row" onClick={() => openBill(b)} title="View transactions">
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                    <Avatar name={b.name} />
+                    <div style={{ fontWeight: 700, color: T.text, fontSize: "14px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {b.name}
+                    </div>
+                  </div>
+                  <div className="bill-col-day" style={{ textAlign: "center", color: T.muted, fontSize: "13px" }}>
+                    {b.dueDayOfMonth}
+                  </div>
+                  <div className="bill-col-next" style={{ color: T.muted, fontSize: "13px" }}>
+                    {fmtDate(b.nextDueDate)}
+                  </div>
+                  <div>
+                    {b.paidThisCycle ? (
+                      <Badge variant="green">Paid this cycle</Badge>
+                    ) : b.daysUntilDue <= 7 ? (
+                      <Badge variant="purple">{dueLabel(b.daysUntilDue)}</Badge>
+                    ) : (
+                      <Badge variant="blue">{dueLabel(b.daysUntilDue)}</Badge>
+                    )}
+                  </div>
+                  <div style={{ textAlign: "right", fontWeight: 800, color: T.text, fontSize: "15px", letterSpacing: "-0.3px" }}>
+                    {currencyFormatter.format(b.expectedAmount)}
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                    <button onClick={(e) => { e.stopPropagation(); setEditing({ ...b }); }} title="Edit" style={iconBtn}>
+                      <FiEdit2 size={14} />
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteBill(b); }} title="Remove" style={{ ...iconBtn, color: T.red }}>
+                      <FiTrash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </section>
@@ -280,39 +334,50 @@ export default function Bills() {
           Detected from your transaction history — monthly debits that recur on a similar date and amount.
         </p>
         {suggestions.length === 0 ? (
-          <EmptyState message="No new recurring bills detected." />
+          <EmptyState icon="🔍" title="Nothing new" message="No new recurring bills detected." />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" }}>
-            {suggestions.map((s) => (
-              <div
-                key={s.matchKey}
-                onClick={() => openSuggestion(s)}
-                title="View transactions"
-                style={{
-                  border: `1px dashed ${selectedBill === s ? "#4f46e5" : "var(--border-color, #d1d5db)"}`,
-                  borderRadius: "10px",
-                  padding: "16px",
-                  background: "var(--surface, #fff)",
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-main, #111827)" }}>{s.name}</div>
-                <div style={{ fontSize: "20px", fontWeight: 800, margin: "6px 0", color: "var(--text-main, #111827)" }}>
-                  {currencyFormatter.format(s.expectedAmount)}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" }}>
+            {suggestions.map((s) => {
+              const active = selectedBill === s;
+              return (
+                <div
+                  key={s.matchKey}
+                  onClick={() => openSuggestion(s)}
+                  title="View transactions"
+                  style={{
+                    ...cardBase,
+                    border: `1px dashed ${active ? T.indigo : T.border}`,
+                    background: active ? T.indigoDim : T.surface,
+                    borderLeft: `1px dashed ${active ? T.indigo : T.border}`,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
+                    <Avatar name={s.name} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: "15px", color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {s.name}
+                      </div>
+                      <div style={{ fontSize: "18px", fontWeight: 800, color: T.text, marginTop: "2px", letterSpacing: "-0.5px" }}>
+                        {currencyFormatter.format(s.expectedAmount)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "14px" }}>
+                    <span style={metaChip}>~day {s.dueDayOfMonth}</span>
+                    <span style={metaChip}>seen {s.occurrenceCount}×</span>
+                    <span style={metaChip}>last {fmtDate(s.lastSeenDate)}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button className="btn primary" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }} onClick={(e) => { e.stopPropagation(); confirmSuggestion(s); }}>
+                      <FiCheck size={14} /> Confirm
+                    </button>
+                    <button className="btn" style={{ display: "flex", alignItems: "center", gap: "6px" }} onClick={(e) => { e.stopPropagation(); dismissSuggestion(s); }}>
+                      <FiX size={14} /> Dismiss
+                    </button>
+                  </div>
                 </div>
-                <div style={{ fontSize: "12px", color: "var(--gray-600, #6b7280)", marginBottom: "12px" }}>
-                  ~day {s.dueDayOfMonth} · seen {s.occurrenceCount}× · last {fmtDate(s.lastSeenDate)}
-                </div>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button className="btn primary" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }} onClick={(e) => { e.stopPropagation(); confirmSuggestion(s); }}>
-                    <FiCheck size={14} /> Confirm
-                  </button>
-                  <button className="btn" style={{ display: "flex", alignItems: "center", gap: "6px" }} onClick={(e) => { e.stopPropagation(); dismissSuggestion(s); }}>
-                    <FiX size={14} /> Dismiss
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -321,9 +386,12 @@ export default function Bills() {
       {/* ── Edit modal ── */}
       {editing && (
         <>
-          <div onClick={() => setEditing(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000 }} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "360px", background: "#fff", padding: "24px", borderRadius: "8px", zIndex: 10001, boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
-            <h3 style={{ marginTop: 0 }}>Edit bill</h3>
+          <div onClick={() => setEditing(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 10000 }} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "380px", maxWidth: "92vw", background: T.surface, padding: "26px", borderRadius: "16px", zIndex: 10001, boxShadow: "0 20px 50px rgba(15,23,42,0.25)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
+              <Avatar name={editing.name} />
+              <h3 style={{ margin: 0, fontSize: "18px", color: T.text }}>Edit bill</h3>
+            </div>
             <label style={editLabel}>Name</label>
             <input className="field-input" style={{ width: "100%", marginBottom: "12px" }} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             <label style={editLabel}>Expected amount</label>
@@ -350,14 +418,18 @@ export default function Bills() {
         {selectedBill && (
           <>
             {/* Summary header, like a transaction's amount header */}
-            <div style={{ textAlign: "center", padding: "16px 0", borderBottom: "1px solid var(--border-color)", marginBottom: "24px" }}>
-              <div style={{ fontSize: "36px", fontWeight: 700, color: "var(--danger)" }}>
+            <div style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: "10px",
+              padding: "8px 0 22px", borderBottom: `1px solid ${T.border}`, marginBottom: "24px",
+            }}>
+              <Avatar name={selectedBill.name} size={52} />
+              <div style={{ fontSize: "34px", fontWeight: 800, letterSpacing: "-0.5px", color: T.red }}>
                 {currencyFormatter.format(selectedBill.expectedAmount)}
               </div>
-              <div style={{ color: "var(--gray-600)", marginTop: "8px", fontSize: "16px", fontWeight: 500 }}>
+              <div style={{ color: T.muted, fontSize: "15px", fontWeight: 600, textAlign: "center" }}>
                 {selectedBill.name}
               </div>
-              <div style={{ color: "var(--text-muted)", marginTop: "4px", fontSize: "13px" }}>
+              <div style={{ color: T.faint, fontSize: "13px", textAlign: "center" }}>
                 {selectedKind === "suggestion"
                   ? `~day ${selectedBill.dueDayOfMonth} · seen ${selectedBill.occurrenceCount}× · last ${fmtDate(selectedBill.lastSeenDate)}`
                   : `~day ${selectedBill.dueDayOfMonth} · next due ${fmtDate(selectedBill.nextDueDate)}`}
@@ -365,32 +437,35 @@ export default function Bills() {
             </div>
 
             {loadingTxns ? (
-              <div style={{ textAlign: "center", color: "var(--text-muted)", marginTop: "40px" }}>Loading transactions...</div>
+              <div style={{ textAlign: "center", color: T.muted, marginTop: "40px" }}>Loading transactions...</div>
             ) : billTxns.length === 0 ? (
-              <EmptyState message="No matching transactions found for this bill." />
+              <EmptyState icon="📭" title="No payments" message="No matching transactions found for this bill." />
             ) : (
               <>
-                <div style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: T.faint, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "12px" }}>
                   {billTxns.length} payment{billTxns.length === 1 ? "" : "s"}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div style={{ display: "flex", flexDirection: "column" }}>
                   {billTxns.map((tx, idx) => (
-                    <div key={`${tx.bankReference}-${idx}`} className="card" style={{ padding: "14px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, color: "var(--text-main)", fontSize: "14px" }}>
-                            {new Date(tx.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                          </div>
-                          <div style={{ fontSize: "13px", color: "var(--gray-600)", marginTop: "3px", wordBreak: "break-word" }}>
-                            {tx.description || "-"}
-                          </div>
-                          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "6px" }}>
-                            {tx.mode || "Transfer"}
-                          </div>
+                    <div
+                      key={`${tx.bankReference}-${idx}`}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "12px",
+                        padding: "12px 0",
+                        borderBottom: idx < billTxns.length - 1 ? `1px solid ${T.borderSub}` : "none",
+                      }}
+                    >
+                      <Avatar name={tx.description || selectedBill.name} size={36} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, color: T.text, fontSize: "13px" }}>
+                          {new Date(tx.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                         </div>
-                        <div className="text-red" style={{ fontWeight: 700, fontSize: "15px", whiteSpace: "nowrap" }}>
-                          -{currencyFormatter.format(tx.amount)}
+                        <div style={{ fontSize: "12px", color: T.muted, marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {tx.description || tx.mode || "Transfer"}
                         </div>
+                      </div>
+                      <div style={{ fontWeight: 800, fontSize: "14px", color: T.red, whiteSpace: "nowrap" }}>
+                        −{currencyFormatter.format(tx.amount)}
                       </div>
                     </div>
                   ))}
@@ -404,12 +479,33 @@ export default function Bills() {
   );
 }
 
+const cardBase = {
+  border: `1px solid ${T.border}`,
+  borderRadius: "14px",
+  padding: "18px",
+  background: T.surface,
+  boxShadow: "0 1px 6px rgba(0,0,0,0.04)",
+  cursor: "pointer",
+};
+
+const metaChip = {
+  display: "inline-flex",
+  alignItems: "center",
+  fontSize: "11px",
+  fontWeight: 600,
+  color: T.muted,
+  background: T.bg,
+  border: `1px solid ${T.border}`,
+  padding: "3px 9px",
+  borderRadius: "999px",
+};
+
 const iconBtn = {
-  background: "#f3f4f6",
-  border: "1px solid #d1d5db",
-  borderRadius: "6px",
-  width: "30px",
-  height: "30px",
+  background: T.bg,
+  border: `1px solid ${T.border}`,
+  borderRadius: "8px",
+  width: "32px",
+  height: "32px",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",

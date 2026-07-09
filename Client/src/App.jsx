@@ -23,6 +23,7 @@ import Trends from "./pages/Trends";
 import Insights from "./pages/Insights";
 import Bills from "./pages/Bills";
 import Budgets from "./pages/Budgets";
+import Investments from "./pages/Investments";
 import useBillReminders from "./hooks/useBillReminders";
 import usePersistedState from "./hooks/usePersistedState";
 import usePersistedRange from "./hooks/usePersistedRange";
@@ -59,6 +60,7 @@ function AuthGate() {
         <Route path="/insights" element={<Insights />} />
         <Route path="/bills" element={<Bills />} />
         <Route path="/budgets" element={<Budgets />} />
+        <Route path="/investments" element={<Investments />} />
       </Route>
     </Routes>
   );
@@ -73,6 +75,7 @@ const PAGE_META = {
   '/insights': { title: 'Spending Insights', subtitle: 'Where your money goes' },
   '/bills': { title: 'Bills & Reminders', subtitle: 'Upcoming recurring bills' },
   '/budgets': { title: 'Budgets', subtitle: 'Monthly limits by category' },
+  '/investments': { title: 'Investments', subtitle: 'Recurring & fixed deposits' },
 };
 
 function Layout() {

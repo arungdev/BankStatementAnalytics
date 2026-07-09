@@ -7,6 +7,12 @@
     <RootNamespace>BankStatementAnalytics</RootNamespace>
     <!-- Single source of truth for the app/installer version - bump this per release. -->
     <Version>1.0.0</Version>
+    <!-- Disable the SDK's static-web-assets Brotli/gzip precompression. The React client is built
+         straight into wwwroot with hashed filenames (Vite emptyOutDir), and that hash churn desyncs
+         the compression fingerprint cache in obj\ across repeated publishes, failing the build with
+         "The asset ... can not be found". We also serve wwwroot via plain app.UseStaticFiles() (not
+         MapStaticAssets), so the generated .br/.gz twins were never served anyway - pure overhead. -->
+    <CompressionEnabled>false</CompressionEnabled>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +23,8 @@
     <PackageReference Include="NHibernate" Version="5.6.1" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
+    <!-- Lets the published exe run as a Windows service (no-op when launched interactively). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
   </ItemGroup>
 
 	<ItemGroup>
@@ -36,6 +44,22 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <!-- Ship the Windows-service register/unregister helpers as LOOSE files next to the
+       published exe, so the Inno installer packages them into {app} and can invoke them.
+       Done as a post-publish copy (not <None CopyToPublishDirectory>) because
+       IncludeAllContentForSelfExtract=true would otherwise bundle them INTO the single-file
+       exe (extracted to temp at runtime) instead of leaving them alongside it. -->
+  <Target Name="CopyServiceScriptsToPublish" AfterTargets="Publish">
+    <Copy SourceFiles="Installer\install-service.bat;Installer\uninstall-service.bat"
+          DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <!-- Ship log4net.config as a LOOSE file next to the exe too (same reason as the scripts:
+         IncludeAllContentForSelfExtract bundles it into the exe otherwise, so it would be
+         extracted to a temp folder instead of living, visible/editable, in the install dir).
+         Log.Initialize loads it from the install directory - see Common.Framework Logger. -->
+    <Copy SourceFiles="log4net.config"
+          DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
 	<!--
 	<ItemGroup>
 		<Content Update="wwwroot\**">

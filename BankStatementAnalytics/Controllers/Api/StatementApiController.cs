@@ -189,7 +189,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     return Conflict("This statement file has already been uploaded for this account.");
             }
 
-            var folder = Path.Combine(AppContext.BaseDirectory, "Uploads");
+            var folder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
             Directory.CreateDirectory(folder);
 
             var storedName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
@@ -277,7 +277,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             await sessionTx.CommitAsync();
 
-            var folder = Path.Combine(AppContext.BaseDirectory, "Uploads");
+            var folder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
             var filePath = Path.Combine(folder, upload.StoredName);
             if (System.IO.File.Exists(filePath))
                 System.IO.File.Delete(filePath);

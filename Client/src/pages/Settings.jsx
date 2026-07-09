@@ -374,7 +374,7 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                     <p className="settings-row-sub" style={{ marginTop: '10px' }}>
                       If any row above is red, that's the cause. Web notifications do not work in
                       VS Code's Simple Browser or embedded webviews — open the app in Chrome/Edge at{' '}
-                      <code>http://localhost:5000</code>.
+                      <code>{window.location.origin}</code>.
                     </p>
                   </div>
                 </div>

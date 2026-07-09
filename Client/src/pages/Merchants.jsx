@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+} from "recharts";
 import api from "../api/client";
 import { currencyFormatter } from "../utils/format";
 import EmptyState from "../components/ui/EmptyState";
@@ -160,6 +163,41 @@ export default function Merchants() {
       });
   };
 
+  // ── Merchant deep-dive: spend-over-time + headline stats, from loaded txns ──
+  // Declared before the early return so hook order stays stable across renders.
+  const spendStats = useMemo(() => {
+    const txs = merchantDetails?.transactions || [];
+    const debits = txs.filter((t) => (t.debit ?? 0) > 0);
+    const totalSpent = debits.reduce((sum, t) => sum + (t.debit || 0), 0);
+    const count = debits.length;
+    const avg = count ? totalSpent / count : 0;
+
+    const times = txs.map((t) => new Date(t.transactionDate).getTime()).filter((n) => !isNaN(n));
+    const first = times.length ? new Date(Math.min(...times)) : null;
+    const last = times.length ? new Date(Math.max(...times)) : null;
+
+    const byMonth = {};
+    debits.forEach((t) => {
+      const d = new Date(t.transactionDate);
+      if (isNaN(d)) return;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      byMonth[key] = (byMonth[key] || 0) + (t.debit || 0);
+    });
+    const monthly = Object.entries(byMonth)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([k, v]) => {
+        const [y, m] = k.split("-");
+        return {
+          month: new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
+          total: v,
+        };
+      });
+    const maxMonth = monthly.reduce((mx, x) => Math.max(mx, x.total), 0);
+
+    return { totalSpent, count, avg, first, last, monthly, maxMonth };
+  }, [merchantDetails]);
+
   if (loading) {
     return (
       <div className="loader-container">
@@ -202,6 +240,10 @@ export default function Merchants() {
   }) || [];
 
   const allSelected = filteredData.length > 0 && selectedIds.length === filteredData.length;
+
+  const fmtShort = (v) =>
+    v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : v >= 1000 ? `₹${(v / 1000).toFixed(0)}k` : `₹${v}`;
+  const fmtMY = (d) => (d ? d.toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "—");
 
   return (
     <div style={{ marginRight: selectedMerchantId ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
@@ -555,6 +597,56 @@ export default function Merchants() {
             </div>
 
             <hr style={{ border: '0', borderTop: `1px solid ${T.border}`, margin: '24px 0' }} />
+
+            {/* ── Spend deep-dive ── */}
+            {spendStats.count > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ margin: '0 0 14px', fontSize: '15px', fontWeight: 700, color: T.text }}>Spending trend</h4>
+
+                {/* Headline stats */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '16px' }}>
+                  {[
+                    { label: 'Total spent', value: currencyFormatter.format(spendStats.totalSpent), color: T.red },
+                    { label: 'Payments', value: spendStats.count.toLocaleString('en-IN'), color: T.text },
+                    { label: 'Avg / payment', value: currencyFormatter.format(Math.round(spendStats.avg)), color: T.text },
+                    { label: 'Active since', value: fmtMY(spendStats.first), color: T.text },
+                  ].map((st) => (
+                    <div key={st.label} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '10px 12px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{st.label}</div>
+                      <div style={{ marginTop: '3px', fontSize: '15px', fontWeight: 800, color: st.color, letterSpacing: '-0.3px' }}>{st.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Monthly spend chart */}
+                {spendStats.monthly.length > 1 ? (
+                  <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '14px 12px 6px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: T.muted, marginBottom: '8px', paddingLeft: '4px' }}>
+                      Monthly spend · last {spendStats.monthly.length} months
+                    </div>
+                    <ResponsiveContainer width="100%" height={160}>
+                      <BarChart data={spendStats.monthly} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={T.borderSub} />
+                        <XAxis dataKey="month" tick={{ fontSize: 10, fill: T.faint }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                        <YAxis tickFormatter={fmtShort} tick={{ fontSize: 10, fill: T.faint }} axisLine={false} tickLine={false} width={44} />
+                        <Tooltip
+                          formatter={(v) => currencyFormatter.format(v)}
+                          cursor={{ fill: T.indigoDim }}
+                          contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.15)', fontSize: '12px' }}
+                        />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]} maxBarSize={34}>
+                          {spendStats.monthly.map((m, i) => (
+                            <Cell key={i} fill={m.total >= spendStats.maxMonth ? T.indigo : T.indigoSoft} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: T.faint }}>Not enough history yet for a monthly trend.</div>
+                )}
+              </div>
+            )}
 
             {/* Transactions */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>

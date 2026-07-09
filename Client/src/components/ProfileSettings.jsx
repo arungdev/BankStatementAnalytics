@@ -92,7 +92,6 @@ function UserManagementCard() {
   const [users, setUsers] = useState([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState('Viewer');
   const [error, setError] = useState(null);
 
   const fetchUsers = () => {
@@ -107,10 +106,9 @@ function UserManagementCard() {
     e.preventDefault();
     setError(null);
     try {
-      await api.post('/auth/users', { username: newUsername, password: newPassword, role: newRole });
+      await api.post('/auth/users', { username: newUsername, password: newPassword, role: 'Admin' });
       setNewUsername('');
       setNewPassword('');
-      setNewRole('Viewer');
       fetchUsers();
     } catch (err) {
       setError(err.response?.data || 'Could not create user.');
@@ -121,17 +119,6 @@ function UserManagementCard() {
     if (!window.confirm('Disable this user? They will no longer be able to log in.')) return;
     await api.post(`/auth/users/${id}/disable`);
     fetchUsers();
-  };
-
-  const resetPassword = async (id) => {
-    const newPass = window.prompt('New password:');
-    if (!newPass) return;
-    try {
-      await api.post(`/auth/users/${id}/reset-password`, { newPassword: newPass });
-      alert('Password reset.');
-    } catch (err) {
-      alert(err.response?.data || 'Could not reset password.');
-    }
   };
 
   return (
@@ -148,7 +135,6 @@ function UserManagementCard() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn small" onClick={() => resetPassword(u.id)}>Reset password</button>
               {u.isActive && (
                 <button className="btn danger small" onClick={() => disableUser(u.id)}>Disable</button>
               )}
@@ -177,10 +163,6 @@ function UserManagementCard() {
           onChange={e => setNewPassword(e.target.value)}
           required
         />
-        <select className="field-input" value={newRole} onChange={e => setNewRole(e.target.value)}>
-          <option value="Viewer">Viewer (read-only)</option>
-          <option value="Admin">Admin</option>
-        </select>
         <button type="submit" className="btn primary">Add user</button>
       </form>
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}

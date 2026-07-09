@@ -5,6 +5,7 @@ import {
   FiChevronDown, FiChevronRight,
   FiTrendingUp, FiPieChart, FiLogOut,
   FiChevronsLeft, FiChevronsRight, FiBell, FiHome, FiTarget,
+  FiDollarSign,
 } from 'react-icons/fi';
 import { useAuth } from '../context/useAuth';
 import api from '../api/client';
@@ -109,6 +110,14 @@ const Sidebar = () => {
             <NavLink to="/transactions" className="nav-item-header" title="Transactions">
               <FiRepeat size={16} />
               {isOpen && <span>Transactions</span>}
+            </NavLink>
+          </li>
+
+          {/* Investments */}
+          <li>
+            <NavLink to="/investments" className="nav-item-header" title="Investments">
+              <FiDollarSign size={16} />
+              {isOpen && <span>Investments</span>}
             </NavLink>
           </li>
 
