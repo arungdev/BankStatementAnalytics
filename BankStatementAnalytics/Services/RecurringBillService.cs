@@ -220,6 +220,10 @@ namespace BankStatementAnalytics.Services
             return ($"N:{norm}", ToTitleCase(norm));
         }
 
+        /// <summary>Grouping key for a manually-added bill, derived from its display name so it
+        /// still matches the same normalized-narration transactions detection would have found.</summary>
+        public static string BuildManualKey(string name) => "N:" + NormalizeNarration(name);
+
         private static string NormalizeNarration(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return "unknown";

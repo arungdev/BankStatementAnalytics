@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using NHibernate.Linq;
 using Common.Framework.Data;
 using BankStatementAnalytics.Models;
@@ -9,25 +11,29 @@ namespace BankStatementAnalytics.Services
 {
     /// <summary>
     /// Detects savings/investment instruments — Recurring Deposits (RD) and Fixed Deposits (FD) —
-    /// from a user's transaction history. Unlike bills these are money the user is *saving*, not
-    /// spending, so they get their own summary rather than counting as expenses.
+    /// from a user's transaction history, and merges them with any user-entered
+    /// <see cref="Deposit"/> metadata (nickname, interest rate, maturity date, tenure).
     ///
-    /// Detection keys off signals the parsers already assign: HDFC tags RD installments with
-    /// <c>Mode == "INTERNAL"</c> (counterparty "RD ...") and fixed deposits with <c>Mode == "FD"</c>
-    /// (counterparty "FD ..."). Narration/counterparty-name fallbacks keep it working when Mode is
-    /// unset. Nothing here is persisted — it's derived on demand, like bill suggestions.
+    /// Detection groups by the deposit *account number* extracted from the narration, NOT the
+    /// merchant name: an RD installment narration like "50400377672222- RD INSTALLMENT-JUL 2026"
+    /// embeds the month, so grouping by name splits one deposit into a fragment per month. Keying
+    /// on the account number collapses those fragments back into the single real deposit (and also
+    /// merges alternate narrations for the same account, e.g. "RD THROUGH MOBILE-50400379172072").
+    ///
+    /// Nothing detected is persisted — figures are recomputed on demand, like bill suggestions.
+    /// Only the metadata a user types is stored (in <see cref="Deposit"/>).
     /// </summary>
     public class DepositService
     {
+        // Deposit account numbers are long digit runs; a statement date ("2026") is only 4 digits,
+        // so a 6+ digit run reliably isolates the account number in the narration.
+        private static readonly Regex AccountNumRegex = new(@"\d{6,}", RegexOptions.Compiled);
+
         public DepositSummary GetSummary(long userId)
         {
             using var session = DbHelper.GetSession();
 
-            var accountIds = session.Query<Account>()
-                .Where(a => a.OwnerUserId == userId)
-                .Select(a => a.Id)
-                .ToList();
-
+            var accountIds = OwnedAccountIds(session, userId);
             var summary = new DepositSummary();
             if (accountIds.Count == 0)
                 return summary;
@@ -36,51 +42,94 @@ namespace BankStatementAnalytics.Services
                 .Where(t => accountIds.Contains(t.AccountId))
                 .ToList();
 
-            // ── Recurring Deposits: monthly-recurring internal debits into an RD account ──
-            var rdTxns = txns.Where(IsRecurringDeposit).ToList();
-            foreach (var group in rdTxns.GroupBy(DisplayName))
+            var meta = session.Query<Deposit>()
+                .Where(d => d.OwnerUserId == userId)
+                .ToList()
+                .ToDictionary(d => MetaKey(d.Kind, d.MatchKey), d => d, StringComparer.OrdinalIgnoreCase);
+
+            // ── Recurring Deposits ──────────────────────────────────────────────
+            foreach (var group in txns.Where(IsRecurringDeposit).GroupBy(GroupKey))
             {
-                var occurrences = group.OrderBy(t => t.TransactionDate).ToList();
-                var installments = occurrences.Where(t => t.Debit > 0).ToList();
+                var installments = group.Where(t => t.Debit > 0).OrderBy(t => t.TransactionDate).ToList();
                 if (installments.Count == 0)
                     continue;
 
+                var key = group.Key;
+                meta.TryGetValue(MetaKey("RD", key), out var m);
+
                 var monthly = Median(installments.Select(t => t.Debit).ToList());
                 var dueDay = MedianInt(installments.Select(t => t.TransactionDate.Day).ToList());
-                var lastDate = installments.Max(t => t.TransactionDate);
+                var first = installments.Min(t => t.TransactionDate);
+                var last = installments.Max(t => t.TransactionDate);
 
-                summary.RecurringDeposits.Add(new RdPlan
+                var plan = new RdPlan
                 {
-                    Name = group.Key,
+                    MatchKey = key,
+                    Name = m?.Nickname ?? DefaultName("RD", installments[0]),
                     MonthlyAmount = monthly,
                     InstallmentsPaid = installments.Count,
                     TotalInvested = installments.Sum(t => t.Debit),
-                    LastInstallmentDate = lastDate,
+                    FirstInstallmentDate = first,
+                    LastInstallmentDate = last,
                     DueDayOfMonth = dueDay,
                     NextInstallmentDate = RecurringBillService.ProjectDueDate(dueDay, DateTime.Today),
-                });
+                    InterestRate = m?.InterestRate,
+                    TermMonths = m?.TermMonths,
+                    Note = m?.Note,
+                };
+
+                if (m?.TermMonths is int term && term > 0)
+                {
+                    plan.MonthsRemaining = Math.Max(0, term - installments.Count);
+                    plan.ProgressPct = Math.Min(100, (int)Math.Round(installments.Count * 100.0 / term));
+                    plan.MaturityValue = monthly * term;
+                }
+                // Explicit maturity date wins; otherwise derive it from tenure.
+                plan.MaturityDate = m?.MaturityDate
+                    ?? (m?.TermMonths is int t2 && t2 > 0 ? first.AddMonths(t2) : (DateTime?)null);
+
+                summary.RecurringDeposits.Add(plan);
             }
 
-            // ── Fixed Deposits: lump-sum placements (debit) and their maturity/interest (credit) ──
-            var fdTxns = txns.Where(IsFixedDeposit).ToList();
-            foreach (var group in fdTxns.GroupBy(DisplayName))
+            // ── Fixed Deposits ──────────────────────────────────────────────────
+            foreach (var group in txns.Where(IsFixedDeposit).GroupBy(GroupKey))
             {
                 var occurrences = group.OrderBy(t => t.TransactionDate).ToList();
+                var key = group.Key;
+                meta.TryGetValue(MetaKey("FD", key), out var m);
+
                 var principal = occurrences.Sum(t => t.Debit);
                 var returns = occurrences.Sum(t => t.Credit);
+                var placedOn = occurrences.FirstOrDefault(t => t.Debit > 0)?.TransactionDate
+                               ?? occurrences.First().TransactionDate;
 
-                summary.FixedDeposits.Add(new FdEntry
+                var fd = new FdEntry
                 {
-                    Name = group.Key,
+                    MatchKey = key,
+                    Name = m?.Nickname ?? DefaultName("FD", occurrences[0]),
                     Principal = principal,
                     Returns = returns,
-                    PlacedOn = occurrences.FirstOrDefault(t => t.Debit > 0)?.TransactionDate
-                               ?? occurrences.First().TransactionDate,
+                    PlacedOn = placedOn,
                     LastActivity = occurrences.Max(t => t.TransactionDate),
                     IsMatured = returns > 0,
-                    // Gain is only meaningful once matured and we saw the original placement.
                     NetGain = returns > 0 && principal > 0 ? returns - principal : 0m,
-                });
+                    InterestRate = m?.InterestRate,
+                    MaturityDate = m?.MaturityDate,
+                    Note = m?.Note,
+                };
+
+                if (fd.MaturityDate is DateTime maturity)
+                {
+                    fd.DaysToMaturity = (maturity.Date - DateTime.Today).Days;
+                    // Simple-interest projection over the placed→maturity span.
+                    if (m?.InterestRate is decimal rate && principal > 0)
+                    {
+                        var years = (decimal)(maturity - placedOn).TotalDays / 365m;
+                        fd.MaturityValue = Math.Round(principal * (1 + rate / 100m * years), 0);
+                    }
+                }
+
+                summary.FixedDeposits.Add(fd);
             }
 
             summary.RecurringDeposits = summary.RecurringDeposits
@@ -99,25 +148,76 @@ namespace BankStatementAnalytics.Services
             return summary;
         }
 
-        // RD installment: HDFC sets Mode "INTERNAL" on "RD INSTALLMENT" narrations; fall back to
-        // the counterparty/narration text so other formats still classify.
+        /// <summary>The individual transactions behind one detected deposit, newest first.</summary>
+        public List<DepositTxn> GetTransactions(long userId, string kind, string matchKey)
+        {
+            using var session = DbHelper.GetSession();
+
+            var accountIds = OwnedAccountIds(session, userId);
+            if (accountIds.Count == 0 || string.IsNullOrWhiteSpace(matchKey))
+                return new List<DepositTxn>();
+
+            var isRd = string.Equals(kind, "RD", StringComparison.OrdinalIgnoreCase);
+
+            return session.Query<BankTransaction>()
+                .Where(t => accountIds.Contains(t.AccountId))
+                .ToList()
+                .Where(t => (isRd ? IsRecurringDeposit(t) : IsFixedDeposit(t))
+                            && GroupKey(t) == matchKey)
+                .OrderByDescending(t => t.TransactionDate)
+                .Select(t => new DepositTxn
+                {
+                    Date = t.TransactionDate,
+                    Amount = t.Debit > 0 ? t.Debit : t.Credit,
+                    IsCredit = t.Credit > 0,
+                    Description = !string.IsNullOrWhiteSpace(t.Narration) ? t.Narration : t.Description,
+                    BankReference = t.BankReference,
+                })
+                .ToList();
+        }
+
+        // ── Detection ───────────────────────────────────────────────────────────
+
+        // RD installment: HDFC sets Mode "INTERNAL" on "RD INSTALLMENT" narrations; the standalone
+        // "RD THROUGH MOBILE" narration falls through to Mode "OTHER" but still names the merchant "RD".
         private static bool IsRecurringDeposit(BankTransaction t) =>
-            string.Equals(t.Mode, "INTERNAL", StringComparison.OrdinalIgnoreCase)
-                && StartsWithRd(DisplayName(t))
+            (string.Equals(t.Mode, "INTERNAL", StringComparison.OrdinalIgnoreCase)
+                && DisplayName(t).StartsWith("RD", StringComparison.OrdinalIgnoreCase))
             || DisplayName(t).StartsWith("RD ", StringComparison.OrdinalIgnoreCase)
             || (t.Narration ?? string.Empty).Contains("RD INSTALLMENT", StringComparison.OrdinalIgnoreCase);
 
-        // Fixed deposit: HDFC sets Mode "FD"; fall back to the "IB FD" / "FIXED DEPOSIT" text.
         private static bool IsFixedDeposit(BankTransaction t) =>
             string.Equals(t.Mode, "FD", StringComparison.OrdinalIgnoreCase)
             || DisplayName(t).StartsWith("FD ", StringComparison.OrdinalIgnoreCase)
             || (t.Narration ?? string.Empty).Contains("IB FD", StringComparison.OrdinalIgnoreCase)
             || (t.Narration ?? string.Empty).Contains("FIXED DEPOSIT", StringComparison.OrdinalIgnoreCase);
 
-        private static bool StartsWithRd(string name) =>
-            name.StartsWith("RD", StringComparison.OrdinalIgnoreCase);
+        // Grouping key: the deposit account number from the narration (stable across months and
+        // across alternate narrations for the same account). Falls back to a normalized name.
+        private static string GroupKey(BankTransaction t)
+        {
+            var acct = ExtractAccountNumber(t);
+            return acct ?? ("N:" + NormalizeName(DisplayName(t)));
+        }
 
-        // Prefer the linked merchant's friendly/plain name, else the narration/description.
+        private static string? ExtractAccountNumber(BankTransaction t)
+        {
+            var source = $"{t.Narration} {t.Description}";
+            var m = AccountNumRegex.Match(source);
+            return m.Success ? m.Value : null;
+        }
+
+        // ── Helpers ─────────────────────────────────────────────────────────────
+
+        private static string DefaultName(string kind, BankTransaction sample)
+        {
+            var acct = ExtractAccountNumber(sample);
+            if (acct != null)
+                return $"{kind} ••{acct[^Math.Min(4, acct.Length)..]}";
+            var name = DisplayName(sample);
+            return string.IsNullOrWhiteSpace(name) ? kind : name;
+        }
+
         private static string DisplayName(BankTransaction t)
         {
             if (t.CounterParty != null)
@@ -126,6 +226,23 @@ namespace BankStatementAnalytics.Services
                     : t.CounterParty.Name;
             return !string.IsNullOrWhiteSpace(t.Narration) ? t.Narration : t.Description;
         }
+
+        private static string NormalizeName(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return "unknown";
+            var sb = new StringBuilder();
+            foreach (var c in s.ToUpperInvariant())
+                sb.Append(char.IsLetterOrDigit(c) ? c : ' ');
+            return Regex.Replace(sb.ToString(), "\\s+", " ").Trim();
+        }
+
+        private static string MetaKey(string kind, string matchKey) => $"{kind}|{matchKey}";
+
+        private static List<long> OwnedAccountIds(NHibernate.ISession session, long userId) =>
+            session.Query<Account>()
+                .Where(a => a.OwnerUserId == userId)
+                .Select(a => a.Id)
+                .ToList();
 
         private static decimal Median(List<decimal> values)
         {
@@ -160,17 +277,29 @@ namespace BankStatementAnalytics.Services
 
     public class RdPlan
     {
+        public string MatchKey { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public decimal MonthlyAmount { get; set; }
         public int InstallmentsPaid { get; set; }
         public decimal TotalInvested { get; set; }
+        public DateTime FirstInstallmentDate { get; set; }
         public DateTime LastInstallmentDate { get; set; }
         public int DueDayOfMonth { get; set; }
         public DateTime NextInstallmentDate { get; set; }
+
+        // User metadata / progress (null until the user fills it in).
+        public decimal? InterestRate { get; set; }
+        public int? TermMonths { get; set; }
+        public DateTime? MaturityDate { get; set; }
+        public int? MonthsRemaining { get; set; }
+        public int? ProgressPct { get; set; }
+        public decimal? MaturityValue { get; set; }
+        public string? Note { get; set; }
     }
 
     public class FdEntry
     {
+        public string MatchKey { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public decimal Principal { get; set; }
         public decimal Returns { get; set; }
@@ -178,5 +307,20 @@ namespace BankStatementAnalytics.Services
         public DateTime LastActivity { get; set; }
         public bool IsMatured { get; set; }
         public decimal NetGain { get; set; }
+
+        public decimal? InterestRate { get; set; }
+        public DateTime? MaturityDate { get; set; }
+        public int? DaysToMaturity { get; set; }
+        public decimal? MaturityValue { get; set; }
+        public string? Note { get; set; }
+    }
+
+    public class DepositTxn
+    {
+        public DateTime Date { get; set; }
+        public decimal Amount { get; set; }
+        public bool IsCredit { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public string BankReference { get; set; } = string.Empty;
     }
 }

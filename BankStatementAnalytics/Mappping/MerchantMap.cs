@@ -45,6 +45,18 @@ namespace BankStatementAnalytics.Mapping
                 c.Name("AliasName");
                 c.Index("IX_CounterPartyAliases_AliasName");
             })));
+
+            // Accounts this merchant has transacted with
+            Bag(x => x.AccountIds, m =>
+            {
+                m.Table("MerchantAccounts");
+                m.Key(k => k.Column("CounterPartyId"));
+                m.Lazy(CollectionLazy.Lazy);
+            }, r => r.Element(e => e.Column(c =>
+            {
+                c.Name("AccountId");
+                c.Index("IX_MerchantAccounts_AccountId");
+            })));
         }
     }
 }

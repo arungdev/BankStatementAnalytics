@@ -4,7 +4,11 @@ using BankStatementAnalytics.Models;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using Microsoft.AspNetCore.Mvc;
+using NHibernate.Linq;
 using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace BankStatementAnalytics.Controllers.Api
 {
@@ -39,9 +43,18 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("banks")]
         public IActionResult GetBanks()
         {
-            var banks = Enum.GetNames<Bank>();
+            var banks = Enum.GetValues<Bank>()
+                .Select(b => new { value = b.ToString(), label = BankLabel(b) });
             return Ok(banks);
         }
+
+        private static string BankLabel(Bank bank) => bank switch
+        {
+            Bank.HDFC => "HDFC",
+            Bank.HDFCCreditCard => "HDFC Credit Card",
+            Bank.IOB => "IOB",
+            _ => bank.ToString()
+        };
 
         // GET: api/accounts
         [HttpGet]
@@ -80,6 +93,110 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
             return CreatedAtAction(nameof(GetById), new { id = account.Id }, dto);
+        }
+
+        // PUT: api/accounts/{id}  — rename the account holder
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateAccountRequest request)
+        {
+            var account = DbHelper.GetById<Account>((long)id);
+            if (!Owns(account))
+                return NotFound();
+
+            var name = request?.AccountHolderName?.Trim();
+            if (string.IsNullOrEmpty(name))
+                return BadRequest(new { message = "Account name is required." });
+
+            account.AccountHolderName = name;
+            await DbHelper.SaveAsync(account);
+
+            var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
+            return Ok(dto);
+        }
+
+        // DELETE: api/accounts/{id}  — removes the account and all of its parsed
+        // transactions, uploads (DB rows + files), mirroring the upload-revert cleanup.
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var account = DbHelper.GetById<Account>((long)id);
+            if (!Owns(account))
+                return NotFound();
+
+            using var session = DbHelper.GetSession();
+            using var sessionTx = session.BeginTransaction();
+
+            var transactions = session.Query<BankTransaction>()
+                .Where(t => t.AccountId == id)
+                .ToList();
+
+            // Merchants referenced by this account's transactions — candidates for
+            // cleanup once the account is gone.
+            var merchantIds = transactions
+                .Where(t => t.CounterParty != null)
+                .Select(t => t.CounterParty!.Id)
+                .Distinct()
+                .ToList();
+
+            foreach (var t in transactions)
+                await session.DeleteAsync(t);
+
+            // Delete merchants that only belonged to this account; for merchants still
+            // used by another account, just drop this account from their list.
+            long accountId = id;
+            foreach (var merchantId in merchantIds)
+            {
+                bool usedElsewhere = session.Query<BankTransaction>()
+                    .Any(t => t.CounterParty.Id == merchantId);
+
+                var merchant = session.Get<Merchant>(merchantId);
+                if (merchant == null) continue;
+
+                if (usedElsewhere)
+                {
+                    merchant.AccountIds.Remove(accountId);
+                    await session.UpdateAsync(merchant);
+                }
+                else
+                {
+                    await session.DeleteAsync(merchant);
+                }
+            }
+
+            var uploads = session.Query<Models.Upload>()
+                .Where(u => u.AccountId == id)
+                .ToList();
+
+            var uploadsFolder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
+            foreach (var upload in uploads)
+            {
+                if (upload.TransactionId.HasValue)
+                {
+                    var uploadTx = session.Get<Models.UploadTransaction>(upload.TransactionId.Value);
+                    if (uploadTx != null)
+                        await session.DeleteAsync(uploadTx);
+                }
+
+                if (!string.IsNullOrEmpty(upload.StoredName))
+                {
+                    var filePath = Path.Combine(uploadsFolder, upload.StoredName);
+                    if (System.IO.File.Exists(filePath))
+                        System.IO.File.Delete(filePath);
+                }
+
+                await session.DeleteAsync(upload);
+            }
+
+            await session.DeleteAsync(account);
+
+            await sessionTx.CommitAsync();
+
+            return Ok(new { message = "Account deleted." });
+        }
+
+        public class UpdateAccountRequest
+        {
+            public string? AccountHolderName { get; set; }
         }
     }
 }

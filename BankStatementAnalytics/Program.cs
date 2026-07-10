@@ -59,8 +59,18 @@ Log.Info($"Host startup: bind URLs='{configuredUrls ?? "(default)"}', webRoot='{
 
 // Named mutex so the Inno Setup installer (AppMutex) can detect a running
 // instance and prompt to close it before install/uninstall. Held in a static
-// field so it isn't garbage-collected while the app runs.
-AppMutexHolder.Handle = new Mutex(false, "Global\\BankStatementAnalytics.exe");
+// field so it isn't garbage-collected while the app runs. Creating a mutex in
+// the Global\ namespace needs SeCreateGlobalPrivilege, which an interactive
+// non-elevated dev process lacks — so treat failure as non-fatal (the mutex is
+// only a convenience for the installer, not required to run).
+try
+{
+    AppMutexHolder.Handle = new Mutex(false, "Global\\BankStatementAnalytics.exe");
+}
+catch (UnauthorizedAccessException ex)
+{
+    Log.Info($"Could not create global installer mutex (continuing without it): {ex.Message}");
+}
 // MVC
 builder.Services.AddControllersWithViews();
 

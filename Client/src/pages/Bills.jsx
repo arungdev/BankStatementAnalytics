@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
-import { FiBell, FiCheck, FiX, FiTrash2, FiEdit2, FiCalendar } from "react-icons/fi";
+import { FiBell, FiCheck, FiX, FiTrash2, FiEdit2, FiCalendar, FiPlus } from "react-icons/fi";
 import api from "../api/client";
 import { currencyFormatter } from "../utils/format";
 import EmptyState from "../components/ui/EmptyState";
 import Badge from "../components/ui/Badge";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
+import StatCard from "../components/StatCard";
 
 /* ─── Design tokens — aligned with Overview / Merchants / Transactions ───── */
 const T = {
@@ -123,21 +124,32 @@ export default function Bills() {
       .catch((err) => console.error(err));
   };
 
+  const openAdd = () =>
+    setEditing({ isNew: true, name: "", expectedAmount: "", dueDayOfMonth: "1" });
+
   const saveEdit = () => {
-    api
-      .put(`/bills/${editing.id}`, {
-        name: editing.name,
-        matchKey: editing.matchKey,
-        expectedAmount: Number(editing.expectedAmount) || 0,
-        dueDayOfMonth: Number(editing.dueDayOfMonth) || 1,
-      })
+    const name = (editing.name || "").trim();
+    if (!name) {
+      alert("Please enter a name for the bill.");
+      return;
+    }
+    const payload = {
+      name,
+      expectedAmount: Number(editing.expectedAmount) || 0,
+      dueDayOfMonth: Number(editing.dueDayOfMonth) || 1,
+    };
+    const request = editing.isNew
+      ? api.post("/bills", { ...payload, matchKey: "" })
+      : api.put(`/bills/${editing.id}`, { ...payload, matchKey: editing.matchKey });
+
+    request
       .then(() => {
         setEditing(null);
         load();
       })
       .catch((err) => {
         console.error(err);
-        alert("Failed to update bill.");
+        alert(editing.isNew ? "Failed to add bill." : "Failed to update bill.");
       });
   };
 
@@ -151,6 +163,13 @@ export default function Bills() {
   }
 
   const dueSoon = bills.filter((b) => !b.paidThisCycle && b.daysUntilDue <= 7);
+
+  // ── Summary metrics for the hero strip ──
+  const monthlyTotal = bills.reduce((sum, b) => sum + (b.expectedAmount || 0), 0);
+  const paidCount = bills.filter((b) => b.paidThisCycle).length;
+  const nextUnpaid = bills
+    .filter((b) => !b.paidThisCycle)
+    .sort((a, b) => a.daysUntilDue - b.daysUntilDue)[0];
 
   const TABS = [
     { id: "due", label: "Due soon", count: dueSoon.length },
@@ -189,39 +208,78 @@ export default function Bills() {
         }
       `}</style>
 
-      {/* ── Tab bar ── */}
-      <div style={{ display: "flex", gap: "4px", borderBottom: "1px solid var(--border-color, #e5e7eb)", marginBottom: "24px" }}>
-        {TABS.map((t) => {
-          const active = activeTab === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "10px 16px",
-                background: "none",
-                border: "none",
-                borderBottom: `2px solid ${active ? "#4f46e5" : "transparent"}`,
-                marginBottom: "-1px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: active ? 700 : 600,
-                color: active ? "#4f46e5" : "var(--gray-600, #6b7280)",
-              }}
-            >
-              {t.id === "due" && <FiBell size={15} />}
-              {t.label}
-              {t.count > 0 && (
-                <span style={{ background: active ? "#eef2ff" : "var(--gray-100, #f3f4f6)", color: active ? "#4f46e5" : "var(--gray-600, #6b7280)", borderRadius: "999px", fontSize: "11px", fontWeight: 700, padding: "1px 8px" }}>
-                  {t.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      {/* ── Summary strip ── */}
+      {bills.length > 0 && (
+        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "24px" }}>
+          <StatCard
+            label="Monthly total"
+            value={currencyFormatter.format(monthlyTotal)}
+            sub={`${bills.length} recurring bill${bills.length === 1 ? "" : "s"}`}
+          />
+          <StatCard
+            label="Due soon"
+            value={dueSoon.length.toString()}
+            valueColor={dueSoon.length > 0 ? "#fbbf24" : undefined}
+            sub={dueSoon.length > 0 ? "within 7 days" : "nothing due"}
+            accent={dueSoon.length > 0 ? "#fbbf24" : undefined}
+          />
+          <StatCard
+            label="Paid this cycle"
+            value={`${paidCount} / ${bills.length}`}
+            valueColor={paidCount === bills.length ? "#34d399" : undefined}
+            sub={paidCount === bills.length ? "all caught up" : `${bills.length - paidCount} outstanding`}
+            accent={paidCount === bills.length ? "#34d399" : undefined}
+          />
+          <StatCard
+            label="Next bill"
+            value={nextUnpaid ? currencyFormatter.format(nextUnpaid.expectedAmount) : "—"}
+            sub={nextUnpaid ? `${nextUnpaid.name} · ${fmtDate(nextUnpaid.nextDueDate)}` : "nothing scheduled"}
+          />
+        </div>
+      )}
+
+      {/* ── Tab bar + Add bill ── */}
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", borderBottom: "1px solid var(--border-color, #e5e7eb)", marginBottom: "24px" }}>
+        <div style={{ display: "flex", gap: "4px" }}>
+          {TABS.map((t) => {
+            const active = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 16px",
+                  background: "none",
+                  border: "none",
+                  borderBottom: `2px solid ${active ? "#4f46e5" : "transparent"}`,
+                  marginBottom: "-1px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: active ? 700 : 600,
+                  color: active ? "#4f46e5" : "var(--gray-600, #6b7280)",
+                }}
+              >
+                {t.id === "due" && <FiBell size={15} />}
+                {t.label}
+                {t.count > 0 && (
+                  <span style={{ background: active ? "#eef2ff" : "var(--gray-100, #f3f4f6)", color: active ? "#4f46e5" : "var(--gray-600, #6b7280)", borderRadius: "999px", fontSize: "11px", fontWeight: 700, padding: "1px 8px" }}>
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          className="btn primary"
+          onClick={openAdd}
+          style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", whiteSpace: "nowrap" }}
+        >
+          <FiPlus size={15} /> Add bill
+        </button>
       </div>
 
       {/* ── Due soon ── */}
@@ -270,7 +328,16 @@ export default function Bills() {
       {activeTab === "bills" && (
       <section>
         {bills.length === 0 ? (
-          <EmptyState icon="🔔" title="No bills yet" message="Confirm a suggestion in the Suggested tab to start getting reminders." />
+          <EmptyState
+            icon="🔔"
+            title="No bills yet"
+            message="Add a bill manually, or confirm a detected one in the Suggested tab to start getting reminders."
+            action={
+              <button className="btn primary" onClick={openAdd} style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "14px" }}>
+                <FiPlus size={15} /> Add your first bill
+              </button>
+            }
+          />
         ) : (
           <div style={{
             background: T.surface, border: `1px solid ${T.border}`,
@@ -389,13 +456,13 @@ export default function Bills() {
           <div onClick={() => setEditing(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 10000 }} />
           <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "380px", maxWidth: "92vw", background: T.surface, padding: "26px", borderRadius: "16px", zIndex: 10001, boxShadow: "0 20px 50px rgba(15,23,42,0.25)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-              <Avatar name={editing.name} />
-              <h3 style={{ margin: 0, fontSize: "18px", color: T.text }}>Edit bill</h3>
+              <Avatar name={editing.name || "?"} />
+              <h3 style={{ margin: 0, fontSize: "18px", color: T.text }}>{editing.isNew ? "Add a bill" : "Edit bill"}</h3>
             </div>
             <label style={editLabel}>Name</label>
-            <input className="field-input" style={{ width: "100%", marginBottom: "12px" }} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+            <input className="field-input" autoFocus placeholder="e.g. Netflix, Rent, Electricity" style={{ width: "100%", marginBottom: "12px" }} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             <label style={editLabel}>Expected amount</label>
-            <input className="field-input" type="number" style={{ width: "100%", marginBottom: "12px" }} value={editing.expectedAmount} onChange={(e) => setEditing({ ...editing, expectedAmount: e.target.value })} />
+            <input className="field-input" type="number" placeholder="0" style={{ width: "100%", marginBottom: "12px" }} value={editing.expectedAmount} onChange={(e) => setEditing({ ...editing, expectedAmount: e.target.value })} />
             <label style={editLabel}>Due day of month</label>
             <input className="field-input" type="number" min="1" max="31" style={{ width: "100%", marginBottom: "20px" }} value={editing.dueDayOfMonth} onChange={(e) => setEditing({ ...editing, dueDayOfMonth: e.target.value })} />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>

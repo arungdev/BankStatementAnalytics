@@ -52,6 +52,12 @@ namespace BankStatementAnalytics.Services
                 session.Save(found);
             }
 
+            // ── Track which account this merchant was funded from ────────────
+            if (!found.AccountIds.Contains(accountId))
+            {
+                found.AccountIds.Add(accountId);
+            }
+
             // ── Add UPI ID if new ────────────────────────────────────────────
             if (!string.IsNullOrWhiteSpace(upiId))
             {

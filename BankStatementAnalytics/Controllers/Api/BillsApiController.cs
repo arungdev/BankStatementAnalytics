@@ -74,8 +74,14 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] BillDto req)
         {
-            if (req == null || string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.MatchKey))
-                return BadRequest("Name and matchKey are required.");
+            if (req == null || string.IsNullOrWhiteSpace(req.Name))
+                return BadRequest("Name is required.");
+
+            // Suggestions carry their own match key; a manually-added bill derives one from its
+            // name so it can still link back to any matching narration transactions.
+            var matchKey = string.IsNullOrWhiteSpace(req.MatchKey)
+                ? RecurringBillService.BuildManualKey(req.Name)
+                : req.MatchKey.Trim();
 
             using var session = DbHelper.GetSession();
             using var tx = session.BeginTransaction();
@@ -84,7 +90,7 @@ namespace BankStatementAnalytics.Controllers.Api
             {
                 OwnerUserId = CurrentUserId,
                 Name = req.Name.Trim(),
-                MatchKey = req.MatchKey.Trim(),
+                MatchKey = matchKey,
                 ExpectedAmount = req.ExpectedAmount,
                 DueDayOfMonth = Math.Clamp(req.DueDayOfMonth, 1, 31),
                 Status = "Confirmed",

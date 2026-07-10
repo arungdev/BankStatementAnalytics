@@ -5,7 +5,7 @@ import usePersistedState from "../hooks/usePersistedState";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { useAuth } from "../context/useAuth";
-import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw } from "react-icons/fi";
+import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
 import { getUploads, revertStatement } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
@@ -77,6 +77,13 @@ export default function Transactions() {
   // Pagination state (itemsPerPage persists across reloads; page resets to 1)
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = usePersistedState('transactionsPerPage', 10);
+
+  // Quick filter: show only transactions with no category yet
+  const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
+  const toggleUncategorized = () => {
+    setUncategorizedOnly(v => !v);
+    setCurrentPage(1);
+  };
 
   // Sidebar state
   const [selectedTx, setSelectedTx] = useState(null);
@@ -154,6 +161,7 @@ export default function Transactions() {
 
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
+    if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -170,6 +178,7 @@ export default function Transactions() {
         }
 
         if (!isServerPaginated) {
+          if (uncategorizedOnly) allTx = allTx.filter(t => !t.category);
           // Client-side date filtering
           allTx = allTx.filter(t => {
             if (!startDate && !endDate) return true;
@@ -198,7 +207,7 @@ export default function Transactions() {
         console.error(err);
         setLoading(false);
       });
-  }, [effectiveAccountId, currentPage, dateRange, itemsPerPage, refreshKey]);
+  }, [effectiveAccountId, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly]);
 
   if (loading) {
     return (
@@ -335,6 +344,7 @@ export default function Transactions() {
     const params = new URLSearchParams({ pageSize: 0 });
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
+    if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -449,8 +459,18 @@ export default function Transactions() {
         <Button onClick={handleExportCSV} style={{ fontSize: 'var(--text-sm)' }}>
           <FiDownload size={14} /> Export CSV
         </Button>
+        <Button
+          variant={uncategorizedOnly ? 'primary' : 'secondary'}
+          onClick={toggleUncategorized}
+          title="Show only transactions without a category"
+          style={{ fontSize: 'var(--text-sm)' }}
+        >
+          <FiFilter size={14} /> Uncategorized
+        </Button>
 
-        <Badge variant="blue">{totalTransactions} Total Transactions</Badge>
+        <Badge variant="blue">
+          {totalTransactions} {uncategorizedOnly ? 'Uncategorized' : 'Total'} Transactions
+        </Badge>
       </div>
 
       <div style={{

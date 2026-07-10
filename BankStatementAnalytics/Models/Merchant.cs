@@ -22,5 +22,8 @@ namespace BankStatementAnalytics.Models
 
         // Names that were merged into this counterparty
         public virtual IList<string> Aliases { get; set; } = new List<string>();
+
+        // Accounts this merchant has been funded from / transacted with
+        public virtual IList<long> AccountIds { get; set; } = new List<long>();
     }
 }

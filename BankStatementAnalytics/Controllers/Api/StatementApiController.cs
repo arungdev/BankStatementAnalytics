@@ -40,7 +40,8 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] int? year = null,
      [FromQuery] int? month = null,
      [FromQuery] DateTime? startDate = null,
-     [FromQuery] DateTime? endDate = null)
+     [FromQuery] DateTime? endDate = null,
+     [FromQuery] bool uncategorizedOnly = false)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
             if (!Owns(account))
@@ -66,6 +67,14 @@ namespace BankStatementAnalytics.Controllers.Api
                     var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
                     query = query.Where(t => t.TransactionDate <= endOfDay);
                 }
+            }
+
+            if (uncategorizedOnly)
+            {
+                // Uncategorized = no per-transaction override and no merchant default.
+                query = query.Where(t =>
+                    (t.CategoryOverride == null || t.CategoryOverride == "") &&
+                    (t.CounterParty == null || t.CounterParty.Category == null || t.CounterParty.Category == ""));
             }
 
             var projectedQuery = query

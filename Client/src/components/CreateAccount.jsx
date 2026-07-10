@@ -14,7 +14,7 @@ export default function CreateAccount({ onClose, onCreate }) {
       .then(res => {
         const list = res.data || [];
         setBanks(list);
-        if (list.length > 0) setBank(list[0]);
+        if (list.length > 0) setBank(list[0].value);
       })
       .catch(err => {
         console.error('Failed to load banks', err);
@@ -70,7 +70,7 @@ export default function CreateAccount({ onClose, onCreate }) {
         ) : (
           <select value={bank} onChange={e => setBank(e.target.value)}>
             {banks.map(b => (
-              <option key={b} value={b}>{b}</option>
+              <option key={b.value} value={b.value}>{b.label}</option>
             ))}
           </select>
         )}

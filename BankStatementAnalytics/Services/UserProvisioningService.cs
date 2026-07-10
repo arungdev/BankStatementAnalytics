@@ -60,42 +60,45 @@ namespace BankStatementAnalytics.Services
                 using var session = DbHelper.GetSession();
                 using var tx = session.BeginTransaction();
 
-                var defaultCategories = new List<Category>
+                // Broad default taxonomy tuned for everyday spending patterns in India
+                // (UPI transfers, autos/metro, DTH/mobile recharges, EMIs, chit funds, etc.).
+                var defaultCategories = new List<(string Name, string[] Subs)>
                 {
-                    new Category
-                    {
-                        Name = "Food & Dining",
-                        OwnerUserId = userId,
-                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Groceries" }, new SubCategory { Name = "Restaurants" }, new SubCategory { Name = "Coffee" } }
-                    },
-                    new Category
-                    {
-                        Name = "Transportation",
-                        OwnerUserId = userId,
-                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Fuel" }, new SubCategory { Name = "Public Transit" }, new SubCategory { Name = "Taxi" } }
-                    },
-                    new Category
-                    {
-                        Name = "Utilities",
-                        OwnerUserId = userId,
-                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Electricity" }, new SubCategory { Name = "Water" }, new SubCategory { Name = "Internet" } }
-                    },
-                    new Category
-                    {
-                        Name = "Entertainment",
-                        OwnerUserId = userId,
-                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Movies" }, new SubCategory { Name = "Subscriptions" }, new SubCategory { Name = "Games" } }
-                    },
-                    new Category
-                    {
-                        Name = "Shopping",
-                        OwnerUserId = userId,
-                        SubCategories = new List<SubCategory> { new SubCategory { Name = "Clothing" }, new SubCategory { Name = "Electronics" }, new SubCategory { Name = "Gifts" } }
-                    }
+                    ("Food & Dining", new[] { "Groceries", "Restaurants", "Coffee", "Food Delivery", "Street Food & Snacks", "Sweets & Bakery" }),
+                    ("Transportation", new[] { "Fuel", "Public Transit", "Auto & Taxi", "Cab (Ola/Uber)", "Metro", "Railways", "Flights", "Tolls & Parking", "Vehicle Maintenance" }),
+                    ("Utilities", new[] { "Electricity", "Water", "Gas / LPG", "Internet / Broadband", "Mobile Recharge", "DTH / Cable", "Landline" }),
+                    ("Housing", new[] { "Rent", "Home Loan EMI", "Maintenance / Society", "Property Tax", "Home Repairs", "Furniture" }),
+                    ("Entertainment", new[] { "Movies", "Subscriptions (OTT)", "Games", "Events & Concerts", "Sports", "Hobbies" }),
+                    ("Shopping", new[] { "Clothing", "Electronics", "Gifts", "Footwear", "Accessories", "Home & Kitchen", "Online Shopping" }),
+                    ("Groceries & Household", new[] { "Supermarket", "Kirana Store", "Vegetables & Fruits", "Household Supplies", "Personal Care" }),
+                    ("Health & Wellness", new[] { "Doctor / Consultation", "Medicines / Pharmacy", "Hospital", "Diagnostics / Lab", "Health Insurance", "Gym & Fitness", "Dental", "Eye Care" }),
+                    ("Education", new[] { "School Fees", "College / Tuition Fees", "Coaching / Classes", "Books & Stationery", "Online Courses", "Exam Fees" }),
+                    ("Personal Care", new[] { "Salon & Spa", "Grooming", "Cosmetics", "Laundry" }),
+                    ("Family & Kids", new[] { "Childcare", "Kids' Education", "Toys", "Baby Products", "Elder Care" }),
+                    ("Insurance", new[] { "Life Insurance", "Health Insurance", "Vehicle Insurance", "Term / Other Insurance" }),
+                    ("Investments", new[] { "Mutual Funds / SIP", "Stocks", "Fixed Deposit", "Recurring Deposit", "PPF / EPF", "Gold", "Chit Fund", "Crypto" }),
+                    ("Loans & EMIs", new[] { "Home Loan", "Personal Loan", "Vehicle Loan", "Credit Card Payment", "Education Loan", "Gold Loan", "Other EMIs" }),
+                    ("Taxes & Fees", new[] { "Income Tax", "GST", "Bank Charges", "ATM Charges", "Late Fees", "Government Fees" }),
+                    ("Financial", new[] { "Transfers", "UPI Payments", "Cash Withdrawal", "Interest Earned", "Refunds" }),
+                    ("Bills & Recharges", new[] { "Mobile Recharge", "DTH Recharge", "FASTag Recharge", "Wallet Load", "Utility Bills" }),
+                    ("Travel", new[] { "Hotels", "Flights", "Train Tickets", "Bus Tickets", "Holidays & Tours", "Visa & Passport" }),
+                    ("Religious & Charity", new[] { "Donations", "Temple / Offerings", "Charity", "Festivals & Pooja" }),
+                    ("Gifts & Occasions", new[] { "Weddings", "Birthdays", "Festivals", "Gifts Given" }),
+                    ("Pets", new[] { "Pet Food", "Vet", "Pet Supplies" }),
+                    ("Business", new[] { "Office Supplies", "Salaries / Wages", "Professional Services", "Business Travel", "Marketing" }),
+                    ("Income", new[] { "Salary", "Business Income", "Freelance", "Rental Income", "Dividends", "Interest", "Bonus", "Cashback & Rewards" }),
+                    ("Miscellaneous", new[] { "Others", "ATM Cash", "Unknown" })
                 };
 
-                foreach (var category in defaultCategories)
+                foreach (var (name, subs) in defaultCategories)
                 {
+                    var category = new Category
+                    {
+                        Name = name,
+                        OwnerUserId = userId,
+                        SubCategories = subs.Select(s => new SubCategory { Name = s }).ToList()
+                    };
+
                     // Since Inverse = true on the mapping, we must set the parent reference on the child before saving
                     foreach (var sub in category.SubCategories)
                     {
