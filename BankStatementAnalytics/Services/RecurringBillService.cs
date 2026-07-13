@@ -40,6 +40,7 @@ namespace BankStatementAnalytics.Services
 
             var debits = session.Query<BankTransaction>()
                 .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0 && t.TransactionDate >= from)
+                .ProjectDetection()
                 .ToList();
 
             var existingKeys = session.Query<RecurringBill>()
@@ -65,14 +66,14 @@ namespace BankStatementAnalytics.Services
                     continue;
 
                 var amounts = occurrences.Select(t => t.Debit).ToList();
-                var median = Median(amounts);
+                var median = DetectionMath.Median(amounts);
                 var withinTolerance = amounts.Count(a =>
                     median == 0m ? a == 0m : Math.Abs(a - median) / median <= AmountTolerance);
                 // Require most occurrences to cluster around the median, else it's not a fixed bill.
                 if (withinTolerance < Math.Ceiling(occurrences.Count * 0.6))
                     continue;
 
-                var dueDay = MedianInt(occurrences.Select(t => t.TransactionDate.Day).ToList());
+                var dueDay = DetectionMath.MedianInt(occurrences.Select(t => t.TransactionDate.Day).ToList());
                 var sample = occurrences[0];
                 var (_, display) = BuildKey(sample);
 
@@ -80,7 +81,7 @@ namespace BankStatementAnalytics.Services
                 {
                     Name = display,
                     MatchKey = key,
-                    CounterPartyId = sample.CounterParty?.Id,
+                    CounterPartyId = sample.CounterPartyId,
                     ExpectedAmount = median,
                     DueDayOfMonth = dueDay,
                     LastSeenDate = occurrences.Max(t => t.TransactionDate),
@@ -115,6 +116,7 @@ namespace BankStatementAnalytics.Services
                 ? new HashSet<string>()
                 : session.Query<BankTransaction>()
                     .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0 && t.TransactionDate >= from)
+                    .ProjectDetection()
                     .ToList()
                     .Select(t => $"{BuildKey(t).Key}|{t.TransactionDate.Year * 12 + t.TransactionDate.Month}")
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -162,6 +164,7 @@ namespace BankStatementAnalytics.Services
 
             return session.Query<BankTransaction>()
                 .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0)
+                .ProjectDetection()
                 .ToList()
                 // Same key AND a similar amount, so one-off payments to the same merchant
                 // (a different-sized charge) don't get mixed into this recurring bill.
@@ -171,13 +174,64 @@ namespace BankStatementAnalytics.Services
                 {
                     Date = t.TransactionDate,
                     Amount = t.Debit,
-                    Description = t.CounterParty != null
-                        ? (!string.IsNullOrWhiteSpace(t.CounterParty.FriendlyName) ? t.CounterParty.FriendlyName! : t.CounterParty.Name)
-                        : (!string.IsNullOrWhiteSpace(t.Narration) ? t.Narration : t.Description),
-                    Mode = t.Mode,
+                    Description = t.MerchantDisplay
+                        ?? (!string.IsNullOrWhiteSpace(t.Narration) ? t.Narration! : t.Description ?? string.Empty),
+                    Mode = t.Mode ?? string.Empty,
                     BankReference = t.BankReference
                 })
                 .ToList();
+        }
+
+        /// <summary>
+        /// Confirmed bills with the payments that actually posted within [start, end):
+        /// a debit counts toward a bill when its grouping key matches the bill's
+        /// <see cref="RecurringBill.MatchKey"/> and the amount is close to the expected amount
+        /// (same rule as <see cref="GetMatchingTransactions"/>). Bills with no payments in the
+        /// period are omitted.
+        /// </summary>
+        public List<BillPeriodView> GetPaymentsInPeriod(long userId, DateTime start, DateTime end)
+        {
+            using var session = DbHelper.GetSession();
+
+            var bills = session.Query<RecurringBill>()
+                .Where(b => b.OwnerUserId == userId && b.Status == "Confirmed")
+                .ToList();
+            if (bills.Count == 0)
+                return new List<BillPeriodView>();
+
+            var accountIds = OwnedAccountIds(session, userId);
+            if (accountIds.Count == 0)
+                return new List<BillPeriodView>();
+
+            var debitsByKey = session.Query<BankTransaction>()
+                .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0
+                         && t.TransactionDate >= start && t.TransactionDate < end)
+                .ProjectDetection()
+                .ToList()
+                .GroupBy(t => BuildKey(t).Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+            var views = new List<BillPeriodView>();
+            foreach (var bill in bills)
+            {
+                if (!debitsByKey.TryGetValue(bill.MatchKey, out var candidates))
+                    continue;
+
+                var payments = candidates.Where(t => IsAmountClose(t.Debit, bill.ExpectedAmount)).ToList();
+                if (payments.Count == 0)
+                    continue;
+
+                views.Add(new BillPeriodView
+                {
+                    Name = bill.Name,
+                    ExpectedAmount = bill.ExpectedAmount,
+                    PaidCount = payments.Count,
+                    TotalPaid = payments.Sum(t => t.Debit),
+                    LastPaidDate = payments.Max(t => t.TransactionDate),
+                });
+            }
+
+            return views.OrderByDescending(v => v.TotalPaid).ToList();
         }
 
         /// <summary>Next occurrence of <paramref name="dueDay"/> on or after today (day clamped to month length).</summary>
@@ -199,21 +253,13 @@ namespace BankStatementAnalytics.Services
             expected == 0m ? amount == 0m : Math.Abs(amount - expected) / expected <= AmountTolerance;
 
         private static List<long> OwnedAccountIds(NHibernate.ISession session, long userId) =>
-            session.Query<Account>()
-                .Where(a => a.OwnerUserId == userId)
-                .Select(a => a.Id)
-                .ToList();
+            AccountAccess.OwnedIds(session, userId);
 
         // A transaction's grouping key: prefer the linked merchant, else a normalized narration.
-        private static (string Key, string Display) BuildKey(BankTransaction t)
+        private static (string Key, string Display) BuildKey(DetectionTxn t)
         {
-            if (t.CounterParty != null)
-            {
-                var name = !string.IsNullOrWhiteSpace(t.CounterParty.FriendlyName)
-                    ? t.CounterParty.FriendlyName!
-                    : t.CounterParty.Name;
-                return ($"M:{t.CounterParty.Id}", name);
-            }
+            if (t.CounterPartyId != null)
+                return ($"M:{t.CounterPartyId}", t.MerchantDisplay!);
 
             var source = !string.IsNullOrWhiteSpace(t.Narration) ? t.Narration : t.Description;
             var norm = NormalizeNarration(source);
@@ -224,7 +270,7 @@ namespace BankStatementAnalytics.Services
         /// still matches the same normalized-narration transactions detection would have found.</summary>
         public static string BuildManualKey(string name) => "N:" + NormalizeNarration(name);
 
-        private static string NormalizeNarration(string s)
+        private static string NormalizeNarration(string? s)
         {
             if (string.IsNullOrWhiteSpace(s)) return "unknown";
             var sb = new StringBuilder();
@@ -241,22 +287,6 @@ namespace BankStatementAnalytics.Services
             string.IsNullOrEmpty(s)
                 ? s
                 : System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(s.ToLowerInvariant());
-
-        private static decimal Median(List<decimal> values)
-        {
-            var sorted = values.OrderBy(v => v).ToList();
-            int n = sorted.Count;
-            if (n == 0) return 0m;
-            return n % 2 == 1 ? sorted[n / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2m;
-        }
-
-        private static int MedianInt(List<int> values)
-        {
-            var sorted = values.OrderBy(v => v).ToList();
-            int n = sorted.Count;
-            if (n == 0) return 1;
-            return n % 2 == 1 ? sorted[n / 2] : (int)Math.Round((sorted[n / 2 - 1] + sorted[n / 2]) / 2.0);
-        }
     }
 
     public class BillCandidate
@@ -277,6 +307,15 @@ namespace BankStatementAnalytics.Services
         public string Description { get; set; } = string.Empty;
         public string Mode { get; set; } = string.Empty;
         public string BankReference { get; set; } = string.Empty;
+    }
+
+    public class BillPeriodView
+    {
+        public string Name { get; set; } = string.Empty;
+        public decimal ExpectedAmount { get; set; }
+        public int PaidCount { get; set; }
+        public decimal TotalPaid { get; set; }
+        public DateTime LastPaidDate { get; set; }
     }
 
     public class BillView

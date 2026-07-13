@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
@@ -26,9 +27,41 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // GET: api/statements/accounts
         [HttpGet("accounts")]
-        public IActionResult GetAccounts()
+        public async Task<IActionResult> GetAccounts()
         {
-            return Ok(DbHelper.GetAll<Account>().Where(a => a.OwnerUserId == CurrentUserId));
+            var accounts = await DbHelper.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId);
+
+            using var session = DbHelper.GetSession();
+            var result = new List<object>();
+            foreach (var a in accounts)
+            {
+                var bankType = a.BankName.ToString();
+                var txns = session.Query<BankTransaction>()
+                    .Where(t => t.AccountId == a.Id && t.BankType == bankType);
+
+                decimal? balance = a.BankName == Bank.HDFCCreditCard
+                    // Credit card statements carry no running balance, so derive the amount owed.
+                    ? txns.Sum(t => (decimal?)(t.Debit - t.Credit))
+                    // No surrogate Id on BankTransaction; ImportedOn breaks same-date ties.
+                    : txns.OrderByDescending(t => t.TransactionDate)
+                          .ThenByDescending(t => t.ImportedOn)
+                          .Select(t => (decimal?)t.Balance)
+                          .FirstOrDefault();
+
+                result.Add(new
+                {
+                    a.Id,
+                    a.OwnerUserId,
+                    a.AccountNumber,
+                    a.AccountHolderName,
+                    a.BankName,
+                    a.BranchCode,
+                    a.MaskedAccountNumber,
+                    Balance = balance,
+                    BalanceLabel = a.BankName == Bank.HDFCCreditCard ? "Outstanding" : "Balance"
+                });
+            }
+            return Ok(result);
         }
 
         // GET: api/statements/{accountId}
@@ -113,15 +146,13 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("uploads")]
         public IActionResult GetUploads([FromQuery] int? accountId)
         {
-            var ownedAccountIds = DbHelper.GetAll<Account>()
-                .Where(a => a.OwnerUserId == CurrentUserId)
-                .Select(a => (int)a.Id)
-                .ToHashSet();
+            using var session = DbHelper.GetSession();
+
+            var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
 
             if (accountId.HasValue && !ownedAccountIds.Contains(accountId.Value))
                 return NotFound();
 
-            using var session = DbHelper.GetSession();
             var uploadsQuery = session.Query<Models.Upload>();
 
             if (accountId.HasValue)
@@ -135,8 +166,10 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Where(u => u.AccountId.HasValue && ownedAccountIds.Contains(u.AccountId.Value))
                 .ToList();
 
+            // Only count transactions tied to the uploads we're actually returning.
+            var uploadIds = uploads.Select(u => u.Id).ToHashSet();
             var txCounts = session.Query<BankTransaction>()
-                .Where(t => t.UploadId != null)
+                .Where(t => t.UploadId != null && uploadIds.Contains(t.UploadId.Value))
                 .GroupBy(t => t.UploadId)
                 .Select(g => new { UploadId = g.Key, Count = g.Count() })
                 .ToList();
@@ -218,8 +251,6 @@ namespace BankStatementAnalytics.Controllers.Api
                 FileHash = fileHash
             };
 
-            await DbHelper.SaveAsync(upload);
-
             var tx = new Models.UploadTransaction
             {
                 Id = Guid.NewGuid(),
@@ -227,12 +258,16 @@ namespace BankStatementAnalytics.Controllers.Api
                 Description = $"Uploaded statement {file.FileName}",
                 CreatedAt = DateTime.UtcNow
             };
-
-            await DbHelper.SaveAsync(tx);
-
             upload.TransactionId = tx.Id;
-            await DbHelper.UpdateAsync(upload);
 
+            // Persist the upload + its transaction record in one round-trip instead of three.
+            using (var session = DbHelper.GetSession())
+            using (var saveTx = session.BeginTransaction())
+            {
+                await session.SaveAsync(upload);
+                await session.SaveAsync(tx);
+                await saveTx.CommitAsync();
+            }
 
             var (total, newCount) = await _textService.ExtractAsync(
                 path, accountId, uploadId,

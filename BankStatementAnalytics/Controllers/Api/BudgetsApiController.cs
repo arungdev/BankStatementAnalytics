@@ -3,7 +3,9 @@ using NHibernate.Linq;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -20,6 +22,8 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             using var session = DbHelper.GetSession();
 
+            var ownedIds = AccountAccess.OwnedIds(session, CurrentUserId);
+
             var budgets = session.Query<Budget>()
                 .Where(b => b.OwnerUserId == CurrentUserId)
                 .ToList()
@@ -27,7 +31,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 .ToList();
 
             var (monthStart, monthEnd) = MonthRange(monthsAgo);
-            var spentByCategory = await SpendForMonthAsync(session, monthStart, monthEnd);
+            var spentByCategory = await SpendForMonthAsync(session, ownedIds, monthStart, monthEnd);
 
             var views = budgets.Select(b =>
             {
@@ -62,10 +66,7 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             using var session = DbHelper.GetSession();
 
-            var ownedIds = DbHelper.GetAll<Account>()
-                .Where(a => a.OwnerUserId == CurrentUserId)
-                .Select(a => a.Id)
-                .ToHashSet();
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
 
             var (currentStart, _) = MonthRange(0);
 
@@ -180,27 +181,28 @@ namespace BankStatementAnalytics.Controllers.Api
         }
 
         // Spend per resolved category across all of the user's accounts within [monthStart, monthEnd).
-        private async Task<System.Collections.Generic.Dictionary<string, decimal>> SpendForMonthAsync(
-            NHibernate.ISession session, DateTime monthStart, DateTime monthEnd)
+        private async Task<Dictionary<string, decimal>> SpendForMonthAsync(
+            NHibernate.ISession session, IReadOnlyCollection<long> ownedIds, DateTime monthStart, DateTime monthEnd)
         {
-            var ownedIds = DbHelper.GetAll<Account>()
-                .Where(a => a.OwnerUserId == CurrentUserId)
-                .Select(a => a.Id)
-                .ToHashSet();
-
             if (ownedIds.Count == 0)
-                return new System.Collections.Generic.Dictionary<string, decimal>();
+                return new Dictionary<string, decimal>();
 
-            var transactions = await session.Query<BankTransaction>()
+            // Narrow projection: only the two fields the category coalesce needs.
+            var rows = await session.Query<BankTransaction>()
                 .Where(t => ownedIds.Contains(t.AccountId)
                          && t.Debit > 0
                          && t.TransactionDate >= monthStart
                          && t.TransactionDate < monthEnd)
-                .Fetch(t => t.CounterParty)
+                .Select(t => new
+                {
+                    t.Debit,
+                    t.CategoryOverride,
+                    MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
+                })
                 .ToListAsync();
 
-            return transactions
-                .GroupBy(t => t.CategoryOverride ?? t.CounterParty?.Category ?? "Uncategorized")
+            return rows
+                .GroupBy(t => t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized")
                 .ToDictionary(g => g.Key, g => g.Sum(t => t.Debit));
         }
     }

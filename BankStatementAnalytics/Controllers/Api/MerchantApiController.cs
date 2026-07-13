@@ -26,9 +26,11 @@ namespace BankStatementAnalytics.Controllers.Api
                 .FetchMany(x => x.UpiIds)
                 .ToList();
 
-            // Transaction count per merchant, keyed by the (user-specific) merchant id.
+            // Transaction count per merchant, scoped to this user's merchants (not a scan of
+            // every user's transactions).
+            var ownedMerchantIds = merchantEntities.Select(m => m.Id).ToHashSet();
             var txCounts = session.Query<BankTransaction>()
-                .Where(t => t.CounterParty != null)
+                .Where(t => t.CounterParty != null && ownedMerchantIds.Contains(t.CounterParty.Id))
                 .GroupBy(t => t.CounterParty.Id)
                 .Select(g => new { Id = g.Key, Count = g.Count() })
                 .ToList()
@@ -185,13 +187,13 @@ namespace BankStatementAnalytics.Controllers.Api
                 // No need to clear secondary.UpiIds or delete them manually;
                 // NHibernate's Cascade.All will delete them when we delete secondary.
 
-                // Reassign Transactions to primary (single unified table)
-                var txs = session.Query<BankTransaction>().Where(t => t.CounterParty != null && t.CounterParty.Id == secId).ToList();
-                foreach (var t in txs)
-                {
-                    t.CounterParty = primary;
-                    await session.UpdateAsync(t);
-                }
+                // Reassign transactions to primary in one bulk UPDATE rather than loading and
+                // updating each row. Runs directly against the DB (single unified table).
+                await session.CreateQuery(
+                        "update BankTransaction set CounterParty = :primary where CounterParty.Id = :secId")
+                    .SetParameter("primary", primary)
+                    .SetParameter("secId", secId)
+                    .ExecuteUpdateAsync();
 
                 await session.DeleteAsync(secondary);
             }

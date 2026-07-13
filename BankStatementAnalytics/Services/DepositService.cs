@@ -40,6 +40,7 @@ namespace BankStatementAnalytics.Services
 
             var txns = session.Query<BankTransaction>()
                 .Where(t => accountIds.Contains(t.AccountId))
+                .ProjectDetection()
                 .ToList();
 
             var meta = session.Query<Deposit>()
@@ -57,8 +58,8 @@ namespace BankStatementAnalytics.Services
                 var key = group.Key;
                 meta.TryGetValue(MetaKey("RD", key), out var m);
 
-                var monthly = Median(installments.Select(t => t.Debit).ToList());
-                var dueDay = MedianInt(installments.Select(t => t.TransactionDate.Day).ToList());
+                var monthly = DetectionMath.Median(installments.Select(t => t.Debit).ToList());
+                var dueDay = DetectionMath.MedianInt(installments.Select(t => t.TransactionDate.Day).ToList());
                 var first = installments.Min(t => t.TransactionDate);
                 var last = installments.Max(t => t.TransactionDate);
 
@@ -148,6 +149,75 @@ namespace BankStatementAnalytics.Services
             return summary;
         }
 
+        /// <summary>
+        /// RD/FD activity within [start, end): total RD installments paid, FD principal placed,
+        /// FD returns credited, plus a per-deposit line-item list. Uses the same detection and
+        /// grouping rules as <see cref="GetSummary"/> so a deposit reports under the same name.
+        /// </summary>
+        public DepositPeriodSummary GetContributionsInPeriod(long userId, DateTime start, DateTime end)
+        {
+            using var session = DbHelper.GetSession();
+
+            var result = new DepositPeriodSummary();
+            var accountIds = OwnedAccountIds(session, userId);
+            if (accountIds.Count == 0)
+                return result;
+
+            var txns = session.Query<BankTransaction>()
+                .Where(t => accountIds.Contains(t.AccountId)
+                         && t.TransactionDate >= start && t.TransactionDate < end)
+                .ProjectDetection()
+                .ToList();
+
+            var meta = session.Query<Deposit>()
+                .Where(d => d.OwnerUserId == userId)
+                .ToList()
+                .ToDictionary(d => MetaKey(d.Kind, d.MatchKey), d => d, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in txns.Where(IsRecurringDeposit).GroupBy(GroupKey))
+            {
+                var installments = group.Where(t => t.Debit > 0).ToList();
+                if (installments.Count == 0)
+                    continue;
+
+                meta.TryGetValue(MetaKey("RD", group.Key), out var m);
+                result.Items.Add(new DepositPeriodItem
+                {
+                    Kind = "RD",
+                    Name = m?.Nickname ?? DefaultName("RD", group.First()),
+                    Invested = installments.Sum(t => t.Debit),
+                    Installments = installments.Count,
+                });
+            }
+
+            foreach (var group in txns.Where(IsFixedDeposit).GroupBy(GroupKey))
+            {
+                var placed = group.Sum(t => t.Debit);
+                var returned = group.Sum(t => t.Credit);
+                if (placed <= 0 && returned <= 0)
+                    continue;
+
+                meta.TryGetValue(MetaKey("FD", group.Key), out var m);
+                result.Items.Add(new DepositPeriodItem
+                {
+                    Kind = "FD",
+                    Name = m?.Nickname ?? DefaultName("FD", group.First()),
+                    Invested = placed,
+                    Returns = returned,
+                });
+            }
+
+            result.Items = result.Items
+                .OrderByDescending(i => Math.Max(i.Invested, i.Returns))
+                .ToList();
+            result.RdInvested = result.Items.Where(i => i.Kind == "RD").Sum(i => i.Invested);
+            result.FdPlaced = result.Items.Where(i => i.Kind == "FD").Sum(i => i.Invested);
+            result.FdReturns = result.Items.Where(i => i.Kind == "FD").Sum(i => i.Returns);
+            result.TotalInvested = result.RdInvested + result.FdPlaced;
+
+            return result;
+        }
+
         /// <summary>The individual transactions behind one detected deposit, newest first.</summary>
         public List<DepositTxn> GetTransactions(long userId, string kind, string matchKey)
         {
@@ -161,6 +231,7 @@ namespace BankStatementAnalytics.Services
 
             return session.Query<BankTransaction>()
                 .Where(t => accountIds.Contains(t.AccountId))
+                .ProjectDetection()
                 .ToList()
                 .Where(t => (isRd ? IsRecurringDeposit(t) : IsFixedDeposit(t))
                             && GroupKey(t) == matchKey)
@@ -170,7 +241,7 @@ namespace BankStatementAnalytics.Services
                     Date = t.TransactionDate,
                     Amount = t.Debit > 0 ? t.Debit : t.Credit,
                     IsCredit = t.Credit > 0,
-                    Description = !string.IsNullOrWhiteSpace(t.Narration) ? t.Narration : t.Description,
+                    Description = !string.IsNullOrWhiteSpace(t.Narration) ? t.Narration! : t.Description ?? string.Empty,
                     BankReference = t.BankReference,
                 })
                 .ToList();
@@ -180,13 +251,13 @@ namespace BankStatementAnalytics.Services
 
         // RD installment: HDFC sets Mode "INTERNAL" on "RD INSTALLMENT" narrations; the standalone
         // "RD THROUGH MOBILE" narration falls through to Mode "OTHER" but still names the merchant "RD".
-        private static bool IsRecurringDeposit(BankTransaction t) =>
+        private static bool IsRecurringDeposit(DetectionTxn t) =>
             (string.Equals(t.Mode, "INTERNAL", StringComparison.OrdinalIgnoreCase)
                 && DisplayName(t).StartsWith("RD", StringComparison.OrdinalIgnoreCase))
             || DisplayName(t).StartsWith("RD ", StringComparison.OrdinalIgnoreCase)
             || (t.Narration ?? string.Empty).Contains("RD INSTALLMENT", StringComparison.OrdinalIgnoreCase);
 
-        private static bool IsFixedDeposit(BankTransaction t) =>
+        private static bool IsFixedDeposit(DetectionTxn t) =>
             string.Equals(t.Mode, "FD", StringComparison.OrdinalIgnoreCase)
             || DisplayName(t).StartsWith("FD ", StringComparison.OrdinalIgnoreCase)
             || (t.Narration ?? string.Empty).Contains("IB FD", StringComparison.OrdinalIgnoreCase)
@@ -194,13 +265,13 @@ namespace BankStatementAnalytics.Services
 
         // Grouping key: the deposit account number from the narration (stable across months and
         // across alternate narrations for the same account). Falls back to a normalized name.
-        private static string GroupKey(BankTransaction t)
+        private static string GroupKey(DetectionTxn t)
         {
             var acct = ExtractAccountNumber(t);
             return acct ?? ("N:" + NormalizeName(DisplayName(t)));
         }
 
-        private static string? ExtractAccountNumber(BankTransaction t)
+        private static string? ExtractAccountNumber(DetectionTxn t)
         {
             var source = $"{t.Narration} {t.Description}";
             var m = AccountNumRegex.Match(source);
@@ -209,7 +280,7 @@ namespace BankStatementAnalytics.Services
 
         // ── Helpers ─────────────────────────────────────────────────────────────
 
-        private static string DefaultName(string kind, BankTransaction sample)
+        private static string DefaultName(string kind, DetectionTxn sample)
         {
             var acct = ExtractAccountNumber(sample);
             if (acct != null)
@@ -218,14 +289,9 @@ namespace BankStatementAnalytics.Services
             return string.IsNullOrWhiteSpace(name) ? kind : name;
         }
 
-        private static string DisplayName(BankTransaction t)
-        {
-            if (t.CounterParty != null)
-                return !string.IsNullOrWhiteSpace(t.CounterParty.FriendlyName)
-                    ? t.CounterParty.FriendlyName!
-                    : t.CounterParty.Name;
-            return !string.IsNullOrWhiteSpace(t.Narration) ? t.Narration : t.Description;
-        }
+        private static string DisplayName(DetectionTxn t) =>
+            t.MerchantDisplay
+            ?? (!string.IsNullOrWhiteSpace(t.Narration) ? t.Narration! : t.Description ?? string.Empty);
 
         private static string NormalizeName(string s)
         {
@@ -239,26 +305,7 @@ namespace BankStatementAnalytics.Services
         private static string MetaKey(string kind, string matchKey) => $"{kind}|{matchKey}";
 
         private static List<long> OwnedAccountIds(NHibernate.ISession session, long userId) =>
-            session.Query<Account>()
-                .Where(a => a.OwnerUserId == userId)
-                .Select(a => a.Id)
-                .ToList();
-
-        private static decimal Median(List<decimal> values)
-        {
-            var sorted = values.OrderBy(v => v).ToList();
-            int n = sorted.Count;
-            if (n == 0) return 0m;
-            return n % 2 == 1 ? sorted[n / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2m;
-        }
-
-        private static int MedianInt(List<int> values)
-        {
-            var sorted = values.OrderBy(v => v).ToList();
-            int n = sorted.Count;
-            if (n == 0) return 1;
-            return n % 2 == 1 ? sorted[n / 2] : (int)Math.Round((sorted[n / 2 - 1] + sorted[n / 2]) / 2.0);
-        }
+            AccountAccess.OwnedIds(session, userId);
     }
 
     public class DepositSummary
@@ -313,6 +360,24 @@ namespace BankStatementAnalytics.Services
         public int? DaysToMaturity { get; set; }
         public decimal? MaturityValue { get; set; }
         public string? Note { get; set; }
+    }
+
+    public class DepositPeriodSummary
+    {
+        public List<DepositPeriodItem> Items { get; set; } = new();
+        public decimal RdInvested { get; set; }
+        public decimal FdPlaced { get; set; }
+        public decimal FdReturns { get; set; }
+        public decimal TotalInvested { get; set; }
+    }
+
+    public class DepositPeriodItem
+    {
+        public string Kind { get; set; } = string.Empty; // "RD" | "FD"
+        public string Name { get; set; } = string.Empty;
+        public decimal Invested { get; set; }
+        public decimal Returns { get; set; }
+        public int Installments { get; set; }
     }
 
     public class DepositTxn

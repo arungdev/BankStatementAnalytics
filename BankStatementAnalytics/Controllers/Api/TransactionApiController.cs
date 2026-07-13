@@ -16,17 +16,41 @@ namespace BankStatementAnalytics.Controllers.Api
     {
         // GET: api/transactions?accountId=1
         [HttpGet]
-        public IActionResult GetByAccount(int accountId)
+        public async Task<IActionResult> GetByAccount(int accountId)
         {
-            var account = DbHelper.GetById<Account>((long)accountId);
+            var account = await DbHelper.GetByIdAsync<Account>((long)accountId);
             if (!Owns(account))
                 return NotFound();
 
-            var transactions = DbHelper.FetchByCriteria<BankTransaction>(
-                new ICriterion[] { Restrictions.Eq("AccountId", (long)accountId) },
-                Order.Desc("TransactionDate"));
+            using var session = DbHelper.GetSession();
 
-            var result = transactions.Select(t => new
+            // Project only the needed columns server-side (async, ordered in SQL) rather than
+            // hydrating whole entities and their CounterParty via lazy loads.
+            var rows = await session.Query<BankTransaction>()
+                .Where(t => t.AccountId == accountId)
+                .OrderByDescending(t => t.TransactionDate)
+                .Select(t => new
+                {
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
+                    t.TransactionDate,
+                    t.Description,
+                    t.Debit,
+                    t.Credit,
+                    t.Balance,
+                    t.Mode,
+                    t.UpiReference,
+                    MerchantName = t.CounterParty != null ? t.CounterParty.Name : null,
+                    MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null,
+                    MerchantSubCategory = t.CounterParty != null ? t.CounterParty.SubCategory : null,
+                    t.CategoryOverride,
+                    t.SubCategoryOverride,
+                    t.Note
+                })
+                .ToListAsync();
+
+            var result = rows.Select(t => new
             {
                 t.AccountId,
                 t.BankReference,
@@ -38,9 +62,9 @@ namespace BankStatementAnalytics.Controllers.Api
                 t.Balance,
                 t.Mode,
                 t.UpiReference,
-                Merchant = t.CounterParty?.Name,
-                Category = t.CategoryOverride ?? t.CounterParty?.Category,
-                SubCategory = t.SubCategoryOverride ?? t.CounterParty?.SubCategory,
+                Merchant = t.MerchantName,
+                Category = t.CategoryOverride ?? t.MerchantCategory,
+                SubCategory = t.SubCategoryOverride ?? t.MerchantSubCategory,
                 HasCategoryOverride = !string.IsNullOrEmpty(t.CategoryOverride),
                 t.Note
             });

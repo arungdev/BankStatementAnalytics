@@ -3,6 +3,7 @@ using NHibernate.Linq;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -22,48 +23,32 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null)
         {
+            using var session = DbHelper.GetSession();
+
             // Resolve the set of accounts to aggregate: either the comma-separated
             // "All accounts" list or a single accountId. Both are filtered to owned.
-            var ownedIds = DbHelper.GetAll<Account>()
-                .Where(a => a.OwnerUserId == CurrentUserId)
-                .Select(a => a.Id)
-                .ToHashSet();
-
-            List<long> ids;
-            if (!string.IsNullOrWhiteSpace(accountIds))
-            {
-                ids = accountIds.Split(',')
-                    .Select(s => long.TryParse(s.Trim(), out var id) ? id : 0)
-                    .Where(id => id > 0 && ownedIds.Contains(id))
-                    .ToList();
-            }
-            else if (accountId != 0 && ownedIds.Contains(accountId))
-            {
-                ids = new List<long> { accountId };
-            }
-            else if (accountId != 0)
-            {
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
                 return NotFound();
-            }
-            else
-            {
+            if (ids.Count == 0)
                 return Ok(new List<object>());
-            }
-
-            if (!ids.Any())
-                return Ok(new List<object>());
-
-            using var session = DbHelper.GetSession();
 
             var start = startDate.HasValue ? startDate.Value.Date : (DateTime?)null;
             var end = endDate.HasValue ? endDate.Value.Date : (DateTime?)null;
 
             var query = session.Query<BankTransaction>().Where(t => ids.Contains(t.AccountId));
 
+            // Compare against the column directly (>= start, < end+1) so the
+            // IX_BankTransactions_Account_Date index can be used; applying .Date to
+            // the column would force a scan on Postgres.
             if (start.HasValue)
-                query = query.Where(t => t.TransactionDate.Date >= start.Value);
+                query = query.Where(t => t.TransactionDate >= start.Value);
             if (end.HasValue)
-                query = query.Where(t => t.TransactionDate.Date <= end.Value);
+            {
+                var endExclusive = end.Value.AddDays(1);
+                query = query.Where(t => t.TransactionDate < endExclusive);
+            }
 
             var all = await query
                 .Select(t => new { Date = t.TransactionDate.Date, Spend = t.Debit, Income = t.Credit })
