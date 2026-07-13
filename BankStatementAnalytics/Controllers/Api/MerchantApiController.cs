@@ -4,6 +4,7 @@ using Common.Framework.Data;
 using Common.Framework.Web;
 using BankStatementAnalytics.Dtos;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -17,9 +18,15 @@ namespace BankStatementAnalytics.Controllers.Api
     {
         // GET: api/merchants
         [HttpGet]
-        public IActionResult GetAll()
+        public IActionResult GetAll([FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
         {
             using var session = DbHelper.GetSession();
+
+            var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, scopeIds) = AccountAccess.ResolveScope(ownedAccountIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            var filterByAccount = status == AccountAccess.ScopeStatus.Ok;
 
             var merchantEntities = session.Query<Merchant>()
                 .Where(x => x.OwnerUserId == CurrentUserId)
@@ -29,14 +36,19 @@ namespace BankStatementAnalytics.Controllers.Api
             // Transaction count per merchant, scoped to this user's merchants (not a scan of
             // every user's transactions).
             var ownedMerchantIds = merchantEntities.Select(m => m.Id).ToHashSet();
-            var txCounts = session.Query<BankTransaction>()
-                .Where(t => t.CounterParty != null && ownedMerchantIds.Contains(t.CounterParty.Id))
+            var txQuery = session.Query<BankTransaction>()
+                .Where(t => t.CounterParty != null && ownedMerchantIds.Contains(t.CounterParty.Id));
+            if (filterByAccount)
+                txQuery = txQuery.Where(t => scopeIds.Contains(t.AccountId));
+            var txCounts = txQuery
                 .GroupBy(t => t.CounterParty.Id)
                 .Select(g => new { Id = g.Key, Count = g.Count() })
                 .ToList()
                 .ToDictionary(x => x.Id, x => x.Count);
 
             var merchants = merchantEntities
+                // Under an account filter a merchant only belongs if it has in-scope transactions.
+                .Where(m => !filterByAccount || txCounts.ContainsKey(m.Id))
                 .Select(merchantEntity => new
                 {
                     Id = merchantEntity.Id,
@@ -57,7 +69,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // GET: api/merchants/{id}
         [HttpGet("{id}")]
-        public IActionResult GetById(int id)
+        public IActionResult GetById(int id, [FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
         {
             using var session = DbHelper.GetSession();
 
@@ -69,9 +81,17 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!Owns(merchantEntity))
                 return NotFound();
 
-            var transactions = session.Query<BankTransaction>()
-                .Where(x => x.CounterParty != null && x.CounterParty.Id == id)
-                .ToList();
+            var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, scopeIds) = AccountAccess.ResolveScope(ownedAccountIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            var filterByAccount = status == AccountAccess.ScopeStatus.Ok;
+
+            var txQuery = session.Query<BankTransaction>()
+                .Where(x => x.CounterParty != null && x.CounterParty.Id == id);
+            if (filterByAccount)
+                txQuery = txQuery.Where(x => scopeIds.Contains(x.AccountId));
+            var transactions = txQuery.ToList();
 
             var allTransactions = transactions
                 .Select(x => new
@@ -186,6 +206,13 @@ namespace BankStatementAnalytics.Controllers.Api
                 }
                 // No need to clear secondary.UpiIds or delete them manually;
                 // NHibernate's Cascade.All will delete them when we delete secondary.
+
+                // Union account memberships so the stored bag stays truthful after the merge.
+                foreach (var accId in secondary.AccountIds)
+                {
+                    if (!primary.AccountIds.Contains(accId))
+                        primary.AccountIds.Add(accId);
+                }
 
                 // Reassign transactions to primary in one bulk UPDATE rather than loading and
                 // updating each row. Runs directly against the DB (single unified table).
