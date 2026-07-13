@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { FiSettings, FiChevronDown } from 'react-icons/fi';
+import './ui/ui.css';
 
 /**
  * PageHeader — reusable two-row header
@@ -238,6 +239,35 @@ export function FilterChip({ active, onChange, dot, children }) {
         <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: active ? 'var(--primary)' : 'var(--border-color)', flexShrink: 0 }} />
       )}
       {children}
+    </label>
+  );
+}
+
+/** Chip-styled native <select> — muted prefix label inside the chip + custom
+    caret, so it visually matches AccountFilter / DateRangePicker triggers. */
+export function FilterSelectChip({ prefix, value, onChange, disabled, children, style }) {
+  return (
+    <label className="filter-chip" style={{ paddingRight: '10px', ...style }}>
+      {prefix && <span className="filter-chip-prefix">{prefix}</span>}
+      <select
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        style={{
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          border: 'none',
+          background: 'transparent',
+          font: 'inherit',
+          color: 'inherit',
+          cursor: 'pointer',
+          outline: 'none',
+          maxWidth: '220px',
+        }}
+      >
+        {children}
+      </select>
+      <FiChevronDown size={13} className="filter-chip-caret" style={{ pointerEvents: 'none' }} />
     </label>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import './ui/ui.css';
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -197,6 +198,7 @@ export default function DateRangePicker({
   align = 'left',
   placeholder = 'Select date range',
   size = 'sm',
+  prefixLabel = 'Period',   // muted label inside the trigger chip; pass null to hide
 }) {
   const compact = size === 'sm';
 
@@ -336,26 +338,19 @@ export default function DateRangePicker({
         .drp-preset.active { background: var(--primary) !important; color: #fff !important; }
         .drp-cancel:hover { background: var(--gray-100) !important; }
         .drp-apply:hover  { background: var(--primary-hover) !important; }
-        .drp-trigger:hover { border-color: var(--primary) !important; }
         input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
       `}</style>
 
-      {/* ── Trigger button ────────────────────────────────────────────── */}
+      {/* ── Trigger button — shares .filter-chip with AccountFilter ───── */}
       <button
-        className="drp-trigger"
+        className={`filter-chip${open ? ' open' : ''}`}
         onClick={() => setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          padding: compact ? '5px 10px' : '7px 14px',
-          border: '1.5px solid var(--border-color)',
-          borderRadius: 7, background: 'var(--surface)', cursor: 'pointer',
-          fontSize: compact ? 12 : 13, fontWeight: 600, color: 'var(--gray-700)',
-          transition: 'border-color 0.15s',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-          whiteSpace: 'nowrap',
-        }}
+        style={compact ? undefined : { height: 38, fontSize: 14 }}
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <CalIcon small={compact} />
+        {prefixLabel && <span className="filter-chip-prefix">{prefixLabel}</span>}
         {activeLabel}
         <ChevronIcon open={open} />
       </button>
