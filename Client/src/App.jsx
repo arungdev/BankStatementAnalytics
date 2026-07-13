@@ -3,15 +3,19 @@ import { useEffect, useState } from "react";
 import api from "./api/client";
 import { useAccount } from "./context/useAccount";
 import { useAuth } from "./context/useAuth";
+import { usePrivacy } from "./context/usePrivacy";
 import CreateAccount from "./components/CreateAccount";
+import Modal from "./components/ui/Modal";
 import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
 import AccountFilter, { ALL_ACCOUNTS } from "./components/AccountFilter";
 import NotificationBell from "./components/NotificationBell";
+import PrivacyToggle from "./components/PrivacyToggle";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import { InsightsFilters } from "./pages/Insights";
+import { ReportsFilters } from "./pages/Reports";
 import { TrendsFilters } from "./pages/Trends";
 import { TransactionsFilters } from "./pages/Transactions";
 
@@ -24,6 +28,7 @@ import Insights from "./pages/Insights";
 import Bills from "./pages/Bills";
 import Budgets from "./pages/Budgets";
 import Investments from "./pages/Investments";
+import Reports from "./pages/Reports";
 import useBillReminders from "./hooks/useBillReminders";
 import usePersistedState from "./hooks/usePersistedState";
 import usePersistedRange from "./hooks/usePersistedRange";
@@ -61,6 +66,7 @@ function AuthGate() {
         <Route path="/bills" element={<Bills />} />
         <Route path="/budgets" element={<Budgets />} />
         <Route path="/investments" element={<Investments />} />
+        <Route path="/reports" element={<Reports />} />
       </Route>
     </Routes>
   );
@@ -70,17 +76,24 @@ const PAGE_META = {
   '/': { title: 'Overview', subtitle: 'Your account at a glance' },
   '/trends': { title: 'Trends', subtitle: 'Income vs. spends over time' },
   '/transactions': { title: 'Transactions' },
-  '/merchants': { title: 'Merchants' },
+  '/merchants': { title: 'Merchants', subtitle: 'Who you transact with, and how they’re categorized' },
   '/upload': { title: 'Upload Statement' },
   '/insights': { title: 'Spending Insights', subtitle: 'Where your money goes' },
   '/bills': { title: 'Bills & Reminders', subtitle: 'Upcoming recurring bills' },
   '/budgets': { title: 'Budgets', subtitle: 'Monthly limits by category' },
   '/investments': { title: 'Investments', subtitle: 'Recurring & fixed deposits' },
+  '/reports': { title: 'Reports', subtitle: 'Monthly & yearly summary' },
 };
 
 function Layout() {
   const location = useLocation();
   const { selectedAccountId, setSelectedAccountId } = useAccount();
+  // Consuming the privacy flag here re-renders Layout (and, via the fresh
+  // outlet context object, every page that reads useOutletContext) on toggle.
+  // Pages that read no outlet context (Bills/Budgets/Investments/Merchants)
+  // don't re-render from this alone — React Router bails out on the cached
+  // outlet element — so those pages call usePrivacy() themselves.
+  const { maskAmounts, setMaskAmounts } = usePrivacy();
 
   // Fire desktop reminders for bills due soon (opt-in; see Settings → Reminders).
   useBillReminders();
@@ -108,6 +121,10 @@ function Layout() {
   // ── Transactions filter state (lifted so header row & page share it) ──
   const [transactionsRange, setTransactionsRange] = usePersistedRange('transactionsRange');
 
+  // ── Reports filter state (lifted so header row & page share it) ───────
+  const [reportType, setReportType] = usePersistedState('reportType', 'month');
+  const [reportPeriod, setReportPeriod] = usePersistedState('reportPeriod', '');
+
   // Sidebar accounts
   useEffect(() => {
     api.get('/statements/accounts')
@@ -129,12 +146,17 @@ function Layout() {
   const isInsights = location.pathname === '/insights';
   const isTrends = location.pathname === '/trends';
   const isTransactions = location.pathname === '/transactions';
+  const isReports = location.pathname === '/reports';
+  const isMerchants = location.pathname === '/merchants';
+
+  // Opens Settings, which defaults to the accounts tab, so the user can add one.
+  const goAddAccount = () => setIsSettings(true);
 
   const filters = isOverview
-    ? <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
+    ? <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
     : isInsights
     ? <>
-      <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
+      <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
       <InsightsFilters
         range={insightRange}
         setRange={setInsightRange}
@@ -144,7 +166,7 @@ function Layout() {
     </>
     : isTrends
       ? <>
-        <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} />
+        <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
         <TrendsFilters
           period={trendsPeriod}
           setPeriod={setTrendsPeriod}
@@ -159,13 +181,26 @@ function Layout() {
             value={selectedAccountId === ALL_ACCOUNTS ? (accounts[0]?.id ?? ALL_ACCOUNTS) : selectedAccountId}
             onChange={setSelectedAccountId}
             includeAll={false}
+            onAdd={goAddAccount}
           />
           <TransactionsFilters
             dateRange={transactionsRange}
             setDateRange={setTransactionsRange}
           />
         </>
-        : undefined;
+        : isReports
+          ? <>
+            <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
+            <ReportsFilters
+              reportType={reportType}
+              setReportType={setReportType}
+              reportPeriod={reportPeriod}
+              setReportPeriod={setReportPeriod}
+            />
+          </>
+          : isMerchants
+            ? <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
+            : undefined;
 
   return (
     <div className="app">
@@ -176,44 +211,47 @@ function Layout() {
           title={meta.title}
           subtitle={meta.subtitle}
           filters={filters}
-          actions={<NotificationBell />}
+          actions={<>
+            <PrivacyToggle masked={maskAmounts} onToggle={() => setMaskAmounts(m => !m)} />
+            <NotificationBell />
+          </>}
           onSettings={() => setIsSettings(true)}
         />
 
-        {showCreate && (
-          <div className="modal" onClick={() => setShowCreate(false)} style={{ zIndex: 20000 }}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
-              <button className="modal-close" onClick={() => setShowCreate(false)}>&times;</button>
-              <h3>Create Account</h3>
-              <CreateAccount
-                onClose={() => {
-                  setShowCreate(false);
-                }}
-                onCreate={(data) => {
-                  const temp = {
-                    id: `temp-${Date.now()}`,
-                    accountHolderName: data.AccountHolderName,
-                    accountNumber: data.AccountNumber,
-                    maskedAccountNumber: '****' + (data.AccountNumber?.slice(-4) || ''),
-                    bankName: data.BankName,
-                  };
-                  setAccounts(prev => [temp, ...prev]);
-                  return api.post('/accounts', {
-                    AccountHolderName: data.AccountHolderName,
-                    AccountNumber: data.AccountNumber,
-                    BankName: data.BankName,
-                  }).then(res => {
-                    setAccounts(prev => prev.map(a => a.id === temp.id ? res.data : a));
-                    fetchAccounts();
-                  }).catch(err => {
-                    setAccounts(prev => prev.filter(a => a.id !== temp.id));
-                    throw err;
-                  });
-                }}
-              />
-            </div>
-          </div>
-        )}
+        <Modal
+          open={showCreate}
+          onClose={() => setShowCreate(false)}
+          title="Create Account"
+          width={360}
+          zIndex="var(--z-modal-top)"
+        >
+          <CreateAccount
+            onClose={() => {
+              setShowCreate(false);
+            }}
+            onCreate={(data) => {
+              const temp = {
+                id: `temp-${Date.now()}`,
+                accountHolderName: data.AccountHolderName,
+                accountNumber: data.AccountNumber,
+                maskedAccountNumber: '****' + (data.AccountNumber?.slice(-4) || ''),
+                bankName: data.BankName,
+              };
+              setAccounts(prev => [temp, ...prev]);
+              return api.post('/accounts', {
+                AccountHolderName: data.AccountHolderName,
+                AccountNumber: data.AccountNumber,
+                BankName: data.BankName,
+              }).then(res => {
+                setAccounts(prev => prev.map(a => a.id === temp.id ? res.data : a));
+                fetchAccounts();
+              }).catch(err => {
+                setAccounts(prev => prev.filter(a => a.id !== temp.id));
+                throw err;
+              });
+            }}
+          />
+        </Modal>
 
         <Settings
           isOpen={isSettingsOpen}
@@ -231,6 +269,8 @@ function Layout() {
             trendsPeriod,
             trendsRange,
             transactionsRange,
+            reportType,
+            reportPeriod,
           }} />
         </section>
       </main>

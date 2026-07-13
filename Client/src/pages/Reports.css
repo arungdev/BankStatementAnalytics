@@ -1,0 +1,76 @@
+/* Reports page — print-to-PDF layout.
+   The report body renders normally on screen; printing hides the app chrome
+   (sidebar, header, toolbar) and lets the report flow across pages. */
+
+.report-print-header {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  /* Hide app chrome and screen-only controls */
+  .sidebar,
+  .main > header,
+  .no-print {
+    display: none !important;
+  }
+
+  /* The shell is a fixed-height flex viewport (`.app { height: 100vh; overflow: hidden }`);
+     it must become a normal flowing document or only the first page prints. */
+  .app,
+  .main,
+  .content {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .report-page {
+    padding: 0 !important;
+    background: #ffffff !important;
+    min-height: 0 !important;
+  }
+
+  /* Force a light render for the printed report even when the app is in dark
+     mode, so the PDF is ink-friendly. The dark --stat-tile-* KPI tiles are
+     intentionally left untouched. */
+  .report-print-area {
+    --surface: #ffffff;
+    --surface-2: #f9fafb;
+    --bg: #ffffff;
+    --border-color: #e5e7eb;
+    --border-subtle: #f0f1f3;
+    --text-main: #111827;
+    --text-muted: #6b7280;
+    --text-faint: #9ca3af;
+  }
+
+  .report-print-header {
+    display: block !important;
+  }
+
+  /* Keep each section on one page where possible */
+  .report-card,
+  .report-stat-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  .report-grid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Preserve chart colors, share bars, and the dark KPI tiles in the PDF */
+  .report-print-area,
+  .report-print-area * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
