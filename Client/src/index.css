@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
+  color-scheme: light;
+
   /* Brand / accent */
   --primary: #4f46e5;
   --primary-hover: #4338ca;
@@ -21,9 +23,13 @@
   /* Surfaces */
   --bg: var(--gray-100);
   --surface: #ffffff;
+  --surface-2: var(--gray-50);
   --border-color: var(--gray-200);
+  --border-subtle: #f0f1f3;
   --text-main: var(--gray-900);
   --text-muted: var(--gray-500);
+  --text-faint: var(--gray-400);
+  --overlay: rgba(15, 23, 42, 0.45);
 
   /* Legacy aliases kept for existing components */
   --bg-color: var(--bg);
@@ -35,8 +41,36 @@
   --success-light: #ecfdf5;
   --danger: #ef4444;
   --danger-light: #fef2f2;
+  --danger-border: #fecaca;
   --warning: #d97706;
   --warning-light: #fffbeb;
+
+  /* Charts (fixed slot order — do not re-sort per render) */
+  --chart-1: #4f46e5;
+  --chart-2: #0d9488;
+  --chart-3: #d97706;
+  --chart-4: #059669;
+  --chart-5: #9333ea;
+  --chart-6: #dc2626;
+  --chart-7: #db2777;
+  --chart-8: #ea580c;
+  --chart-income: #059669;
+  --chart-spend: #dc2626;
+  --chart-grid: var(--gray-200);
+  --chart-tick: var(--gray-500);
+
+  /* Stat tile (branded KPI card) */
+  --stat-tile-bg: linear-gradient(135deg, #1e1b4b, #312e81);
+  --stat-tile-border: transparent;
+  --stat-tile-label: #a5b4fc;
+  --stat-tile-value: #ffffff;
+
+  /* Z-index scale */
+  --z-header: 100;
+  --z-dropdown: 600;
+  --z-drawer: 1000;
+  --z-modal: 1100;
+  --z-modal-top: 1200;
 
   /* Spacing scale */
   --space-1: 4px;
@@ -68,6 +102,70 @@
   --text-xl: 22px;
   --text-2xl: 28px;
   --text-3xl: 32px;
+}
+
+/* --- DARK THEME ---
+   Same custom-property names redefined; anything consuming var(--x) is
+   theme-aware automatically. The gray ramp is inverted so existing rules
+   like `tr:hover td { background: var(--gray-50) }` stay correct. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --primary: #6366f1;
+  --primary-hover: #818cf8;
+  --primary-light: rgba(99, 102, 241, 0.16);
+
+  --gray-50: #1e222d;
+  --gray-100: #232734;
+  --gray-200: #2a3040;
+  --gray-300: #3b4254;
+  --gray-400: #6b7280;
+  --gray-500: #9aa3b2;
+  --gray-600: #b7bfcc;
+  --gray-700: #cdd3de;
+  --gray-800: #e2e6ee;
+  --gray-900: #f3f4f6;
+
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface-2: #232734;
+  --border-color: #2a3040;
+  --border-subtle: #232734;
+  --text-main: #f3f4f6;
+  --text-muted: #9aa3b2;
+  --text-faint: #6b7280;
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --success: #34d399;
+  --success-light: rgba(16, 185, 129, 0.14);
+  --danger: #f87171;
+  --danger-light: rgba(239, 68, 68, 0.14);
+  --danger-border: rgba(248, 113, 113, 0.35);
+  --warning: #fbbf24;
+  --warning-light: rgba(217, 119, 6, 0.16);
+
+  /* Dark relies on borders + surface steps, not shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35);
+
+  --chart-1: #6366f1;
+  --chart-2: #0d9488;
+  --chart-3: #d97706;
+  --chart-4: #059669;
+  --chart-5: #a855f7;
+  --chart-6: #ef4444;
+  --chart-7: #ec4899;
+  --chart-8: #ea580c;
+  --chart-income: #34d399;
+  --chart-spend: #f87171;
+  --chart-grid: #2a3040;
+  --chart-tick: #9aa3b2;
+
+  --stat-tile-bg: linear-gradient(135deg, #232048, #2b2a5e);
+  --stat-tile-border: rgba(129, 140, 248, 0.3);
+  --stat-tile-label: #a5b4fc;
+  --stat-tile-value: #ffffff;
 }
 
 * {
@@ -136,14 +234,9 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: box-shadow 0.2s, border-color 0.2s;
   position: relative;
   overflow: hidden;
-}
-
-.card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-lg);
 }
 
 .card-icon {
@@ -225,6 +318,10 @@ tr:hover td {
   color: var(--danger);
 }
 
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- MODAL --- */
 .modal {
   position: fixed;
@@ -232,8 +329,8 @@ tr:hover td {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.45);
-  z-index: 60;
+  background: var(--overlay);
+  z-index: var(--z-modal);
 }
 
 .modal-content {
@@ -380,6 +477,16 @@ tr:hover td {
   color: #b45309;
 }
 
+/* Badge/icon text colors are dark pastel-on-light pairs; give them
+   readable dark-theme counterparts. */
+[data-theme="dark"] .badge.blue { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+[data-theme="dark"] .badge.green { color: #6ee7b7; }
+[data-theme="dark"] .badge.red { color: #fca5a5; }
+[data-theme="dark"] .badge.purple { background: rgba(168, 85, 247, 0.18); color: #d8b4fe; }
+[data-theme="dark"] .badge.amber { color: #fcd34d; }
+[data-theme="dark"] .card-icon.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+[data-theme="dark"] .card-icon.purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+
 /* --- LOADER --- */
 .loader-container {
   display: flex;
@@ -443,9 +550,17 @@ tr:hover td {
 .btn:hover { background: var(--gray-50); }
 .btn.primary { background:var(--primary); color:white; border:none; }
 .btn.primary:hover { background: var(--primary-hover); }
-.btn.danger { background:var(--danger-light); border-color: #fecaca; color:var(--danger); }
-.btn.danger:hover { background: #fee2e2; }
+.btn.danger { background:var(--danger-light); border-color: var(--danger-border); color:var(--danger); }
+.btn.danger:hover { filter: brightness(0.97); }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn.small { padding: 6px 12px; font-size: var(--text-sm); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--text-muted); }
+.btn.ghost:hover { background: var(--gray-100); color: var(--text-main); }
+.btn.icon { display: inline-flex; align-items: center; justify-content: center; padding: var(--space-2); line-height: 1; }
+.btn:focus-visible, .field-input:focus-visible, .field-select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 
 .form-message { margin-top:var(--space-2); color:var(--text-muted); }
 
@@ -513,12 +628,18 @@ tr:hover td {
   height: 48px;
   margin: 0 auto var(--space-4);
   border-radius: 14px;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  background: linear-gradient(135deg, #6366f1, var(--primary) 55%, #7c3aed);
-  box-shadow: 0 8px 16px -6px rgba(79, 70, 229, 0.5);
+  box-shadow: 0 8px 16px -6px rgba(13, 148, 136, 0.5);
+}
+
+.auth-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .auth-title {
@@ -588,7 +709,7 @@ tr:hover td {
   margin-bottom: var(--space-4);
   padding: var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid #fecaca;
+  border: 1px solid var(--danger-border);
   background: var(--danger-light);
   color: var(--danger);
   font-size: var(--text-sm);

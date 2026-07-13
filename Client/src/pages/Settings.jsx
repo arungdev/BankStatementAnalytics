@@ -1,15 +1,18 @@
 import { useState, useEffect } from "react";
-import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell } from "react-icons/fi";
+import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor } from "react-icons/fi";
 import api from "../api/client";
 import { useAccount } from "../context/useAccount";
 import { useAuth } from "../context/useAuth";
+import useTheme from "../context/useTheme";
 import ProfileSettings from "../components/ProfileSettings";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
+import { currencyFormatterFull } from "../utils/format";
 import "./Settings.css";
 
 export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreated, accounts = [], setAccounts }) {
   const { selectedAccountId, setSelectedAccountId } = useAccount();
   const { isAdmin } = useAuth();
+  const { preference, setPreference } = useTheme();
   const [activeTab, setActiveTab] = useState('accounts');
   const [categories, setCategories] = useState([]);
 
@@ -218,6 +221,7 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
     { id: 'accounts', label: 'Accounts', icon: <FiCreditCard size={17} /> },
     { id: 'categories', label: 'Categories', icon: <FiTag size={17} /> },
     { id: 'reminders', label: 'Reminders', icon: <FiBell size={17} /> },
+    { id: 'appearance', label: 'Appearance', icon: <FiSun size={17} /> },
     { id: 'profile', label: 'Profile', icon: <FiUser size={17} /> },
   ];
 
@@ -225,8 +229,15 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
     accounts: { title: 'Manage Accounts', subtitle: 'Add, rename, or remove your linked bank accounts.' },
     categories: { title: 'Categories', subtitle: 'Organize your spending into categories and sub-categories.' },
     reminders: { title: 'Bill Reminders', subtitle: 'Get a desktop notification when a recurring bill is due soon.' },
+    appearance: { title: 'Appearance', subtitle: 'Choose how the app looks on this device.' },
     profile: { title: 'Profile', subtitle: 'Manage your account and personal details.' },
   };
+
+  const THEME_OPTIONS = [
+    { id: 'system', label: 'System', sub: 'Follow your device setting', icon: <FiMonitor size={20} /> },
+    { id: 'light', label: 'Light', sub: 'Bright surfaces, dark text', icon: <FiSun size={20} /> },
+    { id: 'dark', label: 'Dark', sub: 'Dim surfaces, light text', icon: <FiMoon size={20} /> },
+  ];
 
   return (
     <>
@@ -284,6 +295,25 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
 
             {/* ── Profile ── */}
             {activeTab === 'profile' && <ProfileSettings />}
+
+            {/* ── Appearance ── */}
+            {activeTab === 'appearance' && (
+              <div className="theme-options" role="radiogroup" aria-label="Theme">
+                {THEME_OPTIONS.map(opt => (
+                  <button
+                    key={opt.id}
+                    role="radio"
+                    aria-checked={preference === opt.id}
+                    className={`theme-option${preference === opt.id ? ' active' : ''}`}
+                    onClick={() => setPreference(opt.id)}
+                  >
+                    <span className="theme-option-icon">{opt.icon}</span>
+                    <span className="theme-option-label">{opt.label}</span>
+                    <span className="theme-option-sub">{opt.sub}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* ── Reminders ── */}
             {activeTab === 'reminders' && (
@@ -422,6 +452,13 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                             </p>
                           </div>
                         </div>
+
+                        {acc.balance != null && (
+                          <div className="settings-row-balance">
+                            <span className="settings-row-balance-label">{acc.balanceLabel || 'Balance'}</span>
+                            <span className="settings-row-balance-value">{currencyFormatterFull.format(acc.balance)}</span>
+                          </div>
+                        )}
 
                         {isAdmin && (
                           <div className="settings-row-actions">
