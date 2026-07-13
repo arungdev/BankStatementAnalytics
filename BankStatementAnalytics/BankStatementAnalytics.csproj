@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>BankStatementAnalytics</RootNamespace>
+    <!-- Windows icon embedded in the published exe; also drives the installer's
+         UninstallDisplayIcon and Start-menu/desktop shortcut icons (all point at the exe). -->
+    <ApplicationIcon>icons\AppIcon.ico</ApplicationIcon>
     <!-- Single source of truth for the app/installer version - bump this per release. -->
     <Version>1.0.0</Version>
     <!-- Disable the SDK's static-web-assets Brotli/gzip precompression. The React client is built

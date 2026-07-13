@@ -39,7 +39,7 @@ export async function showDesktopNotification(title, body, tag) {
   const perm = await ensurePermission();
   if (perm !== "granted") return { ok: false, reason: perm === "unsupported" ? "unsupported" : perm };
   try {
-    const n = new Notification(title, { body, tag, icon: "/favicon.svg", badge: "/favicon.svg" });
+    const n = new Notification(title, { body, tag, icon: "/icon-192.png", badge: "/favicon-32.png" });
     // Focus this tab if the user clicks the toast.
     n.onclick = () => { try { window.focus(); } catch { /* ignore */ } };
     return { ok: true };

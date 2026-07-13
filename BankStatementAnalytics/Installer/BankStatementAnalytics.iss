@@ -13,6 +13,9 @@
 #define MyAppPublisher "Arun G"
 #define MyAppExeName   "BankStatementAnalytics.exe"
 #define MySourceDir    "..\..\Publish"
+; Setup wizard / Add-Remove-Programs icon (Framework.iss maps this to SetupIconFile).
+; Path is relative to this .iss file.
+#define MyIconFile     "..\icons\AppIcon.ico"
 
 ; Install machine-wide under C:\Program Files (requires admin). Needed because the app
 ; runs as a Windows service under LocalService, which can't reach a per-user profile
@@ -28,6 +31,10 @@
 #define MyServiceUninstallScript "uninstall-service.bat"
 #define MyServiceAlways
 #define MyServiceUrl "http://localhost:5080"
+; Pre-check the desktop-icon task: the shortcut is just a browser link to the service
+; URL, and users expect it after install (an unchecked box left older stale shortcuts
+; in place with nothing replacing them).
+#define MyDesktopIconChecked
 ; Must NOT be nested inside MySourceDir - Files packages MySourceDir\* recursively,
 ; so an OutputDir underneath it would try to include its own prior output.
 #define MyOutputDir    "..\..\Setup"
