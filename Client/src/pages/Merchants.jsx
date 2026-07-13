@@ -101,17 +101,6 @@ export default function Merchants() {
       .catch(err => console.error("Failed to load categories", err));
   }, []);
 
-  useEffect(() => {
-    setLoading(true);
-    fetchMerchants()
-      .catch(err => console.error(err))
-      .finally(() => setLoading(false));
-    // Merge selection is scope-dependent; an open drawer refetches under the new scope.
-    setSelectedIds([]);
-    if (selectedMerchantId) handleRowClick(selectedMerchantId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountQuery]);
-
   const handleRowClick = (id) => {
     setSelectedMerchantId(id);
     setLoadingDetails(true);
@@ -127,6 +116,17 @@ export default function Merchants() {
         setLoadingDetails(false);
       });
   };
+
+  useEffect(() => {
+    setLoading(true);
+    fetchMerchants()
+      .catch(err => console.error(err))
+      .finally(() => setLoading(false));
+    // Merge selection is scope-dependent; an open drawer refetches under the new scope.
+    setSelectedIds([]);
+    if (selectedMerchantId) handleRowClick(selectedMerchantId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountQuery]);
 
   const toggleSelection = (id, e) => {
     e.stopPropagation();
