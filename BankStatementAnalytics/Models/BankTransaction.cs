@@ -1,4 +1,6 @@
-﻿namespace BankStatementAnalytics.Models
+﻿using System.Text.Json.Serialization;
+
+namespace BankStatementAnalytics.Models
 {
     public class BankTransaction
     {
@@ -41,6 +43,12 @@
         public virtual string? SubCategoryOverride { get; set; }
         public virtual string? Tags { get; set; } // comma-separated e.g. "food,rent,bills"
         public virtual string? Note { get; set; } // user-entered free-text annotation
+
+        // Transient (not mapped, not serialized): the counterparty name a parser extracted from the
+        // narration, resolved to a Merchant in a single batch after parsing rather than per-row.
+        [JsonIgnore]
+        public virtual string? PendingCounterPartyName { get; set; }
+
         public override bool Equals(object? obj)
         {
             if (obj is not BankTransaction other) return false;

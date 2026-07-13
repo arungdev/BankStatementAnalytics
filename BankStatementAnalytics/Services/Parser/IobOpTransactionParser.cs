@@ -48,13 +48,7 @@ namespace BankStatementAnalytics.Services.Parser
         private static readonly Regex MultiSpaceRegex =
             new(@"\s{2,}", RegexOptions.Compiled);
 
-        // Injected service
-        private readonly CounterPartyService _counterPartyService;
-
-        public OpTransactionParser(CounterPartyService counterPartyService)
-        {
-            _counterPartyService = counterPartyService;
-        }
+        // Pure parser: records the counterparty NAME; the import pipeline batch-resolves merchants.
 
         // ────────────────────────────────────────────────────────────────────
         // MAIN PARSE LOOP
@@ -181,14 +175,10 @@ namespace BankStatementAnalytics.Services.Parser
             ParseRemarks(remarks, tx, out string? counterPartyName);
             tx.BankReference = GenerateReference(tx);
 
-            // Resolve CounterParty from master table using name + bankcode
-            // (single call — IOB text format has no VPA)
+            // Record CounterParty name for batch resolution after parsing
+            // (IOB text format has no VPA).
             if (!string.IsNullOrWhiteSpace(counterPartyName))
-                tx.CounterParty = _counterPartyService.ResolveOrCreate(
-                    counterPartyName,
-                    tx.BankCode,
-                    tx.AccountId,
-                    upiId: null);
+                tx.PendingCounterPartyName = counterPartyName;
 
             return tx;
         }

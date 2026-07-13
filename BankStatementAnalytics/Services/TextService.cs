@@ -29,10 +29,12 @@ namespace BankStatementAnalytics.Services
     public class TextService
     {
         private readonly IServiceProvider _serviceProvider;
+        private readonly CounterPartyService _counterPartyService;
 
-        public TextService(IServiceProvider serviceProvider)
+        public TextService(IServiceProvider serviceProvider, CounterPartyService counterPartyService)
         {
             _serviceProvider = serviceProvider;
+            _counterPartyService = counterPartyService;
         }
 
         /// <summary>
@@ -67,6 +69,11 @@ namespace BankStatementAnalytics.Services
                 tx.UploadId = uploadId;
                 tx.AccountId = accountId;
             }
+
+            // Resolve all counterparty names to merchants in a single batch (one session /
+            // transaction) instead of a session per parsed row.
+            _counterPartyService.ResolveOrCreateBatch(accountId, transactions);
+
             int newCount;
             using (var session = DbHelper.GetSession())
             {

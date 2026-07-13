@@ -10,12 +10,7 @@ namespace BankStatementAnalytics.Services.Parser
 {
     public class HdfcCreditCardParser : IBankParser
     {
-        private readonly CounterPartyService _counterPartyService;
-
-        public HdfcCreditCardParser(CounterPartyService counterPartyService)
-        {
-            _counterPartyService = counterPartyService;
-        }
+        // Pure parser: records the counterparty NAME; the import pipeline batch-resolves merchants.
 
         private static readonly Regex UpiRegex =
             new(@"^UPI-(.+?)-([^-@]+@[^-]+)-([A-Z0-9]{11})-(\d+)-(.*)$",
@@ -129,13 +124,9 @@ namespace BankStatementAnalytics.Services.Parser
             // Parse description for mode, counterparty, UPI ref etc.
             ParseNarration(desc, tx, out string? counterPartyName);
 
-            // Resolve CounterParty
+            // Record CounterParty name for batch resolution after parsing.
             if (!string.IsNullOrWhiteSpace(counterPartyName))
-                tx.CounterParty = _counterPartyService.ResolveOrCreate(
-                    counterPartyName,
-                    tx.BankCode,
-                    tx.AccountId,
-                    upiId: tx.UpiVpa);
+                tx.PendingCounterPartyName = counterPartyName;
 
             // Generate stable reference
             tx.BankReference = string.IsNullOrWhiteSpace(tx.UpiReference)
