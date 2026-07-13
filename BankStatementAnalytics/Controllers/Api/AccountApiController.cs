@@ -35,9 +35,49 @@ namespace BankStatementAnalytics.Controllers.Api
             {
                 bankName = account.BankName.ToString(),
                 formats,
-                label = string.Join(", ", formats.Select(f => f.TrimStart('.').ToUpper()))
+                label = string.Join(", ", formats.Select(f => f.TrimStart('.').ToUpper())),
+                downloadGuide = DownloadGuide(account.BankName)
             });
         }
+
+        // Per-bank guidance on where to export the supported statement file.
+        private static object? DownloadGuide(Bank bank) => bank switch
+        {
+            Bank.HDFC => new
+            {
+                label = "HDFC Bank (.txt)",
+                steps = new[]
+                {
+                    "Log in to HDFC NetBanking.",
+                    "Go to Accounts → Enquire → Statement of Account (or \"Download Historical Transactions\").",
+                    "Pick the account and the date range you want.",
+                    "Choose the \"Delimited (.txt)\" file type and download."
+                }
+            },
+            Bank.HDFCCreditCard => new
+            {
+                label = "HDFC Credit Card (.csv)",
+                steps = new[]
+                {
+                    "Log in to HDFC NetBanking.",
+                    "Go to Cards → Credit Cards → View / Download Statement.",
+                    "Select the card and billing period.",
+                    "Download the statement in CSV format."
+                }
+            },
+            Bank.IOB => new
+            {
+                label = "Indian Overseas Bank (.txt)",
+                steps = new[]
+                {
+                    "Log in to IOB NetBanking.",
+                    "Go to Account Statement / Statement of Account.",
+                    "Select the account and the period you want.",
+                    "Download / export the statement as a text (.txt) file."
+                }
+            },
+            _ => null
+        };
 
         // GET: api/accounts/banks
         [HttpGet("banks")]
@@ -58,10 +98,9 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // GET: api/accounts
         [HttpGet]
-        public IActionResult GetAll()
+        public async Task<IActionResult> GetAll()
         {
-            var accounts = DbHelper.GetAll<Account>()
-                .Where(a => a.OwnerUserId == CurrentUserId)
+            var accounts = (await DbHelper.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId))
                 .Select(a => new { a.Id, a.AccountHolderName, a.BankName, MaskedAccountNumber = a.MaskedAccountNumber });
             return Ok(accounts);
         }

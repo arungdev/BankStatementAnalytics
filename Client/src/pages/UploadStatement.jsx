@@ -4,7 +4,7 @@ import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { useAuth } from "../context/useAuth";
 import { uploadStatement, revertStatement, getUploads } from "../api/statements";
 import api from "../api/client";
-import { FiUploadCloud, FiFileText, FiTrash2, FiCheckCircle, FiAlertCircle, FiRotateCcw } from "react-icons/fi";
+import { FiUploadCloud, FiFileText, FiTrash2, FiCheckCircle, FiAlertCircle, FiRotateCcw, FiHelpCircle } from "react-icons/fi";
 import Badge from "../components/ui/Badge";
 
 export default function UploadStatement({ onUploaded, showHistory = true } = {}) {
@@ -16,7 +16,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
   const [loading, setLoading]             = useState(false);
   const [message, setMessage]             = useState(null);
   const [uploads, setUploads]             = useState([]);
-  const [formats, setFormats]             = useState({ formats: [], label: 'TXT, CSV', bankName: '' });
+  const [formats, setFormats]             = useState({ formats: [], label: 'TXT, CSV', bankName: '', downloadGuide: null });
   const [loadingFormats, setLoadingFormats] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -221,11 +221,11 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                   />
                 </div>
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', padding: 'var(--space-4)', backgroundColor: 'var(--primary-light)', borderRadius: 'var(--radius-sm)', border: '1px solid #bfdbfe' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: 'var(--space-4)', backgroundColor: 'var(--primary-light)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)' }}>
                   <FiFileText color="var(--primary)" size={28} style={{ marginRight: 'var(--space-4)' }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: '#1e3a8a' }}>{file.name}</div>
-                    <div style={{ fontSize: 'var(--text-xs)', color: '#60a5fa', marginTop: '4px' }}>{(file.size / 1024).toFixed(1)} KB</div>
+                    <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-main)' }}>{file.name}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: '4px' }}>{(file.size / 1024).toFixed(1)} KB</div>
                   </div>
                   <button
                     type="button"
@@ -238,6 +238,26 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                     <FiTrash2 size={20} />
                   </button>
                 </div>
+              )}
+
+              {/* Where-to-download guidance */}
+              {selectedAccount && !file && !loadingFormats && formats.downloadGuide && (
+                <details style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-sm)', color: 'var(--gray-600)' }}>
+                  <summary style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--primary)', fontWeight: 600 }}>
+                    <FiHelpCircle size={15} />
+                    Where do I download this file?
+                  </summary>
+                  <div style={{ marginTop: 'var(--space-3)', paddingLeft: 'var(--space-2)' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--gray-700)', marginBottom: 'var(--space-2)' }}>
+                      {formats.downloadGuide.label}
+                    </div>
+                    <ol style={{ margin: 0, paddingLeft: 'var(--space-6)', lineHeight: 1.7 }}>
+                      {formats.downloadGuide.steps.map((step, i) => (
+                        <li key={i}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                </details>
               )}
             </div>
 
@@ -260,7 +280,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
             {message && (() => {
               const isError = ['failed', 'Only', 'Please', 'already'].some(k => message.includes(k));
               return (
-                <div style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', backgroundColor: isError ? 'var(--danger-light)' : 'var(--success-light)', color: isError ? '#991b1b' : '#065f46', border: `1px solid ${isError ? '#f87171' : '#34d399'}` }}>
+                <div style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', backgroundColor: isError ? 'var(--danger-light)' : 'var(--success-light)', color: isError ? 'var(--danger)' : 'var(--success)', border: `1px solid ${isError ? 'var(--danger-border)' : 'var(--success)'}` }}>
                   {isError
                     ? <FiAlertCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
                     : <FiCheckCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
