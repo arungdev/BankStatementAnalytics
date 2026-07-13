@@ -41,9 +41,10 @@ export default function CreateAccount({ onClose, onCreate }) {
 
   return (
     <form onSubmit={submit}>
-      <div>
-        <label>Holder Name</label>
+      <div className="form-row">
+        <label className="form-label">Holder Name</label>
         <input
+          className="field-input"
           value={holder}
           onChange={e => setHolder(e.target.value.slice(0, 50))}
           maxLength={25}
@@ -51,9 +52,10 @@ export default function CreateAccount({ onClose, onCreate }) {
           required
         />
       </div>
-      <div>
-        <label>Account Number (last 4 digits)</label>
+      <div className="form-row">
+        <label className="form-label">Account Number (last 4 digits)</label>
         <input
+          className="field-input"
           value={number}
           onChange={e => setNumber(e.target.value.replace(/\D/g, '').slice(0, 4))}
           inputMode="numeric"
@@ -63,12 +65,12 @@ export default function CreateAccount({ onClose, onCreate }) {
           required
         />
       </div>
-      <div>
-        <label>Bank</label>
+      <div className="form-row">
+        <label className="form-label">Bank</label>
         {loading ? (
-          <select disabled><option>Loading...</option></select>
+          <select className="field-select" disabled><option>Loading...</option></select>
         ) : (
-          <select value={bank} onChange={e => setBank(e.target.value)}>
+          <select className="field-select" value={bank} onChange={e => setBank(e.target.value)}>
             {banks.map(b => (
               <option key={b.value} value={b.value}>{b.label}</option>
             ))}
@@ -76,11 +78,11 @@ export default function CreateAccount({ onClose, onCreate }) {
         )}
       </div>
 
-      <div style={{ marginTop: 12 }}>
-        <button type="submit" disabled={saving || loading}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+        <button type="button" className="btn" onClick={onClose}>Cancel</button>
+        <button type="submit" className="btn primary" disabled={saving || loading}>
           {saving ? 'Creating...' : 'Create'}
         </button>
-        <button type="button" onClick={onClose} style={{ marginLeft: 8 }}>Cancel</button>
       </div>
     </form>
   );

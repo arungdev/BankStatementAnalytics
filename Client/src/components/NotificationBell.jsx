@@ -93,23 +93,15 @@ export default function NotificationBell() {
       <button
         onClick={openPanel}
         title="Reminders"
+        className="btn icon"
         style={{
-          cursor: "pointer",
           position: "relative",
-          background: "#f3f4f6",
-          border: "1px solid #d1d5db",
           borderRadius: "50%",
           width: "36px",
           height: "36px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#374151",
-          transition: "background-color 0.2s",
+          color: "var(--text-muted)",
           flexShrink: 0,
         }}
-        onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#e5e7eb")}
-        onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#f3f4f6")}
       >
         <FiBell size={17} />
         {unreadCount > 0 && (
@@ -118,7 +110,7 @@ export default function NotificationBell() {
               position: "absolute",
               top: "-4px",
               right: "-4px",
-              background: "#ef4444",
+              background: "var(--danger)",
               color: "#fff",
               borderRadius: "999px",
               fontSize: "10px",
@@ -129,7 +121,7 @@ export default function NotificationBell() {
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "2px solid #fff",
+              border: "2px solid var(--surface)",
             }}
           >
             {unreadCount}
@@ -149,13 +141,13 @@ export default function NotificationBell() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-              <span style={{ fontSize: "12px", color: "var(--text-muted, #6b7280)", fontWeight: 600 }}>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 600 }}>
                 {unreadCount} unread · {items.length} total
               </span>
               {unreadCount > 0 && (
                 <button
                   onClick={markAllRead}
-                  style={{ background: "none", border: "none", color: "#4f46e5", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
+                  style={{ background: "none", border: "none", color: "var(--primary)", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
                 >
                   Mark all as read
                 </button>
@@ -172,9 +164,9 @@ export default function NotificationBell() {
                     gap: "12px",
                     padding: "14px",
                     borderRadius: "10px",
-                    border: "1px solid var(--border-color, #e5e7eb)",
-                    borderLeft: `4px solid ${read ? "var(--border-color, #d1d5db)" : b.daysUntilDue <= 2 ? "#ef4444" : "#f59e0b"}`,
-                    background: read ? "var(--gray-50, #f9fafb)" : "var(--surface, #fff)",
+                    border: "1px solid var(--border-color)",
+                    borderLeft: `4px solid ${read ? "var(--border-color)" : b.daysUntilDue <= 2 ? "var(--danger)" : "var(--warning)"}`,
+                    background: read ? "var(--surface-2)" : "var(--surface)",
                     opacity: read ? 0.7 : 1,
                   }}
                 >
@@ -186,7 +178,7 @@ export default function NotificationBell() {
                       borderRadius: "50%",
                       marginTop: "6px",
                       flexShrink: 0,
-                      background: read ? "transparent" : "#4f46e5",
+                      background: read ? "transparent" : "var(--primary)",
                     }}
                   />
 
@@ -196,16 +188,16 @@ export default function NotificationBell() {
                     title="View bill"
                     style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
                   >
-                    <div style={{ fontWeight: read ? 500 : 700, fontSize: "14px", color: "var(--text-main, #111827)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div style={{ fontWeight: read ? 500 : 700, fontSize: "14px", color: "var(--text-main)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {b.name}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", marginTop: "4px", color: b.daysUntilDue <= 2 && !read ? "#ef4444" : "#b45309", fontWeight: 600 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", marginTop: "4px", color: b.daysUntilDue <= 2 && !read ? "var(--danger)" : "var(--warning)", fontWeight: 600 }}>
                       <FiCalendar size={12} /> {dueLabel(b.daysUntilDue)} · {fmtDate(b.nextDueDate)}
                     </div>
                   </button>
 
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
-                    <div style={{ fontWeight: 800, fontSize: "15px", color: "var(--text-main, #111827)", whiteSpace: "nowrap" }}>
+                    <div style={{ fontWeight: 800, fontSize: "15px", color: "var(--text-main)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                       {currencyFormatter.format(b.expectedAmount)}
                     </div>
                     <button
@@ -216,12 +208,12 @@ export default function NotificationBell() {
                         alignItems: "center",
                         gap: "4px",
                         background: "none",
-                        border: "1px solid var(--border-color, #d1d5db)",
+                        border: "1px solid var(--border-color)",
                         borderRadius: "6px",
                         padding: "3px 8px",
                         fontSize: "11px",
                         fontWeight: 600,
-                        color: "var(--text-muted, #6b7280)",
+                        color: "var(--text-muted)",
                         cursor: "pointer",
                         whiteSpace: "nowrap",
                       }}
@@ -240,7 +232,7 @@ export default function NotificationBell() {
                 padding: "10px",
                 background: "none",
                 border: "none",
-                color: "#4f46e5",
+                color: "var(--primary)",
                 fontWeight: 700,
                 fontSize: "13px",
                 cursor: "pointer",

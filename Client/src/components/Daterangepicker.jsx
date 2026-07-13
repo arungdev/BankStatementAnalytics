@@ -71,7 +71,7 @@ function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayC
       {/* Month nav */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 8 }}>
         <button onClick={() => onMonthChange(-1)} style={navBtn}>‹</button>
-        <span style={{ fontWeight: 700, fontSize: 12, color: '#111827' }}>
+        <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-main)' }}>
           {MONTHS[month]} {year}
         </span>
         <button onClick={() => onMonthChange(1)} style={navBtn}>›</button>
@@ -79,14 +79,14 @@ function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayC
       {/* Day headers */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', marginBottom: 2 }}>
         {DAYS.map(d => (
-          <div key={d} style={{ textAlign:'center', fontSize: 10, fontWeight: 700, color: '#6b7280', padding: '2px 0' }}>{d}</div>
+          <div key={d} style={{ textAlign:'center', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', padding: '2px 0' }}>{d}</div>
         ))}
       </div>
       {/* Day cells */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap: '1px 0' }}>
         {cells.map((cell, idx) => {
           if (!cell.cur) {
-            return <div key={idx} style={{ textAlign:'center', padding: '4px 0', fontSize: 11, color: '#d1d5db' }}>{cell.day}</div>;
+            return <div key={idx} style={{ textAlign:'center', padding: '4px 0', fontSize: 11, color: 'var(--gray-300)' }}>{cell.day}</div>;
           }
           const date = new Date(year, month, cell.day);
           const isStart    = isSameDay(date, start);
@@ -95,16 +95,16 @@ function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayC
           const isEndpoint = isStart || isEnd;
           const today      = isSameDay(date, new Date());
 
-          let bg = 'transparent', color = '#111827';
+          let bg = 'transparent', color = 'var(--text-main)';
           let rangeBg = 'transparent', rangeR = '0', rangeL = '0';
 
-          if (isEndpoint) { bg = '#4f46e5'; color = '#fff'; }
-          else if (today) { color = '#4f46e5'; }
+          if (isEndpoint) { bg = 'var(--primary)'; color = '#fff'; }
+          else if (today) { color = 'var(--primary)'; }
 
           if (inRange || isEndpoint) {
             const s2 = start && rangeEnd ? (start < rangeEnd ? start : rangeEnd) : start;
             const e2 = start && rangeEnd ? (start < rangeEnd ? rangeEnd : start) : rangeEnd;
-            rangeBg = '#eef2ff';
+            rangeBg = 'var(--primary-light)';
             if (isStart || isSameDay(date, s2)) rangeL = '50%';
             if (isEnd   || isSameDay(date, e2)) rangeR = '50%';
           }
@@ -140,23 +140,23 @@ function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayC
 }
 
 const navBtn = {
-  background: 'none', border: '1px solid #e5e7eb', borderRadius: 5,
+  background: 'none', border: '1px solid var(--border-color)', borderRadius: 5,
   width: 22, height: 22, cursor: 'pointer', fontSize: 13,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
-  color: '#6b7280', lineHeight: 1,
+  color: 'var(--text-muted)', lineHeight: 1,
 };
 
 /* ─── Time Input ────────────────────────────────────────────────────────── */
 function TimeInput({ hours, minutes, onChange }) {
   return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap: 3, margin: '6px 0 8px', fontSize: 11, color: '#6b7280' }}>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap: 3, margin: '6px 0 8px', fontSize: 11, color: 'var(--text-muted)' }}>
       <span>HH:</span>
       <input
         type="number" min={0} max={23} value={pad(hours)}
         onChange={e => onChange('h', Math.min(23, Math.max(0, +e.target.value)))}
         style={timeInputStyle}
       />
-      <span style={{ color:'#4f46e5', fontWeight:700 }}>:</span>
+      <span style={{ color:'var(--primary)', fontWeight:700 }}>:</span>
       <span>MM:</span>
       <input
         type="number" min={0} max={59} value={pad(minutes)}
@@ -168,10 +168,10 @@ function TimeInput({ hours, minutes, onChange }) {
 }
 
 const timeInputStyle = {
-  width: 34, textAlign:'center', border:'1px solid #e5e7eb',
+  width: 34, textAlign:'center', border:'1px solid var(--border-color)',
   borderRadius: 5, padding:'2px 3px', fontSize: 11,
-  color: '#4f46e5', fontWeight: 700, outline: 'none',
-  background: '#f9fafb', fontFamily: 'inherit',
+  color: 'var(--primary)', fontWeight: 700, outline: 'none',
+  background: 'var(--surface-2)', fontFamily: 'inherit',
 };
 
 /* ─── Main DateRangePicker ──────────────────────────────────────────────── */
@@ -332,11 +332,11 @@ export default function DateRangePicker({
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block', fontFamily: "'Inter','system-ui',sans-serif" }}>
       <style>{`
-        .drp-preset:hover { background: #f3f4f6 !important; }
-        .drp-preset.active { background: #4f46e5 !important; color: #fff !important; }
-        .drp-cancel:hover { background: #f3f4f6 !important; }
-        .drp-apply:hover  { background: #4338ca !important; }
-        .drp-trigger:hover { border-color: #4f46e5 !important; }
+        .drp-preset:hover { background: var(--gray-100) !important; }
+        .drp-preset.active { background: var(--primary) !important; color: #fff !important; }
+        .drp-cancel:hover { background: var(--gray-100) !important; }
+        .drp-apply:hover  { background: var(--primary-hover) !important; }
+        .drp-trigger:hover { border-color: var(--primary) !important; }
         input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
       `}</style>
 
@@ -347,9 +347,9 @@ export default function DateRangePicker({
         style={{
           display: 'flex', alignItems: 'center', gap: 6,
           padding: compact ? '5px 10px' : '7px 14px',
-          border: '1.5px solid #e5e7eb',
-          borderRadius: 7, background: '#fff', cursor: 'pointer',
-          fontSize: compact ? 12 : 13, fontWeight: 600, color: '#374151',
+          border: '1.5px solid var(--border-color)',
+          borderRadius: 7, background: 'var(--surface)', cursor: 'pointer',
+          fontSize: compact ? 12 : 13, fontWeight: 600, color: 'var(--gray-700)',
           transition: 'border-color 0.15s',
           boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
           whiteSpace: 'nowrap',
@@ -363,10 +363,10 @@ export default function DateRangePicker({
       {/* ── Dropdown ──────────────────────────────────────────────────── */}
       {open && (
         <div style={{
-          position: 'absolute', zIndex: 9999, marginTop: 6,
+          position: 'absolute', zIndex: 'var(--z-dropdown)', marginTop: 6,
           [align === 'right' ? 'right' : 'left']: 0,
-          background: '#fff', borderRadius: 10,
-          border: '1px solid #e5e7eb',
+          background: 'var(--surface)', borderRadius: 10,
+          border: '1px solid var(--border-color)',
           boxShadow: '0 16px 48px rgba(0,0,0,0.14)',
           display: 'flex', flexDirection: 'column',
           minWidth: dims.dropdownWidth,
@@ -378,11 +378,11 @@ export default function DateRangePicker({
 
             {/* ── Preset sidebar ──────────────────────────────────────── */}
             <div style={{
-              width: dims.sidebarWidth, borderRight: '1px solid #f0f1f3',
+              width: dims.sidebarWidth, borderRight: '1px solid var(--border-subtle)',
               padding: compact ? '8px 6px' : '12px 8px', display: 'flex', flexDirection: 'column', gap: 1,
               maxHeight: compact ? 320 : 'none', overflowY: compact ? 'auto' : 'visible',
             }}>
-              <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase', padding: dims.sideTitlePad }}>DATE RANGE</div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: dims.sideTitlePad }}>DATE RANGE</div>
               {PRESETS.map(p => (
                 <button
                   key={p.value}
@@ -392,8 +392,8 @@ export default function DateRangePicker({
                     display: 'block', width: '100%', textAlign: 'left',
                     padding: dims.presetPad, border: 'none', borderRadius: 5,
                     cursor: 'pointer', fontSize: dims.presetFont,
-                    background: preset === p.value ? '#4f46e5' : 'transparent',
-                    color: preset === p.value ? '#fff' : '#374151',
+                    background: preset === p.value ? 'var(--primary)' : 'transparent',
+                    color: preset === p.value ? '#fff' : 'var(--gray-700)',
                     fontWeight: preset === p.value ? 700 : 400,
                     transition: 'background 0.12s',
                     fontFamily: 'inherit',
@@ -405,21 +405,21 @@ export default function DateRangePicker({
               ))}
 
               {/* Last N days custom input */}
-              <div style={{ marginTop: 6, padding: '5px 6px', borderTop: '1px solid #f0f1f3' }}>
+              <div style={{ marginTop: 6, padding: '5px 6px', borderTop: '1px solid var(--border-subtle)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}>
-                  <span style={{ color: '#6b7280', fontWeight: 600 }}>Last</span>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Last</span>
                   <input
                     type="number" min={1} value={customN}
                     onChange={e => setCustomN(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && applyCustomN()}
                     placeholder="N"
                     style={{
-                      width: 32, border: '1.5px solid #e5e7eb', borderRadius: 4,
+                      width: 32, border: '1.5px solid var(--border-color)', borderRadius: 4,
                       padding: '2px 4px', fontSize: 11, textAlign: 'center',
                       outline: 'none', fontFamily: 'inherit',
                     }}
                   />
-                  <span style={{ color: '#6b7280', fontWeight: 600 }}>Days</span>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Days</span>
                 </div>
               </div>
             </div>
@@ -431,14 +431,14 @@ export default function DateRangePicker({
               <div style={{ display: 'flex', gap: dims.gapBetweenFields, marginBottom: 10 }}>
                 {/* Start */}
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>START DATE</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>START DATE</div>
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
-                    border: `1.5px solid ${picking === 'start' ? '#4f46e5' : '#e5e7eb'}`,
-                    borderRadius: 7, padding: dims.dateFieldPad, background: '#fff',
-                    cursor: 'pointer', fontSize: dims.dateFieldFont, color: selStart ? '#111827' : '#9ca3af',
+                    border: `1.5px solid ${picking === 'start' ? 'var(--primary)' : 'var(--border-color)'}`,
+                    borderRadius: 7, padding: dims.dateFieldPad, background: 'var(--surface)',
+                    cursor: 'pointer', fontSize: dims.dateFieldFont, color: selStart ? 'var(--text-main)' : 'var(--text-faint)',
                     fontWeight: selStart ? 600 : 400,
-                    boxShadow: picking === 'start' ? '0 0 0 3px #eef2ff' : 'none',
+                    boxShadow: picking === 'start' ? '0 0 0 3px var(--primary-light)' : 'none',
                   }} onClick={() => setPicking('start')}>
                     <CalIcon small />
                     {selStart ? fmt(selStart) : 'Start date'}
@@ -450,14 +450,14 @@ export default function DateRangePicker({
 
                 {/* End */}
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>END DATE</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>END DATE</div>
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
-                    border: `1.5px solid ${picking === 'end' ? '#4f46e5' : '#e5e7eb'}`,
-                    borderRadius: 7, padding: dims.dateFieldPad, background: '#fff',
-                    cursor: 'pointer', fontSize: dims.dateFieldFont, color: selEnd ? '#111827' : '#9ca3af',
+                    border: `1.5px solid ${picking === 'end' ? 'var(--primary)' : 'var(--border-color)'}`,
+                    borderRadius: 7, padding: dims.dateFieldPad, background: 'var(--surface)',
+                    cursor: 'pointer', fontSize: dims.dateFieldFont, color: selEnd ? 'var(--text-main)' : 'var(--text-faint)',
                     fontWeight: selEnd ? 600 : 400,
-                    boxShadow: picking === 'end' ? '0 0 0 3px #eef2ff' : 'none',
+                    boxShadow: picking === 'end' ? '0 0 0 3px var(--primary-light)' : 'none',
                   }} onClick={() => setPicking('end')}>
                     <CalIcon small />
                     {selEnd ? fmt(selEnd) : 'End date'}
@@ -477,7 +477,7 @@ export default function DateRangePicker({
                   onDayClick={handleDayClick}
                   onDayHover={d => { if (selStart && !selEnd) setHovered(d); }}
                 />
-                <div style={{ width: 1, background: '#f0f1f3', flexShrink: 0 }} />
+                <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
                 <MonthCalendar
                   year={rightYear} month={rightMonth}
                   onMonthChange={navigateRight}
@@ -493,21 +493,21 @@ export default function DateRangePicker({
           <div style={{
             display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
             gap: 8, padding: dims.footerPad,
-            borderTop: '1px solid #f0f1f3', background: '#fafafa',
+            borderTop: '1px solid var(--border-subtle)', background: 'var(--surface-2)',
           }}>
             {selStart && selEnd && (
-              <span style={{ fontSize: 11, color: '#6b7280', marginRight: 'auto' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 'auto' }}>
                 {fmt(selStart)} → {fmt(selEnd)}
               </span>
             )}
             <button className="drp-cancel" onClick={handleCancel} style={{
-              padding: compact ? '5px 14px' : '7px 20px', border: '1.5px solid #e5e7eb', borderRadius: 7,
-              background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-              color: '#374151', transition: 'background 0.12s', fontFamily: 'inherit',
+              padding: compact ? '5px 14px' : '7px 20px', border: '1.5px solid var(--border-color)', borderRadius: 7,
+              background: 'var(--surface)', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              color: 'var(--gray-700)', transition: 'background 0.12s', fontFamily: 'inherit',
             }}>Cancel</button>
             <button className="drp-apply" onClick={handleApply} style={{
               padding: compact ? '5px 16px' : '7px 22px', border: 'none', borderRadius: 7,
-              background: '#4f46e5', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              background: 'var(--primary)', cursor: 'pointer', fontSize: 12, fontWeight: 700,
               color: '#fff', transition: 'background 0.12s', fontFamily: 'inherit',
               boxShadow: '0 2px 8px rgba(79,70,229,0.35)',
             }}>Apply</button>
@@ -522,7 +522,7 @@ export default function DateRangePicker({
 function CalIcon({ small }) {
   const s = small ? 12 : 15;
   return (
-    <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke="currentColor" style={{ color: 'var(--text-faint)' }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect x="1" y="2" width="14" height="13" rx="2"/>
       <path d="M1 6h14M5 1v2M11 1v2"/>
     </svg>
@@ -531,8 +531,8 @@ function CalIcon({ small }) {
 
 function ChevronIcon({ open }) {
   return (
-    <svg width={11} height={11} viewBox="0 0 12 12" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+    <svg width={11} height={11} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ color: 'var(--text-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
       <path d="M2 4l4 4 4-4"/>
     </svg>
   );

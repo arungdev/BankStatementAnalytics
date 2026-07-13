@@ -5,11 +5,19 @@ import {
   FiChevronDown, FiChevronRight,
   FiTrendingUp, FiPieChart, FiLogOut,
   FiChevronsLeft, FiChevronsRight, FiBell, FiHome, FiTarget,
-  FiDollarSign,
+  FiDollarSign, FiSun, FiMoon, FiMonitor, FiFileText,
 } from 'react-icons/fi';
 import { useAuth } from '../context/useAuth';
+import useTheme from '../context/useTheme';
 import api from '../api/client';
 import './Sidebar.css';
+
+const THEME_CYCLE = { system: 'light', light: 'dark', dark: 'system' };
+const THEME_META = {
+  system: { icon: FiMonitor, label: 'Theme: System' },
+  light:  { icon: FiSun,     label: 'Theme: Light' },
+  dark:   { icon: FiMoon,    label: 'Theme: Dark' },
+};
 
 const NARROW_BREAKPOINT = 900;
 
@@ -18,6 +26,9 @@ const Sidebar = () => {
   const [isDashOpen, setDashOpen] = useState(true);
   const [upcomingBills, setUpcomingBills] = useState(0);
   const { username, role, logout } = useAuth();
+  const { preference, setPreference } = useTheme();
+  const ThemeIcon = THEME_META[preference]?.icon || FiMonitor;
+  const themeLabel = THEME_META[preference]?.label || 'Theme';
 
   // ── Auto-collapse on narrow viewports; user can still toggle manually ──
   useEffect(() => {
@@ -39,7 +50,7 @@ const Sidebar = () => {
       {/* Header */}
       <div className="sidebar-header">
         <div className="brand-icon">
-          <FiTrendingUp size={16} />
+          <img src="/icon-192.png" alt="Bank Analytics" />
         </div>
         {isOpen && <span className="brand-label">Bank Analytics</span>}
         <button
@@ -93,16 +104,19 @@ const Sidebar = () => {
                     {isOpen && <span>Insights</span>}
                   </NavLink>
                 </li>
+                <li>
+                  <NavLink to="/reports" title="Reports">
+                    <FiFileText size={!isOpen ? 16 : 13} />
+                    {isOpen && <span>Reports</span>}
+                  </NavLink>
+                </li>
               </ul>
             )}
           </li>
 
-          {/* Merchants */}
-          <li>
-            <NavLink to="/merchants" className="nav-item-header" title="Merchants">
-              <FiUsers size={16} />
-              {isOpen && <span>Merchants</span>}
-            </NavLink>
+          {/* ── Activity ── */}
+          <li className="nav-group-label" aria-hidden={!isOpen}>
+            {isOpen ? 'Activity' : <span className="nav-group-rule" />}
           </li>
 
           {/* Transactions */}
@@ -113,12 +127,17 @@ const Sidebar = () => {
             </NavLink>
           </li>
 
-          {/* Investments */}
+          {/* Merchants */}
           <li>
-            <NavLink to="/investments" className="nav-item-header" title="Investments">
-              <FiDollarSign size={16} />
-              {isOpen && <span>Investments</span>}
+            <NavLink to="/merchants" className="nav-item-header" title="Merchants">
+              <FiUsers size={16} />
+              {isOpen && <span>Merchants</span>}
             </NavLink>
+          </li>
+
+          {/* ── Planning ── */}
+          <li className="nav-group-label" aria-hidden={!isOpen}>
+            {isOpen ? 'Planning' : <span className="nav-group-rule" />}
           </li>
 
           {/* Budgets */}
@@ -157,6 +176,14 @@ const Sidebar = () => {
             </NavLink>
           </li>
 
+          {/* Investments */}
+          <li>
+            <NavLink to="/investments" className="nav-item-header" title="Investments">
+              <FiDollarSign size={16} />
+              {isOpen && <span>Investments</span>}
+            </NavLink>
+          </li>
+
         </ul>
       </nav>
 
@@ -168,6 +195,15 @@ const Sidebar = () => {
               {username} · {role}
             </p>
           )}
+          <button
+            className="nav-item-header"
+            style={{ width: '100%', border: 'none', background: 'none', cursor: 'pointer' }}
+            onClick={() => setPreference(THEME_CYCLE[preference] || 'system')}
+            title={themeLabel}
+          >
+            <ThemeIcon size={16} />
+            {isOpen && <span>{themeLabel}</span>}
+          </button>
           <button
             className="nav-item-header"
             style={{ width: '100%', border: 'none', background: 'none', cursor: 'pointer' }}

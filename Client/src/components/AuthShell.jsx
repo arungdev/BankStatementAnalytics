@@ -5,13 +5,7 @@ export function AuthShell({ title, subtitle, onSubmit, children }) {
     <div className="auth-page">
       <form onSubmit={onSubmit} className="auth-card">
         <div className="auth-logo">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 21h18" />
-            <path d="M5 21V10" />
-            <path d="M19 21V10" />
-            <path d="M12 3 3 8h18l-9-5z" />
-            <path d="M9 21v-6h6v6" />
-          </svg>
+          <img src="/icon-192.png" alt="Bank Analytics" />
         </div>
         <h1 className="auth-title">{title}</h1>
         <p className="auth-subtitle">{subtitle}</p>

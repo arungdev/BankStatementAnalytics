@@ -1,4 +1,5 @@
-import { FiSettings } from 'react-icons/fi';
+import { useEffect, useRef } from 'react';
+import { FiSettings, FiChevronDown } from 'react-icons/fi';
 
 /**
  * PageHeader — reusable two-row header
@@ -16,14 +17,6 @@ import { FiSettings } from 'react-icons/fi';
  *   />
  */
 
-const T = {
-  border:  '#e5e7eb',
-  text:    '#111827',
-  muted:   '#6b7280',
-  surface: '#ffffff',
-  bg:      '#f8f9fb',
-};
-
 export default function PageHeader({
   title,
   subtitle,
@@ -31,12 +24,31 @@ export default function PageHeader({
   actions,          // ReactNode — extra buttons beside the gear (left of gear)
   onSettings,       // () => void
 }) {
+  const headerRef = useRef(null);
+
+  // Publish the header's rendered height so overlays (the right-hand detail
+  // drawer) can sit below it instead of covering the top-right controls.
+  // Height is dynamic — the filters row is only present on some pages.
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const setVar = () =>
+      document.documentElement.style.setProperty('--app-header-h', `${el.offsetHeight}px`);
+    setVar();
+    const ro = new ResizeObserver(setVar);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty('--app-header-h');
+    };
+  }, [filters]);
+
   return (
-    <header style={{
-      background: T.surface,
-      borderBottom: `1px solid ${T.border}`,
+    <header ref={headerRef} style={{
+      background: 'var(--surface)',
+      borderBottom: '1px solid var(--border-color)',
       position: 'relative',
-      zIndex: 300,
+      zIndex: 'var(--z-header)',
       overflow: 'visible',
     }}>
 
@@ -53,16 +65,16 @@ export default function PageHeader({
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <h2 style={{
             margin: 0,
-            fontSize: '15px',
-            fontWeight: 800,
-            color: T.text,
-            letterSpacing: '-0.3px',
+            fontSize: '16px',
+            fontWeight: 700,
+            color: 'var(--text-main)',
+            letterSpacing: '-0.01em',
             lineHeight: 1.2,
           }}>
             {title}
           </h2>
           {subtitle && (
-            <span style={{ fontSize: '11px', color: T.muted, marginTop: '1px', lineHeight: 1.2 }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px', lineHeight: 1.2 }}>
               {subtitle}
             </span>
           )}
@@ -74,22 +86,8 @@ export default function PageHeader({
           {onSettings && (
             <button
               onClick={onSettings}
-              style={{
-                cursor: 'pointer',
-                background: '#f3f4f6',
-                border: '1px solid #d1d5db',
-                borderRadius: '50%',
-                width: '36px',
-                height: '36px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#374151',
-                transition: 'background-color 0.2s',
-                flexShrink: 0,
-              }}
-              onMouseOver={e => e.currentTarget.style.backgroundColor = '#e5e7eb'}
-              onMouseOut={e  => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+              className="btn icon"
+              style={{ borderRadius: '50%', width: '36px', height: '36px', color: 'var(--text-muted)' }}
               title="Settings"
             >
               <FiSettings size={17} />
@@ -105,11 +103,11 @@ export default function PageHeader({
           alignItems: 'center',
           padding: '0 24px',
           minHeight: '52px',
-          borderTop: `1px solid ${T.border}`,
-          gap: '0',
+          borderTop: '1px solid var(--border-color)',
+          gap: '18px',
           overflow: 'visible',
           position: 'relative',
-          zIndex: 400,
+          zIndex: 1,
         }}>
           {filters}
         </div>
@@ -128,18 +126,16 @@ export default function PageHeader({
    </FilterBar>
 ───────────────────────────────────────────────────────────────────────── */
 
-const BORDER = `1px solid ${T.border}`;
-
-/** Wraps a labelled group of controls inside the filter row */
+/** Wraps a (optionally labelled) group of controls inside the filter row.
+    Chip-style controls (AccountFilter, DateRangePicker) label themselves, so
+    omit `label` for those — groups are separated by the row's gap, not dividers. */
 export function FilterGroup({ label, children, style }) {
   return (
     <div style={{
       display: 'flex',
       alignItems: 'center',
       gap: '7px',
-      padding: '0 16px',
       height: '52px',
-      borderRight: BORDER,
       flexShrink: 0,
       ...style,
     }}>
@@ -147,7 +143,7 @@ export function FilterGroup({ label, children, style }) {
         <span style={{
           fontSize: '10px',
           fontWeight: 700,
-          color: T.muted,
+          color: 'var(--text-muted)',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
           whiteSpace: 'nowrap',
@@ -167,7 +163,6 @@ export function FilterGroupScroll({ label, children }) {
       display: 'flex',
       alignItems: 'center',
       gap: '6px',
-      padding: '0 16px',
       flex: 1,
       minWidth: 0,
       height: '52px',
@@ -181,7 +176,7 @@ export function FilterGroupScroll({ label, children }) {
           <span style={{
             fontSize: '10px',
             fontWeight: 700,
-            color: T.muted,
+            color: 'var(--text-muted)',
             textTransform: 'uppercase',
             letterSpacing: '0.08em',
             whiteSpace: 'nowrap',
@@ -208,9 +203,10 @@ export function FilterPill({ active, onClick, children }) {
         cursor: 'pointer',
         fontSize: '12px',
         fontWeight: 700,
+        fontFamily: 'inherit',
         transition: 'all 0.15s ease',
-        background: active ? '#4f46e5' : '#eef2ff',
-        color:      active ? '#ffffff' : '#7c3aed',
+        background: active ? 'var(--primary)' : 'var(--gray-100)',
+        color:      active ? '#ffffff' : 'var(--text-muted)',
         boxShadow:  active ? '0 2px 6px rgba(79,70,229,0.3)' : 'none',
         whiteSpace: 'nowrap',
         flexShrink: 0,
@@ -228,10 +224,10 @@ export function FilterChip({ active, onChange, dot, children }) {
       display: 'flex', alignItems: 'center', gap: '4px',
       cursor: 'pointer', padding: '3px 9px', borderRadius: '6px',
       border: '1.5px solid',
-      borderColor: active ? '#4f46e5' : T.border,
-      background:  active ? '#eef2ff' : 'transparent',
+      borderColor: active ? 'var(--primary)' : 'var(--border-color)',
+      background:  active ? 'var(--primary-light)' : 'transparent',
       fontSize: '11px', fontWeight: 700,
-      color: active ? '#4f46e5' : T.muted,
+      color: active ? 'var(--primary)' : 'var(--text-muted)',
       transition: 'all 0.15s',
       userSelect: 'none',
       whiteSpace: 'nowrap',
@@ -239,7 +235,7 @@ export function FilterChip({ active, onChange, dot, children }) {
     }}>
       <input type="checkbox" checked={active} onChange={onChange} style={{ display: 'none' }} />
       {dot !== false && (
-        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: active ? '#4f46e5' : T.border, flexShrink: 0 }} />
+        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: active ? 'var(--primary)' : 'var(--border-color)', flexShrink: 0 }} />
       )}
       {children}
     </label>
