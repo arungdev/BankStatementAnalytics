@@ -3,27 +3,35 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import api from "../api/client";
-import { currencyFormatter } from "../utils/format";
+import { currencyFormatter, isAmountMasked, MASKED_AMOUNT } from "../utils/format";
 import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
+import Modal from "../components/ui/Modal";
 import { avatarColors } from "../utils/avatar";
 import { useAuth } from "../context/useAuth";
+import { useAccount } from "../context/useAccount";
+import { ALL_ACCOUNTS } from "../components/AccountFilter";
+import { usePrivacy } from "../context/usePrivacy";
+import useTheme from "../context/useTheme";
+import { getToken } from "../theme/chartTheme";
 
-/* ─── Design tokens — aligned with Overview / Insights / Trends ──────────── */
+/* ─── Design tokens — mapped to the global CSS variable system so DOM inline
+ * styles pick up light/dark automatically. (SVG chart colors can't use var()
+ * and are resolved separately via getToken() — see `chartC` below.) */
 const T = {
-  indigo:     '#4f46e5',
-  indigoDim:  '#eef2ff',
-  indigoSoft: '#a5b4fc',
-  surface:    '#ffffff',
-  bg:         '#f3f4f6',
-  border:     '#e5e7eb',
-  borderSub:  '#f0f1f3',
-  text:       '#111827',
-  muted:      '#6b7280',
-  faint:      '#9ca3af',
-  red:        '#ef4444',
-  green:      '#10b981',
+  indigo:     'var(--primary)',
+  indigoDim:  'var(--primary-light)',
+  indigoSoft: 'var(--stat-tile-label)',
+  surface:    'var(--surface)',
+  bg:         'var(--surface-2)',
+  border:     'var(--border-color)',
+  borderSub:  'var(--border-subtle)',
+  text:       'var(--text-main)',
+  muted:      'var(--text-muted)',
+  faint:      'var(--text-faint)',
+  red:        'var(--danger)',
+  green:      'var(--success)',
 };
 
 /* Small label/value block reused across the detail drawer. */
@@ -40,6 +48,25 @@ function Field({ label, children }) {
 
 export default function Merchants() {
   const { isAdmin } = useAuth();
+  const { theme } = useTheme();
+  // Subscribe to the mask flag so toggling "hide amounts" re-renders this page;
+  // its other contexts (auth/theme) don't change on toggle, so without this the
+  // currencyFormatter amounts would stay stale until the next unrelated render.
+  usePrivacy();
+  // Resolved colors for the recharts sparkline (SVG can't consume var()).
+  const chartC = useMemo(() => ({
+    bar: getToken('primary'),
+    barDim: getToken('stat-tile-label'),
+    grid: getToken('chart-grid'),
+    tick: getToken('chart-tick'),
+    cursor: getToken('primary-light'),
+    tooltipBg: getToken('surface'),
+    tooltipText: getToken('text-main'),
+    tooltipBorder: getToken('border-color'),
+    // `theme` is the trigger: getToken() reads resolved CSS vars off the DOM,
+    // so we must recompute when the theme flips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [theme]);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -59,28 +86,38 @@ export default function Merchants() {
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [primaryMergeId, setPrimaryMergeId] = useState("");
 
-  useEffect(() => {
-    api.get("/merchants")
-      .then(res => {
-        setData(res.data || []);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
+  // Account scoping: "All accounts" (or no selection yet) sends no params, which the
+  // API treats as unfiltered — identical to the pre-filter behavior.
+  const { selectedAccountId } = useAccount();
+  const isAllAccounts = !selectedAccountId || selectedAccountId === ALL_ACCOUNTS;
+  const accountQuery = isAllAccounts ? '' : `?accountId=${selectedAccountId}`;
 
+  const fetchMerchants = () =>
+    api.get(`/merchants${accountQuery}`).then(res => setData(res.data || []));
+
+  useEffect(() => {
     api.get("/categories")
       .then(res => setCategoriesList(res.data || []))
       .catch(err => console.error("Failed to load categories", err));
   }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchMerchants()
+      .catch(err => console.error(err))
+      .finally(() => setLoading(false));
+    // Merge selection is scope-dependent; an open drawer refetches under the new scope.
+    setSelectedIds([]);
+    if (selectedMerchantId) handleRowClick(selectedMerchantId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountQuery]);
 
   const handleRowClick = (id) => {
     setSelectedMerchantId(id);
     setLoadingDetails(true);
     setTxFilterName('ALL');
 
-    api.get(`/merchants/${id}`)
+    api.get(`/merchants/${id}${accountQuery}`)
       .then(res => {
         setMerchantDetails(res.data);
         setLoadingDetails(false);
@@ -104,8 +141,7 @@ export default function Merchants() {
       primaryId: parseInt(primaryMergeId),
       secondaryIds
     }).then(() => {
-      api.get("/merchants").then(res => {
-        setData(res.data || []);
+      fetchMerchants().then(() => {
         setSelectedIds([]);
         setShowMergeModal(false);
       });
@@ -123,7 +159,7 @@ export default function Merchants() {
       aliasName: alias
     }).then(() => {
       // Refresh main table
-      api.get("/merchants").then(res => setData(res.data || []));
+      fetchMerchants();
       // Refresh sidebar details
       handleRowClick(merchantDetails.id);
       setTxFilterName('ALL');
@@ -242,6 +278,7 @@ export default function Merchants() {
   const allSelected = filteredData.length > 0 && selectedIds.length === filteredData.length;
 
   const fmtShort = (v) =>
+    isAmountMasked() ? MASKED_AMOUNT :
     v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : v >= 1000 ? `₹${(v / 1000).toFixed(0)}k` : `₹${v}`;
   const fmtMY = (d) => (d ? d.toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "—");
 
@@ -292,23 +329,17 @@ export default function Merchants() {
         }
       `}</style>
 
-      {/* ── Header ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ marginBottom: '4px' }}>Merchants</h1>
-          <p style={{ margin: 0, color: T.muted, fontSize: '14px' }}>
-            The people and businesses you transact with, and how they're categorized.
-          </p>
-        </div>
-        {isAdmin && selectedIds.length > 1 && (
+      {/* ── Merge action (title/subtitle now come from the shared PageHeader) ── */}
+      {isAdmin && selectedIds.length > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
           <button
             className="btn primary"
             onClick={() => { setShowMergeModal(true); setPrimaryMergeId(String(selectedIds[0])); }}
           >
             Merge selected ({selectedIds.length})
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Summary strip ── */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -319,12 +350,12 @@ export default function Merchants() {
         ].map((stat) => (
           <div key={stat.label} style={{
             flex: '1 1 160px', background: T.surface, border: `1px solid ${T.border}`,
-            borderRadius: '14px', padding: '16px 18px', boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+            borderRadius: '14px', padding: '16px 18px', boxShadow: 'var(--shadow-sm)',
           }}>
             <div style={{ fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {stat.label}
             </div>
-            <div style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: stat.accent, letterSpacing: '-0.5px' }}>
+            <div className="tnum" style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: stat.accent, letterSpacing: '-0.5px' }}>
               {stat.value}
             </div>
           </div>
@@ -348,7 +379,7 @@ export default function Merchants() {
       {/* ── List ── */}
       <div style={{
         background: T.surface, border: `1px solid ${T.border}`,
-        borderRadius: '14px', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden',
+        borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
       }}>
         <div className="mrc-head">
           {isAdmin && (
@@ -449,32 +480,33 @@ export default function Merchants() {
       </div>
 
       {/* Merge Modal */}
-      {showMergeModal && (
-        <>
-          <div onClick={() => setShowMergeModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.5)', zIndex: 10000 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '420px', maxWidth: '92vw', backgroundColor: T.surface, padding: '26px', borderRadius: '16px', zIndex: 10001, boxShadow: '0 20px 50px rgba(15,23,42,0.25)' }}>
-            <h2 style={{ marginTop: 0, marginBottom: '8px', fontSize: '18px', color: T.text }}>Merge merchants</h2>
-            <p style={{ color: T.muted, fontSize: '13px', margin: '0 0 20px' }}>
-              Pick the primary merchant to keep. The other {selectedIds.length - 1} will be folded into it and removed.
-            </p>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '13px', color: T.text }}>Primary merchant</label>
-            <select
-              value={primaryMergeId}
-              onChange={e => setPrimaryMergeId(e.target.value)}
-              style={{ width: '100%', padding: '10px', border: `1px solid ${T.border}`, borderRadius: '8px', fontSize: '14px', background: T.surface, color: T.text }}
-            >
-              {selectedIds.map(id => {
-                const merchant = data.find(x => x.id === id);
-                return <option key={id} value={id}>{merchant?.friendlyName || merchant?.name}</option>;
-              })}
-            </select>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '24px' }}>
-              <button className="btn" onClick={() => setShowMergeModal(false)}>Cancel</button>
-              <button className="btn primary" onClick={handleMergeSubmit}>Confirm merge</button>
-            </div>
-          </div>
-        </>
-      )}
+      <Modal
+        open={showMergeModal}
+        onClose={() => setShowMergeModal(false)}
+        title="Merge merchants"
+        width={420}
+        footer={
+          <>
+            <button className="btn" onClick={() => setShowMergeModal(false)}>Cancel</button>
+            <button className="btn primary" onClick={handleMergeSubmit}>Confirm merge</button>
+          </>
+        }
+      >
+        <p style={{ color: T.muted, fontSize: '13px', margin: '0 0 20px' }}>
+          Pick the primary merchant to keep. The other {selectedIds.length - 1} will be folded into it and removed.
+        </p>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '13px', color: T.text }}>Primary merchant</label>
+        <select
+          value={primaryMergeId}
+          onChange={e => setPrimaryMergeId(e.target.value)}
+          className="field-select"
+        >
+          {selectedIds.map(id => {
+            const merchant = data.find(x => x.id === id);
+            return <option key={id} value={id}>{merchant?.friendlyName || merchant?.name}</option>;
+          })}
+        </select>
+      </Modal>
 
       {/* RHS detail drawer — non-modal so the list & sidebar stay interactive */}
       <Drawer
@@ -503,16 +535,11 @@ export default function Merchants() {
                 </p>
               </div>
               {isAdmin && (!isEditing ? (
-                <button
-                  onClick={handleEditClick}
-                  style={{ padding: '7px 14px', fontSize: '13px', fontWeight: 600, backgroundColor: T.bg, border: `1px solid ${T.border}`, borderRadius: '8px', cursor: 'pointer', color: T.text }}
-                >
-                  Edit
-                </button>
+                <button className="btn small" onClick={handleEditClick}>Edit</button>
               ) : (
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => setIsEditing(false)} style={{ padding: '7px 12px', fontSize: '13px', fontWeight: 600, backgroundColor: T.surface, border: `1px solid ${T.border}`, borderRadius: '8px', cursor: 'pointer', color: T.text }}>Cancel</button>
-                  <button onClick={handleSaveClick} style={{ padding: '7px 12px', fontSize: '13px', fontWeight: 600, backgroundColor: T.indigo, color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Save</button>
+                  <button className="btn small" onClick={() => setIsEditing(false)}>Cancel</button>
+                  <button className="btn primary small" onClick={handleSaveClick}>Save</button>
                 </div>
               ))}
             </div>
@@ -613,7 +640,7 @@ export default function Merchants() {
                   ].map((st) => (
                     <div key={st.label} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '10px 12px' }}>
                       <div style={{ fontSize: '10px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{st.label}</div>
-                      <div style={{ marginTop: '3px', fontSize: '15px', fontWeight: 800, color: st.color, letterSpacing: '-0.3px' }}>{st.value}</div>
+                      <div className="tnum" style={{ marginTop: '3px', fontSize: '15px', fontWeight: 800, color: st.color, letterSpacing: '-0.3px' }}>{st.value}</div>
                     </div>
                   ))}
                 </div>
@@ -626,17 +653,19 @@ export default function Merchants() {
                     </div>
                     <ResponsiveContainer width="100%" height={160}>
                       <BarChart data={spendStats.monthly} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={T.borderSub} />
-                        <XAxis dataKey="month" tick={{ fontSize: 10, fill: T.faint }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                        <YAxis tickFormatter={fmtShort} tick={{ fontSize: 10, fill: T.faint }} axisLine={false} tickLine={false} width={44} />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartC.grid} />
+                        <XAxis dataKey="month" tick={{ fontSize: 10, fill: chartC.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                        <YAxis tickFormatter={fmtShort} tick={{ fontSize: 10, fill: chartC.tick }} axisLine={false} tickLine={false} width={44} />
                         <Tooltip
                           formatter={(v) => currencyFormatter.format(v)}
-                          cursor={{ fill: T.indigoDim }}
-                          contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.15)', fontSize: '12px' }}
+                          cursor={{ fill: chartC.cursor }}
+                          contentStyle={{ borderRadius: '10px', border: `1px solid ${chartC.tooltipBorder}`, background: chartC.tooltipBg, color: chartC.tooltipText, boxShadow: 'var(--shadow-lg)', fontSize: '12px' }}
+                          labelStyle={{ color: chartC.tooltipText }}
+                          itemStyle={{ color: chartC.tooltipText }}
                         />
                         <Bar dataKey="total" radius={[4, 4, 0, 0]} maxBarSize={34}>
                           {spendStats.monthly.map((m, i) => (
-                            <Cell key={i} fill={m.total >= spendStats.maxMonth ? T.indigo : T.indigoSoft} />
+                            <Cell key={i} fill={m.total >= spendStats.maxMonth ? chartC.bar : chartC.barDim} />
                           ))}
                         </Bar>
                       </BarChart>
@@ -676,7 +705,7 @@ export default function Merchants() {
                       </div>
                       <div style={{ fontSize: '12px', color: T.muted, marginTop: '2px' }}>{tx.mode || 'Transfer'}</div>
                     </div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: tx.credit ? T.green : T.red }}>
+                    <div className="tnum" style={{ fontSize: '14px', fontWeight: 700, color: tx.credit ? T.green : T.red }}>
                       {tx.credit ? '+' : '−'}{currencyFormatter.format(Math.max(tx.credit, tx.debit))}
                     </div>
                   </div>

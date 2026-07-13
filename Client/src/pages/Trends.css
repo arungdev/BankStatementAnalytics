@@ -1,27 +1,20 @@
-/* ── Design tokens — aliased onto the shared app tokens from index.css ──── */
-:root {
-  /* --bg and --surface are intentionally not redeclared here — inherited as-is from index.css */
-  --surface-2:    var(--gray-100);
+/* ── Local aliases — scoped to .trends-container so they don't leak onto or
+ *    clobber the global tokens in index.css (e.g. --surface-2). ─────────── */
+.trends-container {
   --border:       var(--border-color);
-  --border-soft:  #f0f2f4;
+  --border-soft:  var(--border-subtle);
 
   --ink:          var(--text-main);
   --ink-2:        var(--text-muted);
-  --ink-3:        var(--gray-400);
-
-  --primary-2:    #7c3aed;
-  --primary-mid:  rgba(79,70,229,0.12);
+  --ink-3:        var(--text-faint);
 
   --green:        var(--success);
   --green-light:  var(--success-light);
-  --green-mid:    rgba(16,185,129,0.12);
 
   --red:          var(--danger);
   --red-light:    var(--danger-light);
-  --red-mid:      rgba(239,68,68,0.10);
 
   --amber:        var(--warning);
-  --amber-mid:    rgba(217,119,6,0.10);
 
   --font-display: 'Inter', sans-serif;
   --font-body:    'Inter', sans-serif;
@@ -109,13 +102,13 @@
   overflow-y: hidden;
   cursor: grab;
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db transparent;
+  scrollbar-color: var(--gray-300) transparent;
 }
 .bars-scroll-panel:active { cursor: grabbing; }
 .bars-scroll-panel::-webkit-scrollbar        { height: 4px; }
 .bars-scroll-panel::-webkit-scrollbar-track  { background: transparent; }
-.bars-scroll-panel::-webkit-scrollbar-thumb  { background: #d1d5db; border-radius: 10px; }
-.bars-scroll-panel::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+.bars-scroll-panel::-webkit-scrollbar-thumb  { background: var(--gray-300); border-radius: 10px; }
+.bars-scroll-panel::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
 
 /* ── Loading ─────────────────────────────────────────────────────────────── */
 .chart-loader {
@@ -148,7 +141,7 @@
   margin-bottom: 20px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+  background: var(--surface-2);
 }
 .drilldown-summary > div {
   display: flex;
@@ -194,7 +187,7 @@
 }
 .drill-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
 .drill-card-avatar {

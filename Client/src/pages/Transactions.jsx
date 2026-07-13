@@ -17,29 +17,31 @@ import Badge from "../components/ui/Badge";
 import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
+import Modal from "../components/ui/Modal";
 import { currencyFormatter } from "../utils/format";
 
-/* ─── Design tokens — aligned with Overview / Merchants / Insights ───────── */
+/* ─── Design tokens — mapped to the global CSS variable system so both the
+ * inline styles and the injected <style> block below pick up light/dark. */
 const T = {
-  indigo:     '#4f46e5',
-  indigoDim:  '#eef2ff',
-  surface:    '#ffffff',
-  bg:         '#f3f4f6',
-  border:     '#e5e7eb',
-  borderSub:  '#f0f1f3',
-  text:       '#111827',
-  muted:      '#6b7280',
-  faint:      '#9ca3af',
-  red:        '#ef4444',
-  green:      '#10b981',
-  blue:       '#2563eb',
-  blueDim:    '#eff6ff',
+  indigo:     'var(--primary)',
+  indigoDim:  'var(--primary-light)',
+  surface:    'var(--surface)',
+  bg:         'var(--surface-2)',
+  border:     'var(--border-color)',
+  borderSub:  'var(--border-subtle)',
+  text:       'var(--text-main)',
+  muted:      'var(--text-muted)',
+  faint:      'var(--text-faint)',
+  red:        'var(--danger)',
+  green:      'var(--success)',
+  blue:       'var(--primary)',
+  blueDim:    'var(--primary-light)',
 };
 
 /* ─── TransactionsFilters — rendered in Layout's PageHeader filter row ──── */
 export function TransactionsFilters({ dateRange, setDateRange }) {
   return (
-    <FilterGroup label="Period" style={{ position: 'relative', zIndex: 500 }}>
+    <FilterGroup style={{ position: 'relative', zIndex: 500 }}>
       <DateRangePicker
         value={dateRange}
         onChange={setDateRange}
@@ -53,8 +55,7 @@ export function TransactionsFilters({ dateRange, setDateRange }) {
 
 export default function Transactions() {
   const { isAdmin } = useAuth();
-  const { selectedAccountId, selectedAccount } = useAccount();
-  console.log('selectedAccount:', selectedAccount);
+  const { selectedAccountId } = useAccount();
 
   // ── Date filter now lives in Layout, shared with the header row ───────
   const {
@@ -234,7 +235,6 @@ export default function Transactions() {
   const handleCategoryChange = (t, selectedValue) => {
     const previousCategory = t.category;
     const previousSubCategory = t.subCategory;
-    console.log('Transaction object:', JSON.stringify(t, null, 2));
     let resolvedCategory = selectedValue;
     let resolvedSubCategory = null;
 
@@ -475,7 +475,7 @@ export default function Transactions() {
 
       <div style={{
         background: T.surface, border: `1px solid ${T.border}`,
-        borderRadius: '14px', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', overflow: 'hidden',
+        borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
       }}>
         <div className="tx-head">
           <span>Date</span>
@@ -500,7 +500,7 @@ export default function Transactions() {
                   onClick={() => { setShowUploadHistory(false); setSelectedTx(t); }}
                 >
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '17px', fontWeight: 800, color: T.text, lineHeight: 1.1 }}>
+                    <div className="tnum" style={{ fontSize: '17px', fontWeight: 800, color: T.text, lineHeight: 1.1 }}>
                       {d.toLocaleDateString('en-IN', { day: '2-digit' })}
                     </div>
                     <div style={{ fontSize: '11px', fontWeight: 600, color: T.faint, textTransform: 'uppercase' }}>
@@ -540,7 +540,7 @@ export default function Transactions() {
                     </select>
                   </div>
 
-                  <div style={{ textAlign: 'right', fontSize: '15px', fontWeight: 800, color: isCredit ? T.green : T.red, letterSpacing: '-0.3px' }}>
+                  <div className="tnum" style={{ textAlign: 'right', fontSize: '15px', fontWeight: 800, color: isCredit ? T.green : T.red, letterSpacing: '-0.3px' }}>
                     {isCredit ? '+' : '−'}{currencyFormatter.format(Math.max(t.credit, t.debit))}
                   </div>
                 </div>
@@ -579,7 +579,7 @@ export default function Transactions() {
               padding: '8px 0 22px', borderBottom: `1px solid ${T.border}`, marginBottom: '24px',
             }}>
               <Avatar name={selectedTx.merchant || '?'} size={52} />
-              <div style={{ fontSize: '34px', fontWeight: 800, letterSpacing: '-0.5px', color: selectedTx.credit ? T.green : T.red }}>
+              <div className="tnum" style={{ fontSize: '34px', fontWeight: 800, letterSpacing: '-0.5px', color: selectedTx.credit ? T.green : T.red }}>
                 {selectedTx.credit ? '+' : '−'}{currencyFormatter.format(Math.max(selectedTx.credit, selectedTx.debit))}
               </div>
               <div style={{ color: T.muted, fontSize: '15px', fontWeight: 600, textAlign: 'center' }}>
@@ -627,10 +627,10 @@ export default function Transactions() {
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Tags</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                   {(selectedTx.tags || []).map(tag => (
-                    <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: 'var(--radius-full)', fontSize: '12px', fontWeight: 600 }}>
+                    <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', padding: '3px 8px', borderRadius: 'var(--radius-full)', fontSize: '12px', fontWeight: 600 }}>
                       #{tag}
                       {isAdmin && (
-                        <span onClick={() => handleRemoveTag(tag)} style={{ cursor: 'pointer', color: '#93c5fd', fontWeight: 700, fontSize: '14px', lineHeight: 1 }}>×</span>
+                        <span onClick={() => handleRemoveTag(tag)} style={{ cursor: 'pointer', color: 'var(--primary)', opacity: 0.6, fontWeight: 700, fontSize: '14px', lineHeight: 1 }}>×</span>
                       )}
                     </span>
                   ))}
@@ -733,25 +733,9 @@ export default function Transactions() {
       </Drawer>
 
       {/* Upload statement modal — scoped to the selected account, refreshes the list on success */}
-      {showUpload && (
-        <div
-          onClick={() => setShowUpload(false)}
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.4)', zIndex: 20000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '40px 16px' }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: 'var(--surface)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', width: '760px', maxWidth: '100%', padding: '24px', position: 'relative' }}
-          >
-            <button
-              className="modal-close"
-              onClick={() => setShowUpload(false)}
-              aria-label="Close"
-              style={{ position: 'absolute', top: '16px', right: '20px', zIndex: 1 }}
-            >&times;</button>
-            <UploadStatement onUploaded={() => setRefreshKey(k => k + 1)} showHistory={false} />
-          </div>
-        </div>
-      )}
+      <Modal open={showUpload} onClose={() => setShowUpload(false)} width={760}>
+        <UploadStatement onUploaded={() => setRefreshKey(k => k + 1)} showHistory={false} />
+      </Modal>
     </div>
   );
 }

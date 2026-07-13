@@ -17,26 +17,24 @@ import {
 import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/EmptyState';
+import EmptyState from '../components/ui/EmptyState';
 import Drawer from '../components/ui/Drawer';
-import { currencyFormatter } from '../utils/format';
+import useTheme from '../context/useTheme';
+import { getToken } from '../theme/chartTheme';
+import { currencyFormatter, isAmountMasked } from '../utils/format';
 import './Trends.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-// ── Chart colour tokens — aligned with the app's --success/--danger palette ──
-const C = {
-  green: '#10b981',
-  greenTop: 'rgba(16,185,129,0.95)',
-  greenBottom: 'rgba(52,211,153,0.55)',
-  greenHover: '#059669',
-  red: '#ef4444',
-  redTop: 'rgba(239,68,68,0.92)',
-  redBottom: 'rgba(248,113,113,0.52)',
-  redHover: '#dc2626',
-  grid: '#eef1f4',
-  tickColor: '#9ca3af',
-  tooltipBg: '#1e293b',
+// chart.js paints on a canvas and can't consume CSS var()s, so chart colors
+// are resolved from tokens at render time. rgba variants drive the gradients.
+const hexToRgba = (hex, a) => {
+  const h = (hex || '').replace('#', '');
+  const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const r = parseInt(n.slice(0, 2), 16) || 0;
+  const g = parseInt(n.slice(2, 4), 16) || 0;
+  const b = parseInt(n.slice(4, 6), 16) || 0;
+  return `rgba(${r},${g},${b},${a})`;
 };
 
 // ── Vertical fill gradient (top vivid → bottom soft), cached per canvas ─────
@@ -57,6 +55,7 @@ const makeFill = (top, bottom) => (ctx) => {
 };
 
 const formatShort = (v) => {
+  if (isAmountMasked()) return '••';
   if (v >= 10000000) return (v / 10000000).toFixed(1) + 'Cr';
   if (v >= 100000)   return (v / 100000).toFixed(2) + 'L';
   if (v >= 1000)     return (v / 1000).toFixed(1) + 'k';
@@ -69,7 +68,7 @@ const VISIBLE_GROUPS = 8;
 export function TrendsFilters({ period, setPeriod, dateRange, setDateRange }) {
   return (
     <>
-      <FilterGroup label="Period" style={{ position: 'relative', zIndex: 500 }}>
+      <FilterGroup style={{ position: 'relative', zIndex: 500 }}>
         <DateRangePicker
           value={dateRange}
           onChange={setDateRange}
@@ -100,7 +99,28 @@ const Trends = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const { selectedAccountId } = useAccount();
+  const { theme } = useTheme();
   const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
+
+  // Resolved chart colors — recomputed whenever the theme flips.
+  const C = useMemo(() => {
+    const income = getToken('chart-income');
+    const spend  = getToken('chart-spend');
+    return {
+      green: income,
+      greenTop: hexToRgba(income, 0.95),
+      greenBottom: hexToRgba(income, 0.55),
+      greenHover: income,
+      red: spend,
+      redTop: hexToRgba(spend, 0.92),
+      redBottom: hexToRgba(spend, 0.52),
+      redHover: spend,
+      grid: getToken('chart-grid'),
+      tickColor: getToken('chart-tick'),
+      tooltipBg: '#1e293b',
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme]);
 
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: Infinity });
   const scrollRef   = useRef(null);
@@ -300,7 +320,7 @@ const Trends = () => {
         barPercentage: 0.92,
       },
     ],
-  }), [data]);
+  }), [data, C]);
 
   const mainOptions = useMemo(() => ({
     responsive: true,
@@ -345,7 +365,7 @@ const Trends = () => {
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [visibleYMax, handleBarClick]);
+  }), [visibleYMax, handleBarClick, C]);
 
   // ── Render helpers ─────────────────────────────────────────────────────
   const renderChart = () => {
@@ -372,11 +392,11 @@ const Trends = () => {
     return (
       <div className="split-chart-container">
         <div className="y-axis-panel">
-          <Bar data={axisData} options={axisOptions} />
+          <Bar key={theme} data={axisData} options={axisOptions} />
         </div>
         <div className="bars-scroll-panel" ref={scrollRef} onScroll={handleScroll}>
           <div style={{ position: 'relative', height: '100%', minWidth: `max(100%, ${data.length * barGroupWidth}px)` }}>
-            <Bar data={mainData} options={mainOptions} />
+            <Bar key={theme} data={mainData} options={mainOptions} />
           </div>
         </div>
       </div>

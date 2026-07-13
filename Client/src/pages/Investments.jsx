@@ -2,27 +2,30 @@ import { useState, useEffect, useCallback } from 'react';
 import { FiRefreshCw, FiLock, FiCheckCircle, FiClock, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/EmptyState';
+import EmptyState from '../components/ui/EmptyState';
 import Drawer from '../components/ui/Drawer';
 import Avatar from '../components/ui/Avatar';
 import { currencyFormatter as fmt } from '../utils/format';
+import { usePrivacy } from '../context/usePrivacy';
 
-/* ─── Design tokens — aligned with Overview / Forecast / Insights ─────────── */
+/* ─── Design tokens — mapped to the global CSS variable system ─────────────
+ * Keys kept stable so the inline styles below read straight from var()s and
+ * pick up light/dark automatically. */
 const T = {
-  indigo:     '#4f46e5',
-  indigoDim:  '#eef2ff',
-  indigoSoft: '#a5b4fc',
-  surface:    '#ffffff',
-  bg:         '#f3f4f6',
-  border:     '#e5e7eb',
-  borderSub:  '#f0f1f3',
-  text:       '#111827',
-  muted:      '#6b7280',
-  faint:      '#9ca3af',
-  green:      '#10b981',
-  greenDim:   '#ecfdf5',
-  amber:      '#f59e0b',
-  red:        '#ef4444',
+  indigo:     'var(--primary)',
+  indigoDim:  'var(--primary-light)',
+  indigoSoft: 'var(--stat-tile-label)',
+  surface:    'var(--surface)',
+  bg:         'var(--bg)',
+  border:     'var(--border-color)',
+  borderSub:  'var(--border-subtle)',
+  text:       'var(--text-main)',
+  muted:      'var(--text-muted)',
+  faint:      'var(--text-faint)',
+  green:      'var(--success)',
+  greenDim:   'var(--success-light)',
+  amber:      'var(--warning)',
+  red:        'var(--danger)',
 };
 
 const fmtDate = (d) =>
@@ -32,12 +35,12 @@ const fmtDate = (d) =>
 const toDateInput = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
 
 const s = {
-  page: { padding: '28px 32px', background: T.bg, minHeight: '100vh', fontFamily: "'Inter', 'system-ui', sans-serif" },
+  page: { padding: '28px 32px', background: T.bg, minHeight: '100vh' },
   statsRow: { display: 'flex', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' },
   grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' },
   card: {
     background: T.surface, borderRadius: '14px', padding: '22px 24px',
-    border: `1px solid ${T.border}`, boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+    border: `1px solid ${T.border}`, boxShadow: 'var(--shadow-sm)',
   },
   cardTitle: { margin: '0 0 4px', fontSize: '13px', fontWeight: 700, color: T.text },
   cardSub: { margin: '0 0 18px', fontSize: '12px', color: T.muted },
@@ -53,6 +56,11 @@ const s = {
 };
 
 export default function Investments() {
+  // Subscribe to the mask flag so toggling "hide amounts" re-renders this page.
+  // This page reads no outlet context, so without this subscription React
+  // Router's cached outlet element bails out of re-rendering and the
+  // fmt.format() amounts stay stale until the next unrelated render.
+  usePrivacy();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -138,8 +146,8 @@ export default function Investments() {
       {/* ── Stat cards ── */}
       <div style={s.statsRow}>
         <StatCard label="Total invested" value={fmt.format(data?.totalInvested ?? 0)} accent={T.indigoSoft} sub="RD contributions + FD principal" />
-        <StatCard label="Monthly RD commitment" value={fmt.format(data?.monthlyRdCommitment ?? 0)} valueColor="#6366f1" sub={`${data?.rdPlanCount ?? 0} recurring deposit${(data?.rdPlanCount ?? 0) === 1 ? '' : 's'}`} />
-        <StatCard label="Fixed deposits" value={fmt.format(data?.totalFdPrincipal ?? 0)} valueColor="#0ea5e9" sub={`${data?.activeFdCount ?? 0} active`} />
+        <StatCard label="Monthly RD commitment" value={fmt.format(data?.monthlyRdCommitment ?? 0)} valueColor="var(--stat-tile-label)" sub={`${data?.rdPlanCount ?? 0} recurring deposit${(data?.rdPlanCount ?? 0) === 1 ? '' : 's'}`} />
+        <StatCard label="Fixed deposits" value={fmt.format(data?.totalFdPrincipal ?? 0)} valueColor="#38bdf8" sub={`${data?.activeFdCount ?? 0} active`} />
         <StatCard label="FD returns received" value={fmt.format(data?.totalFdReturns ?? 0)} valueColor="#34d399" sub="Matured / interest credited" />
       </div>
 

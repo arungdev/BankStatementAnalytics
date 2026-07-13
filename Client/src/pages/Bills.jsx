@@ -1,29 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
-import { FiBell, FiCheck, FiX, FiTrash2, FiEdit2, FiCalendar, FiPlus } from "react-icons/fi";
+import { FiCheck, FiX, FiTrash2, FiEdit2, FiCalendar, FiPlus } from "react-icons/fi";
 import api from "../api/client";
 import { currencyFormatter } from "../utils/format";
+import { usePrivacy } from "../context/usePrivacy";
 import EmptyState from "../components/ui/EmptyState";
 import Badge from "../components/ui/Badge";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
+import Modal from "../components/ui/Modal";
+import Tabs from "../components/ui/Tabs";
 import StatCard from "../components/StatCard";
-
-/* ─── Design tokens — aligned with Overview / Merchants / Transactions ───── */
-const T = {
-  indigo:     '#4f46e5',
-  indigoDim:  '#eef2ff',
-  surface:    '#ffffff',
-  bg:         '#f3f4f6',
-  border:     '#e5e7eb',
-  borderSub:  '#f0f1f3',
-  text:       '#111827',
-  muted:      '#6b7280',
-  faint:      '#9ca3af',
-  red:        '#ef4444',
-  amber:      '#f59e0b',
-  amberText:  '#b45309',
-  green:      '#10b981',
-};
 
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -35,6 +21,11 @@ const dueLabel = (days) => {
 };
 
 export default function Bills() {
+  // Subscribe to the mask flag so toggling "hide amounts" re-renders this page.
+  // This page reads no outlet context, so without this subscription React
+  // Router's cached outlet element bails out of re-rendering and the
+  // currencyFormatter amounts stay stale until the next unrelated render.
+  usePrivacy();
   const [bills, setBills] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -172,9 +163,9 @@ export default function Bills() {
     .sort((a, b) => a.daysUntilDue - b.daysUntilDue)[0];
 
   const TABS = [
-    { id: "due", label: "Due soon", count: dueSoon.length },
-    { id: "bills", label: "Your bills", count: bills.length },
-    { id: "suggestions", label: "Suggested", count: suggestions.length },
+    { key: "due", label: "Due soon", count: dueSoon.length },
+    { key: "bills", label: "Your bills", count: bills.length },
+    { key: "suggestions", label: "Suggested", count: suggestions.length },
   ];
 
   return (
@@ -186,9 +177,9 @@ export default function Bills() {
           gap: 16px;
           padding: 12px 20px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-          text-transform: uppercase; color: ${T.faint};
-          border-bottom: 1px solid ${T.border};
-          background: ${T.bg};
+          text-transform: uppercase; color: var(--text-faint);
+          border-bottom: 1px solid var(--border-color);
+          background: var(--surface-2);
         }
         .bill-row {
           display: grid;
@@ -196,11 +187,11 @@ export default function Bills() {
           align-items: center;
           gap: 16px;
           padding: 12px 20px;
-          border-bottom: 1px solid ${T.borderSub};
+          border-bottom: 1px solid var(--border-subtle);
           cursor: pointer;
           transition: background 0.12s;
         }
-        .bill-row:hover { background: ${T.bg}; }
+        .bill-row:hover { background: var(--surface-2); }
         .bill-row:last-child { border-bottom: none; }
         @media (max-width: 760px) {
           .bill-head, .bill-row { grid-template-columns: minmax(0,1fr) 130px 110px 70px; }
@@ -239,44 +230,12 @@ export default function Bills() {
       )}
 
       {/* ── Tab bar + Add bill ── */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", borderBottom: "1px solid var(--border-color, #e5e7eb)", marginBottom: "24px" }}>
-        <div style={{ display: "flex", gap: "4px" }}>
-          {TABS.map((t) => {
-            const active = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "10px 16px",
-                  background: "none",
-                  border: "none",
-                  borderBottom: `2px solid ${active ? "#4f46e5" : "transparent"}`,
-                  marginBottom: "-1px",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: active ? 700 : 600,
-                  color: active ? "#4f46e5" : "var(--gray-600, #6b7280)",
-                }}
-              >
-                {t.id === "due" && <FiBell size={15} />}
-                {t.label}
-                {t.count > 0 && (
-                  <span style={{ background: active ? "#eef2ff" : "var(--gray-100, #f3f4f6)", color: active ? "#4f46e5" : "var(--gray-600, #6b7280)", borderRadius: "999px", fontSize: "11px", fontWeight: 700, padding: "1px 8px" }}>
-                    {t.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "24px", gap: "12px", flexWrap: "wrap" }}>
+        <Tabs tabs={TABS} active={activeTab} onChange={setActiveTab} variant="underline" />
         <button
           className="btn primary"
           onClick={openAdd}
-          style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", whiteSpace: "nowrap" }}
+          style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", whiteSpace: "nowrap" }}
         >
           <FiPlus size={15} /> Add bill
         </button>
@@ -296,22 +255,22 @@ export default function Bills() {
                   key={b.id}
                   onClick={() => openBill(b)}
                   title="View transactions"
-                  style={{ ...cardBase, borderLeft: `4px solid ${urgent ? T.red : T.amber}` }}
+                  style={{ ...cardBase, borderLeft: `4px solid ${urgent ? "var(--danger)" : "var(--warning)"}` }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
                     <Avatar name={b.name} />
-                    <div style={{ fontWeight: 700, fontSize: "15px", color: T.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-main)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {b.name}
                     </div>
                   </div>
-                  <div style={{ fontSize: "24px", fontWeight: 800, color: T.text, letterSpacing: "-0.5px" }}>
+                  <div className="tnum" style={{ fontSize: "24px", fontWeight: 800, color: "var(--text-main)", letterSpacing: "-0.5px" }}>
                     {currencyFormatter.format(b.expectedAmount)}
                   </div>
                   <div style={{
                     display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "12px",
                     fontSize: "12px", fontWeight: 700,
-                    color: urgent ? T.red : T.amberText,
-                    background: urgent ? "#fef2f2" : "#fffbeb",
+                    color: urgent ? "var(--danger)" : "var(--warning)",
+                    background: urgent ? "var(--danger-light)" : "var(--warning-light)",
                     padding: "4px 10px", borderRadius: "999px",
                   }}>
                     <FiCalendar size={12} /> {dueLabel(b.daysUntilDue)} · {fmtDate(b.nextDueDate)}
@@ -340,8 +299,8 @@ export default function Bills() {
           />
         ) : (
           <div style={{
-            background: T.surface, border: `1px solid ${T.border}`,
-            borderRadius: "14px", boxShadow: "0 1px 6px rgba(0,0,0,0.04)", overflow: "hidden",
+            background: "var(--surface)", border: "1px solid var(--border-color)",
+            borderRadius: "14px", boxShadow: "var(--shadow-sm)", overflow: "hidden",
           }}>
             <div className="bill-head">
               <span>Bill</span>
@@ -356,14 +315,14 @@ export default function Bills() {
                 <div key={b.id} className="bill-row" onClick={() => openBill(b)} title="View transactions">
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
                     <Avatar name={b.name} />
-                    <div style={{ fontWeight: 700, color: T.text, fontSize: "14px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontWeight: 700, color: "var(--text-main)", fontSize: "14px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {b.name}
                     </div>
                   </div>
-                  <div className="bill-col-day" style={{ textAlign: "center", color: T.muted, fontSize: "13px" }}>
+                  <div className="bill-col-day" style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "13px" }}>
                     {b.dueDayOfMonth}
                   </div>
-                  <div className="bill-col-next" style={{ color: T.muted, fontSize: "13px" }}>
+                  <div className="bill-col-next" style={{ color: "var(--text-muted)", fontSize: "13px" }}>
                     {fmtDate(b.nextDueDate)}
                   </div>
                   <div>
@@ -375,14 +334,14 @@ export default function Bills() {
                       <Badge variant="blue">{dueLabel(b.daysUntilDue)}</Badge>
                     )}
                   </div>
-                  <div style={{ textAlign: "right", fontWeight: 800, color: T.text, fontSize: "15px", letterSpacing: "-0.3px" }}>
+                  <div className="tnum" style={{ textAlign: "right", fontWeight: 800, color: "var(--text-main)", fontSize: "15px", letterSpacing: "-0.3px" }}>
                     {currencyFormatter.format(b.expectedAmount)}
                   </div>
                   <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
                     <button onClick={(e) => { e.stopPropagation(); setEditing({ ...b }); }} title="Edit" style={iconBtn}>
                       <FiEdit2 size={14} />
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteBill(b); }} title="Remove" style={{ ...iconBtn, color: T.red }}>
+                    <button onClick={(e) => { e.stopPropagation(); deleteBill(b); }} title="Remove" style={{ ...iconBtn, color: "var(--danger)" }}>
                       <FiTrash2 size={14} />
                     </button>
                   </div>
@@ -397,7 +356,7 @@ export default function Bills() {
       {/* ── Suggested bills ── */}
       {activeTab === "suggestions" && (
       <section>
-        <p style={{ color: "var(--gray-600, #6b7280)", fontSize: "13px", marginTop: 0, marginBottom: "16px" }}>
+        <p style={{ color: "var(--text-muted)", fontSize: "13px", marginTop: 0, marginBottom: "16px" }}>
           Detected from your transaction history — monthly debits that recur on a similar date and amount.
         </p>
         {suggestions.length === 0 ? (
@@ -413,18 +372,18 @@ export default function Bills() {
                   title="View transactions"
                   style={{
                     ...cardBase,
-                    border: `1px dashed ${active ? T.indigo : T.border}`,
-                    background: active ? T.indigoDim : T.surface,
-                    borderLeft: `1px dashed ${active ? T.indigo : T.border}`,
+                    border: `1px dashed ${active ? "var(--primary)" : "var(--border-color)"}`,
+                    background: active ? "var(--primary-light)" : "var(--surface)",
+                    borderLeft: `1px dashed ${active ? "var(--primary)" : "var(--border-color)"}`,
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
                     <Avatar name={s.name} />
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: "15px", color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-main)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {s.name}
                       </div>
-                      <div style={{ fontSize: "18px", fontWeight: 800, color: T.text, marginTop: "2px", letterSpacing: "-0.5px" }}>
+                      <div className="tnum" style={{ fontSize: "18px", fontWeight: 800, color: "var(--text-main)", marginTop: "2px", letterSpacing: "-0.5px" }}>
                         {currencyFormatter.format(s.expectedAmount)}
                       </div>
                     </div>
@@ -451,27 +410,36 @@ export default function Bills() {
       )}
 
       {/* ── Edit modal ── */}
-      {editing && (
-        <>
-          <div onClick={() => setEditing(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", zIndex: 10000 }} />
-          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "380px", maxWidth: "92vw", background: T.surface, padding: "26px", borderRadius: "16px", zIndex: 10001, boxShadow: "0 20px 50px rgba(15,23,42,0.25)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
-              <Avatar name={editing.name || "?"} />
-              <h3 style={{ margin: 0, fontSize: "18px", color: T.text }}>{editing.isNew ? "Add a bill" : "Edit bill"}</h3>
-            </div>
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={
+          editing && (
+            <span style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <Avatar name={editing.name || "?"} size={36} />
+              {editing.isNew ? "Add a bill" : "Edit bill"}
+            </span>
+          )
+        }
+        width={380}
+        footer={
+          <>
+            <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+            <button className="btn primary" onClick={saveEdit}>Save</button>
+          </>
+        }
+      >
+        {editing && (
+          <>
             <label style={editLabel}>Name</label>
             <input className="field-input" autoFocus placeholder="e.g. Netflix, Rent, Electricity" style={{ width: "100%", marginBottom: "12px" }} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             <label style={editLabel}>Expected amount</label>
             <input className="field-input" type="number" placeholder="0" style={{ width: "100%", marginBottom: "12px" }} value={editing.expectedAmount} onChange={(e) => setEditing({ ...editing, expectedAmount: e.target.value })} />
             <label style={editLabel}>Due day of month</label>
-            <input className="field-input" type="number" min="1" max="31" style={{ width: "100%", marginBottom: "20px" }} value={editing.dueDayOfMonth} onChange={(e) => setEditing({ ...editing, dueDayOfMonth: e.target.value })} />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
-              <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn primary" onClick={saveEdit}>Save</button>
-            </div>
-          </div>
-        </>
-      )}
+            <input className="field-input" type="number" min="1" max="31" style={{ width: "100%" }} value={editing.dueDayOfMonth} onChange={(e) => setEditing({ ...editing, dueDayOfMonth: e.target.value })} />
+          </>
+        )}
+      </Modal>
 
       {/* ── Transactions drawer — matches the Transactions page RHS panel ── */}
       <Drawer
@@ -487,16 +455,16 @@ export default function Bills() {
             {/* Summary header, like a transaction's amount header */}
             <div style={{
               display: "flex", flexDirection: "column", alignItems: "center", gap: "10px",
-              padding: "8px 0 22px", borderBottom: `1px solid ${T.border}`, marginBottom: "24px",
+              padding: "8px 0 22px", borderBottom: "1px solid var(--border-color)", marginBottom: "24px",
             }}>
               <Avatar name={selectedBill.name} size={52} />
-              <div style={{ fontSize: "34px", fontWeight: 800, letterSpacing: "-0.5px", color: T.red }}>
+              <div className="tnum" style={{ fontSize: "34px", fontWeight: 800, letterSpacing: "-0.5px", color: "var(--danger)" }}>
                 {currencyFormatter.format(selectedBill.expectedAmount)}
               </div>
-              <div style={{ color: T.muted, fontSize: "15px", fontWeight: 600, textAlign: "center" }}>
+              <div style={{ color: "var(--text-muted)", fontSize: "15px", fontWeight: 600, textAlign: "center" }}>
                 {selectedBill.name}
               </div>
-              <div style={{ color: T.faint, fontSize: "13px", textAlign: "center" }}>
+              <div style={{ color: "var(--text-faint)", fontSize: "13px", textAlign: "center" }}>
                 {selectedKind === "suggestion"
                   ? `~day ${selectedBill.dueDayOfMonth} · seen ${selectedBill.occurrenceCount}× · last ${fmtDate(selectedBill.lastSeenDate)}`
                   : `~day ${selectedBill.dueDayOfMonth} · next due ${fmtDate(selectedBill.nextDueDate)}`}
@@ -504,12 +472,12 @@ export default function Bills() {
             </div>
 
             {loadingTxns ? (
-              <div style={{ textAlign: "center", color: T.muted, marginTop: "40px" }}>Loading transactions...</div>
+              <div style={{ textAlign: "center", color: "var(--text-muted)", marginTop: "40px" }}>Loading transactions...</div>
             ) : billTxns.length === 0 ? (
               <EmptyState icon="📭" title="No payments" message="No matching transactions found for this bill." />
             ) : (
               <>
-                <div style={{ fontSize: "11px", color: T.faint, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "var(--text-faint)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "12px" }}>
                   {billTxns.length} payment{billTxns.length === 1 ? "" : "s"}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column" }}>
@@ -519,19 +487,19 @@ export default function Bills() {
                       style={{
                         display: "flex", alignItems: "center", gap: "12px",
                         padding: "12px 0",
-                        borderBottom: idx < billTxns.length - 1 ? `1px solid ${T.borderSub}` : "none",
+                        borderBottom: idx < billTxns.length - 1 ? "1px solid var(--border-subtle)" : "none",
                       }}
                     >
                       <Avatar name={tx.description || selectedBill.name} size={36} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, color: T.text, fontSize: "13px" }}>
+                        <div style={{ fontWeight: 700, color: "var(--text-main)", fontSize: "13px" }}>
                           {new Date(tx.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                         </div>
-                        <div style={{ fontSize: "12px", color: T.muted, marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {tx.description || tx.mode || "Transfer"}
                         </div>
                       </div>
-                      <div style={{ fontWeight: 800, fontSize: "14px", color: T.red, whiteSpace: "nowrap" }}>
+                      <div className="tnum" style={{ fontWeight: 800, fontSize: "14px", color: "var(--danger)", whiteSpace: "nowrap" }}>
                         −{currencyFormatter.format(tx.amount)}
                       </div>
                     </div>
@@ -547,11 +515,11 @@ export default function Bills() {
 }
 
 const cardBase = {
-  border: `1px solid ${T.border}`,
+  border: "1px solid var(--border-color)",
   borderRadius: "14px",
   padding: "18px",
-  background: T.surface,
-  boxShadow: "0 1px 6px rgba(0,0,0,0.04)",
+  background: "var(--surface)",
+  boxShadow: "var(--shadow-sm)",
   cursor: "pointer",
 };
 
@@ -560,16 +528,16 @@ const metaChip = {
   alignItems: "center",
   fontSize: "11px",
   fontWeight: 600,
-  color: T.muted,
-  background: T.bg,
-  border: `1px solid ${T.border}`,
+  color: "var(--text-muted)",
+  background: "var(--surface-2)",
+  border: "1px solid var(--border-color)",
   padding: "3px 9px",
   borderRadius: "999px",
 };
 
 const iconBtn = {
-  background: T.bg,
-  border: `1px solid ${T.border}`,
+  background: "var(--surface-2)",
+  border: "1px solid var(--border-color)",
   borderRadius: "8px",
   width: "32px",
   height: "32px",
@@ -577,7 +545,7 @@ const iconBtn = {
   alignItems: "center",
   justifyContent: "center",
   cursor: "pointer",
-  color: "#374151",
+  color: "var(--text-muted)",
 };
 
-const editLabel = { display: "block", fontSize: "12px", fontWeight: 600, color: "#6b7280", marginBottom: "4px" };
+const editLabel = { display: "block", fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px" };

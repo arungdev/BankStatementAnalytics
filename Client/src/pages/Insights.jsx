@@ -10,37 +10,31 @@ import {
 import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/EmptyState';
+import EmptyState from '../components/ui/EmptyState';
 import Avatar from '../components/ui/Avatar';
-import { currencyFormatter as fmt, currencyFormatterFull as fmtFull } from '../utils/format';
+import Drawer from '../components/ui/Drawer';
+import useTheme from '../context/useTheme';
+import { getToken } from '../theme/chartTheme';
+import { currencyFormatter as fmt, currencyFormatterFull as fmtFull, isAmountMasked, MASKED_AMOUNT } from '../utils/format';
 
-/* ─── Design tokens ─────────────────────────────────────────────────────── */
+/* ─── Design tokens — mapped to the global CSS variable system. DOM inline
+ * styles consume var() directly; recharts SVG colors can't, so they're
+ * resolved via getToken() into `chartC`/`palette` inside the component. */
 const T = {
-  indigo:     '#4f46e5',
-  indigoDark: '#4338ca',
-  indigoDim:  '#eef2ff',
-  indigoMid:  '#818cf8',
-  indigoSoft: '#a5b4fc',
-  surface:    '#ffffff',
-  bg:         '#f3f4f6',
-  cardDark:   '#1e1b4b',
-  sidebarBg:  '#0f1117',
-  border:     '#e5e7eb',
-  borderSub:  '#f0f1f3',
-  text:       '#111827',
-  muted:      '#6b7280',
-  faint:      '#9ca3af',
-  white:      '#ffffff',
-  red:        '#ef4444',
-  green:      '#10b981',
+  indigo:     'var(--primary)',
+  indigoDim:  'var(--primary-light)',
+  indigoSoft: 'var(--stat-tile-label)',
+  surface:    'var(--surface)',
+  surface2:   'var(--surface-2)',
+  bg:         'var(--bg)',
+  border:     'var(--border-color)',
+  borderSub:  'var(--border-subtle)',
+  text:       'var(--text-main)',
+  muted:      'var(--text-muted)',
+  faint:      'var(--text-faint)',
+  red:        'var(--danger)',
   greenSoft:  '#6ee7b7',
 };
-
-const COLORS = [
-  '#4f46e5','#7c3aed','#2563eb','#0891b2',
-  '#059669','#d97706','#dc2626','#db2777',
-  '#65a30d','#9333ea',
-];
 
 const GROUP_TABS = [
   { key: 'byCategory', label: 'Categories', singular: 'Category' },
@@ -48,7 +42,9 @@ const GROUP_TABS = [
   { key: 'byTag',      label: 'Tags',       singular: 'Tag'       },
 ];
 
-const fmtK = v => v >= 100000
+const fmtK = v => isAmountMasked()
+  ? MASKED_AMOUNT
+  : v >= 100000
   ? `₹${(v / 100000).toFixed(1)}L`
   : v >= 1000
   ? `₹${(v / 1000).toFixed(0)}k`
@@ -63,173 +59,21 @@ const fmtDate = (d) => {
 
 const toISODate = (d) => d ? d.toISOString().split('T')[0] : null;
 
-/* ─── Custom Tooltip ────────────────────────────────────────────────────── */
+/* ─── Custom bar-chart tooltip — deliberately a dark tile in both themes ─── */
 const ChartTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div style={{
-      background: T.cardDark, borderRadius: '10px',
-      padding: '10px 14px', boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+      background: '#1e1b4b', borderRadius: '10px',
+      padding: '10px 14px', boxShadow: 'var(--shadow-lg)',
     }}>
-      <p style={{ margin: 0, fontWeight: 700, color: T.white, fontSize: '13px' }}>{d.name}</p>
-      <p style={{ margin: '4px 0 0', color: T.indigoMid, fontWeight: 700, fontSize: '14px' }}>{fmt.format(d.total)}</p>
+      <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '13px' }}>{d.name}</p>
+      <p style={{ margin: '4px 0 0', color: '#818cf8', fontWeight: 700, fontSize: '14px' }}>{fmt.format(d.total)}</p>
       {d.count != null && (
-        <p style={{ margin: '2px 0 0', color: T.indigoSoft, fontSize: '11px' }}>{d.count} transactions</p>
+        <p style={{ margin: '2px 0 0', color: '#a5b4fc', fontSize: '11px' }}>{d.count} transactions</p>
       )}
-      <p style={{ margin: '6px 0 0', color: T.indigoSoft, fontSize: '10px', opacity: 0.8 }}>Click to view transactions</p>
-    </div>
-  );
-};
-
-/* ─── Transaction Tray ──────────────────────────────────────────────────── */
-const TransactionTray = ({ open, onClose, groupSingular, item, transactions, loading, error, accounts }) => {
-  const txArray = Array.isArray(transactions) ? transactions : [];
-  const accountMap = (accounts || []).reduce((m, a) => { m[a.id] = a.bankName; return m; }, {});
-  const total = item?.total ?? txArray.reduce((s, t) => s + t.amount, 0);
-
-  return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      right: 0,
-      bottom: 0,
-      width: open ? '380px' : '0px',
-      background: T.surface,
-      borderLeft: open ? `1px solid ${T.border}` : 'none',
-      boxShadow: open ? '-8px 0 40px rgba(0,0,0,0.08)' : 'none',
-      transition: 'width 0.28s cubic-bezier(0.4,0,0.2,1)',
-      overflow: 'hidden',
-      zIndex: 500,
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
-      {open && (
-        <>
-          <div style={{ padding: '20px 20px 14px', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                <Avatar name={item?.name || '?'} size={44} />
-                <div style={{ minWidth: 0 }}>
-                  <p style={{
-                    margin: 0, fontSize: '11px', fontWeight: 700,
-                    color: T.faint, textTransform: 'uppercase', letterSpacing: '0.08em',
-                  }}>
-                    {groupSingular}
-                  </p>
-                  <h2 style={{
-                    margin: '4px 0 0', fontSize: '18px', fontWeight: 800, color: T.text,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>
-                    {item?.name}
-                  </h2>
-                </div>
-              </div>
-              <button
-                onClick={onClose}
-                style={{
-                  border: 'none', background: T.bg, borderRadius: '8px',
-                  width: '32px', height: '32px', cursor: 'pointer',
-                  fontSize: '16px', color: T.muted, flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >✕</button>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {[
-                { label: 'Total',        value: fmt.format(total) },
-                { label: 'Transactions', value: (item?.count ?? txArray.length).toLocaleString('en-IN') },
-              ].map(stat => (
-                <div key={stat.label} style={{
-                  flex: 1, background: T.bg, borderRadius: '8px',
-                  padding: '10px 12px', border: `1px solid ${T.border}`,
-                }}>
-                  <p style={{ margin: 0, fontSize: '10px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    {stat.label}
-                  </p>
-                  <p style={{ margin: '3px 0 0', fontSize: '15px', fontWeight: 800, color: T.text }}>
-                    {stat.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {loading ? (
-              <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-                <div style={{
-                  width: '28px', height: '28px', borderRadius: '50%',
-                  border: `3px solid ${T.indigoDim}`, borderTopColor: T.indigo,
-                  animation: 'spin 0.7s linear infinite', margin: '0 auto 12px',
-                }} />
-                <p style={{ margin: 0, fontSize: '13px', color: T.muted }}>Loading transactions…</p>
-              </div>
-            ) : error ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-                <p style={{ margin: 0, fontSize: '13px', color: T.red }}>{error}</p>
-              </div>
-            ) : txArray.length === 0 ? (
-              <EmptyState icon="📭" title="No transactions" subtitle="Nothing found for this period." compact />
-            ) : (
-              txArray.map((tx, i) => (
-                <div
-                  key={tx.id ?? i}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '12px',
-                    padding: '13px 20px',
-                    borderBottom: `1px solid ${T.borderSub}`,
-                    transition: 'background 0.12s',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = T.bg}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  <Avatar name={tx.description || item?.name || '?'} size={36} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{
-                      margin: 0, fontSize: '13px', fontWeight: 600, color: T.text,
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}>
-                      {tx.description ?? '—'}
-                    </p>
-                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: T.muted }}>
-                      {fmtDate(tx.date)}
-                      {accountMap[tx.accountId] ? ` · ${accountMap[tx.accountId]}` : ''}
-                    </p>
-                  </div>
-                  <p style={{
-                    margin: 0, fontSize: '13px', fontWeight: 700,
-                    color: T.red, flexShrink: 0,
-                  }}>
-                    −{fmtFull.format(tx.amount)}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div style={{
-            padding: '12px 20px', borderTop: `1px solid ${T.border}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            flexShrink: 0,
-          }}>
-            <p style={{ margin: 0, fontSize: '12px', color: T.faint }}>
-              {txArray.length} transaction{txArray.length !== 1 ? 's' : ''}
-            </p>
-            <button
-              onClick={onClose}
-              style={{
-                border: `1px solid ${T.border}`, background: T.bg,
-                borderRadius: '7px', padding: '5px 12px',
-                fontSize: '12px', fontWeight: 600, color: T.muted,
-                cursor: 'pointer',
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </>
-      )}
+      <p style={{ margin: '6px 0 0', color: '#a5b4fc', fontSize: '10px', opacity: 0.8 }}>Click to view transactions</p>
     </div>
   );
 };
@@ -242,7 +86,7 @@ export function InsightsFilters({
   return (
     <>
       {/* Period */}
-      <FilterGroup label="Period" style={{ position: 'relative', zIndex: 500 }}>
+      <FilterGroup style={{ position: 'relative', zIndex: 'var(--z-dropdown)' }}>
         <DateRangePicker
           value={range}
           onChange={setRange}
@@ -272,14 +116,34 @@ export default function Insights() {
     insightGroupBy: groupBy = 'byCategory',
   } = useOutletContext() ?? {};
   const { selectedAccountId } = useAccount();
+  const { theme } = useTheme();
   const [insightsData, setInsightsData]      = useState(null);
   const [loading, setLoading]                = useState(false);
 
   const [trayOpen, setTrayOpen]         = useState(false);
+  const [drawerWidth, setDrawerWidth]   = useState(400);
   const [selectedItem, setSelectedItem] = useState(null);
   const [txList, setTxList]             = useState([]);
   const [txLoading, setTxLoading]       = useState(false);
   const [txError, setTxError]           = useState(null);
+
+  // Resolved chart colors (recharts SVG can't read CSS var()). Recomputed on
+  // theme flip; `palette` is the categorical series color set.
+  const palette = useMemo(
+    () => [1, 2, 3, 4, 5, 6, 7, 8].map((i) => getToken(`chart-${i}`)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [theme]
+  );
+  const chartC = useMemo(() => ({
+    grid: getToken('chart-grid'),
+    tick: getToken('chart-tick'),
+    muted: getToken('text-muted'),
+    cursor: getToken('primary-light'),
+    tooltipBg: getToken('surface'),
+    tooltipText: getToken('text-main'),
+    tooltipBorder: getToken('border-color'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [theme]);
 
   // "All accounts" → every owned account id; otherwise the single selected id.
   const accountIdsParam = useMemo(() => {
@@ -351,24 +215,26 @@ export default function Insights() {
     setTxError(null);
   };
 
+  const accountMap = (accounts || []).reduce((m, a) => { m[a.id] = a.bankName; return m; }, {});
+  const trayTotal = selectedItem?.total ?? txList.reduce((sum, t) => sum + t.amount, 0);
+
   const s = {
     page: {
       padding: '28px 32px',
       background: T.bg,
       minHeight: '100vh',
-      fontFamily: "'Inter', 'system-ui', sans-serif",
       transition: 'margin-right 0.28s cubic-bezier(0.4,0,0.2,1)',
       overflow: 'visible',
     },
     statsRow: { display: 'flex', gap: '16px', marginBottom: '20px' },
     chartsGrid: {
       display: 'grid', gridTemplateColumns: '3fr 2fr',
-      gap: '20px', marginBottom: '20px', alignItems: 'start',
+      gap: '20px', marginBottom: '20px', alignItems: 'stretch',
     },
     card: {
       background: T.surface, borderRadius: '14px',
       padding: '22px 24px', border: `1px solid ${T.border}`,
-      boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+      boxShadow: 'var(--shadow-sm)',
     },
     cardTitle: { margin: '0 0 18px', fontSize: '13px', fontWeight: 700, color: T.text, letterSpacing: '-0.1px' },
     emptyState: {
@@ -381,7 +247,7 @@ export default function Insights() {
       padding: '10px 14px', textAlign: right ? 'right' : 'left',
       fontWeight: 700, color: T.muted, fontSize: '11px',
       textTransform: 'uppercase', letterSpacing: '0.06em',
-      background: T.bg, boxShadow: `inset 0 -2px 0 ${T.border}`,
+      background: T.surface2, boxShadow: `inset 0 -2px 0 ${T.border}`,
       position: 'sticky', top: 0, zIndex: 2,
     }),
     td: (right) => ({
@@ -397,7 +263,7 @@ export default function Insights() {
   const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
     <div style={{
       width: w, height: h, borderRadius: r,
-      background: 'linear-gradient(90deg,#f0f1f3 25%,#e5e7eb 50%,#f0f1f3 75%)',
+      background: 'linear-gradient(90deg, var(--gray-100) 25%, var(--gray-200) 50%, var(--gray-100) 75%)',
       backgroundSize: '200% 100%',
       animation: 'shimmer 1.4s infinite',
     }} />
@@ -405,11 +271,11 @@ export default function Insights() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', overflow: 'visible' }}>
-      <div style={{ ...s.page, flex: 1, marginRight: trayOpen ? '380px' : '0' }}>
+      <div style={{ ...s.page, flex: 1, marginRight: trayOpen ? drawerWidth : 0 }}>
         <style>{`
           @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
           @keyframes spin    { to { transform: rotate(360deg); } }
-          .ins-row:hover { background: #fafbff !important; cursor: pointer; }
+          .ins-row:hover { background: var(--surface-2) !important; cursor: pointer; }
         `}</style>
 
         {/* ── Stat cards ── */}
@@ -472,21 +338,23 @@ export default function Insights() {
                     ({chartData.length} {groupLabel.toLowerCase()})
                   </span>
                 </p>
-                <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 38)}>
-                  <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 32, top: 4, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={T.borderSub} />
-                    <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 11, fill: T.faint }} axisLine={false} tickLine={false} />
-                    <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11, fill: T.muted }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTooltip />} cursor={{ fill: T.indigoDim }} />
-                    <Bar
-                      dataKey="total" radius={[0, 6, 6, 0]} maxBarSize={28}
-                      onClick={(data) => handleSliceClick(data)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ maxHeight: 420, overflowY: 'auto', overflowX: 'hidden' }}>
+                  <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 38)}>
+                    <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 32, top: 4, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={chartC.grid} />
+                      <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 11, fill: chartC.tick }} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11, fill: chartC.muted }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: chartC.cursor }} />
+                      <Bar
+                        dataKey="total" radius={[0, 6, 6, 0]} maxBarSize={28}
+                        onClick={(data) => handleSliceClick(data)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {chartData.map((_, i) => <Cell key={i} fill={palette[i % palette.length]} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
 
               {/* Donut chart */}
@@ -502,11 +370,13 @@ export default function Insights() {
                         onClick={(data) => handleSliceClick(data)}
                         style={{ cursor: 'pointer' }}
                       >
-                        {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} stroke="none" />)}
+                        {chartData.map((_, i) => <Cell key={i} fill={palette[i % palette.length]} stroke="none" />)}
                       </Pie>
                       <Tooltip
                         formatter={v => fmt.format(v)}
-                        contentStyle={{ borderRadius: '10px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}
+                        contentStyle={{ borderRadius: '10px', border: `1px solid ${chartC.tooltipBorder}`, background: chartC.tooltipBg, color: chartC.tooltipText, boxShadow: 'var(--shadow-lg)' }}
+                        labelStyle={{ color: chartC.tooltipText }}
+                        itemStyle={{ color: chartC.tooltipText }}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -516,7 +386,7 @@ export default function Insights() {
                     textAlign: 'center', pointerEvents: 'none',
                   }}>
                     <div style={{ fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total</div>
-                    <div style={{ fontSize: '17px', fontWeight: 800, color: T.text, letterSpacing: '-0.5px' }}>{fmtK(grandTotal)}</div>
+                    <div className="tnum" style={{ fontSize: '17px', fontWeight: 800, color: T.text, letterSpacing: '-0.5px' }}>{fmtK(grandTotal)}</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
@@ -525,7 +395,7 @@ export default function Insights() {
                       key={i} onClick={() => handleSliceClick(item)}
                       style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: T.muted, cursor: 'pointer' }}
                     >
-                      <span style={s.dot(COLORS[i % COLORS.length])} />
+                      <span style={s.dot(palette[i % palette.length])} />
                       {item.name}
                     </div>
                   ))}
@@ -542,7 +412,7 @@ export default function Insights() {
               <div style={s.tableScroll}>
               <table style={s.table}>
                 <thead>
-                  <tr style={{ background: T.bg }}>
+                  <tr>
                     <th style={s.th(false)}>#</th>
                     <th style={s.th(false)}>Name</th>
                     <th style={s.th(true)}>Transactions</th>
@@ -560,33 +430,33 @@ export default function Insights() {
                         key={i}
                         className="ins-row"
                         onClick={() => handleSliceClick(item)}
-                        style={{ background: trayOpen && selectedItem?.name === item.name ? T.indigoDim : '' }}
+                        style={{ background: trayOpen && selectedItem?.name === item.name ? 'var(--primary-light)' : '' }}
                       >
                         <td style={s.td(false)}>
                           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={s.dot(COLORS[i % COLORS.length])} />
+                            <span style={s.dot(palette[i % palette.length])} />
                             <span style={{ color: T.faint, fontWeight: 600, fontSize: '12px' }}>{i + 1}</span>
                           </span>
                         </td>
                         <td style={s.td(false)}>
                           <span style={{ fontWeight: 700, color: T.text }}>{item.name}</span>
                         </td>
-                        <td style={{ ...s.td(true), color: T.muted }}>
+                        <td className="tnum" style={{ ...s.td(true), color: T.muted }}>
                           {item.count != null ? item.count.toLocaleString('en-IN') : '—'}
                         </td>
-                        <td style={{ ...s.td(true), fontWeight: 700, color: T.red }}>
+                        <td className="tnum" style={{ ...s.td(true), fontWeight: 700, color: T.red }}>
                           {fmt.format(item.total)}
                         </td>
                         <td style={{ ...s.td(false), width: '120px' }}>
                           <div style={{ height: '6px', background: T.borderSub, borderRadius: '4px', overflow: 'hidden', minWidth: '80px' }}>
                             <div style={{
                               width: barW, height: '100%',
-                              background: COLORS[i % COLORS.length],
+                              background: palette[i % palette.length],
                               borderRadius: '4px', transition: 'width 0.5s ease',
                             }} />
                           </div>
                         </td>
-                        <td style={{ ...s.td(true), fontWeight: 700, color: T.text, fontSize: '12px', minWidth: '44px' }}>
+                        <td className="tnum" style={{ ...s.td(true), fontWeight: 700, color: T.text, fontSize: '12px', minWidth: '44px' }}>
                           {share.toFixed(1)}%
                         </td>
                       </tr>
@@ -595,13 +465,13 @@ export default function Insights() {
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colSpan={3} style={{ padding: '12px 14px', fontWeight: 700, color: T.muted, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.06em', background: T.bg, boxShadow: `inset 0 2px 0 ${T.border}`, position: 'sticky', bottom: 0, zIndex: 2 }}>
+                    <td colSpan={3} style={{ padding: '12px 14px', fontWeight: 700, color: T.muted, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.06em', background: T.surface2, boxShadow: `inset 0 2px 0 ${T.border}`, position: 'sticky', bottom: 0, zIndex: 2 }}>
                       Total — {chartData.length} {groupLabel.toLowerCase()}
                     </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 800, color: T.text, fontSize: '14px', background: T.bg, boxShadow: `inset 0 2px 0 ${T.border}`, position: 'sticky', bottom: 0, zIndex: 2 }}>
+                    <td className="tnum" style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 800, color: T.text, fontSize: '14px', background: T.surface2, boxShadow: `inset 0 2px 0 ${T.border}`, position: 'sticky', bottom: 0, zIndex: 2 }}>
                       {fmt.format(grandTotal)}
                     </td>
-                    <td colSpan={2} style={{ background: T.bg, boxShadow: `inset 0 2px 0 ${T.border}`, position: 'sticky', bottom: 0, zIndex: 2 }} />
+                    <td colSpan={2} style={{ background: T.surface2, boxShadow: `inset 0 2px 0 ${T.border}`, position: 'sticky', bottom: 0, zIndex: 2 }} />
                   </tr>
                 </tfoot>
               </table>
@@ -611,17 +481,84 @@ export default function Insights() {
         )}
       </div>
 
-      {/* ── RHS Tray ── */}
-      <TransactionTray
+      {/* ── RHS transaction drawer (docked; page stays interactive) ── */}
+      <Drawer
         open={trayOpen}
         onClose={closeTray}
-        groupSingular={groupSingular}
-        item={selectedItem}
-        transactions={txList}
-        loading={txLoading}
-        error={txError}
-        accounts={accounts}
-      />
+        title={groupSingular ? `${groupSingular} transactions` : 'Transactions'}
+        width={drawerWidth}
+        onWidthChange={setDrawerWidth}
+        modal={false}
+      >
+        {selectedItem && (
+          <>
+            {/* Header: identity + totals */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', minWidth: 0 }}>
+              <Avatar name={selectedItem.name || '?'} size={44} />
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  {groupSingular}
+                </p>
+                <h2 style={{ margin: '4px 0 0', fontSize: '18px', fontWeight: 800, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {selectedItem.name}
+                </h2>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              {[
+                { label: 'Total',        value: fmt.format(trayTotal) },
+                { label: 'Transactions', value: (selectedItem.count ?? txList.length).toLocaleString('en-IN') },
+              ].map(stat => (
+                <div key={stat.label} style={{ flex: 1, background: T.surface2, borderRadius: '8px', padding: '10px 12px', border: `1px solid ${T.border}` }}>
+                  <p style={{ margin: 0, fontSize: '10px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{stat.label}</p>
+                  <p className="tnum" style={{ margin: '3px 0 0', fontSize: '15px', fontWeight: 800, color: T.text }}>{stat.value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Transaction list */}
+            {txLoading ? (
+              <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: `3px solid ${T.indigoDim}`, borderTopColor: 'var(--primary)', animation: 'spin 0.7s linear infinite', margin: '0 auto 12px' }} />
+                <p style={{ margin: 0, fontSize: '13px', color: T.muted }}>Loading transactions…</p>
+              </div>
+            ) : txError ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: T.red }}>{txError}</p>
+              </div>
+            ) : txList.length === 0 ? (
+              <EmptyState icon="📭" title="No transactions" subtitle="Nothing found for this period." compact />
+            ) : (
+              <div style={{ margin: '0 -8px' }}>
+                {txList.map((tx, i) => (
+                  <div
+                    key={tx.id ?? i}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '12px',
+                      padding: '13px 8px',
+                      borderBottom: i < txList.length - 1 ? `1px solid ${T.borderSub}` : 'none',
+                    }}
+                  >
+                    <Avatar name={tx.description || selectedItem.name || '?'} size={36} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {tx.description ?? '—'}
+                      </p>
+                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: T.muted }}>
+                        {fmtDate(tx.date)}
+                        {accountMap[tx.accountId] ? ` · ${accountMap[tx.accountId]}` : ''}
+                      </p>
+                    </div>
+                    <p className="tnum" style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: T.red, flexShrink: 0 }}>
+                      −{fmtFull.format(tx.amount)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </Drawer>
     </div>
   );
 }

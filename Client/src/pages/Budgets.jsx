@@ -1,35 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiX, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/EmptyState';
+import EmptyState from '../components/ui/EmptyState';
+import Modal from '../components/ui/Modal';
 import { currencyFormatter as fmt } from '../utils/format';
-
-/* ─── Design tokens — aligned with Insights/Trends/Overview ─────────────── */
-const T = {
-  indigo:     '#4f46e5',
-  surface:    '#ffffff',
-  bg:         '#f3f4f6',
-  border:     '#e5e7eb',
-  borderSub:  '#f0f1f3',
-  text:       '#111827',
-  muted:      '#6b7280',
-  faint:      '#9ca3af',
-  red:        '#ef4444',
-  amber:      '#f59e0b',
-  green:      '#10b981',
-};
+import { usePrivacy } from '../context/usePrivacy';
 
 // Meter colour by burn-down: comfortable → warning → over.
 const meterColor = (percent, over) =>
-  over || percent >= 100 ? T.red : percent >= 80 ? T.amber : T.green;
+  over || percent >= 100 ? 'var(--danger)' : percent >= 80 ? 'var(--warning)' : 'var(--success)';
 
 const s = {
   page: {
     padding: '28px 32px',
-    background: T.bg,
+    background: 'var(--bg)',
     minHeight: '100vh',
-    fontFamily: "'Inter', 'system-ui', sans-serif",
   },
   statsRow: { display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' },
   headRow: {
@@ -42,16 +28,16 @@ const s = {
     gap: '16px',
   },
   card: {
-    background: T.surface, borderRadius: '14px',
-    padding: '20px 22px', border: `1px solid ${T.border}`,
-    boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+    background: 'var(--surface)', borderRadius: '14px',
+    padding: '20px 22px', border: '1px solid var(--border-color)',
+    boxShadow: 'var(--shadow-sm)',
   },
   iconBtn: {
-    background: T.bg, border: `1px solid ${T.border}`, borderRadius: '6px',
+    background: 'var(--gray-100)', border: '1px solid var(--border-color)', borderRadius: '6px',
     width: '30px', height: '30px', display: 'flex', alignItems: 'center',
-    justifyContent: 'center', cursor: 'pointer', color: T.muted,
+    justifyContent: 'center', cursor: 'pointer', color: 'var(--text-muted)',
   },
-  label: { display: 'block', fontSize: '12px', fontWeight: 600, color: T.muted, marginBottom: '4px' },
+  label: { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' },
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -91,24 +77,25 @@ function MonthPicker({ monthsAgo, setMonthsAgo, maxAgo }) {
         onClick={toggle}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: '8px',
-          background: T.surface, border: `1px solid ${T.border}`, borderRadius: '8px',
-          padding: '7px 12px', fontSize: '13px', fontWeight: 700, color: T.text,
+          background: 'var(--surface)', border: '1px solid var(--border-color)', borderRadius: '8px',
+          padding: '7px 12px', fontSize: '13px', fontWeight: 700, color: 'var(--text-main)',
           cursor: 'pointer', minWidth: '150px', justifyContent: 'space-between',
+          fontFamily: 'inherit',
         }}
       >
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-          <FiCalendar size={14} style={{ color: T.muted }} /> {selLabel}
+          <FiCalendar size={14} style={{ color: 'var(--text-muted)' }} /> {selLabel}
         </span>
-        <FiChevronRight size={14} style={{ color: T.faint, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+        <FiChevronRight size={14} style={{ color: 'var(--text-faint)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
       </button>
 
       {open && (
         <>
-          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 'calc(var(--z-dropdown) - 1)' }} />
           <div style={{
-            position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 401,
-            background: T.surface, border: `1px solid ${T.border}`, borderRadius: '12px',
-            boxShadow: '0 12px 32px rgba(0,0,0,0.12)', padding: '14px', width: '260px',
+            position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 'var(--z-dropdown)',
+            background: 'var(--surface)', border: '1px solid var(--border-color)', borderRadius: '12px',
+            boxShadow: 'var(--shadow-lg)', padding: '14px', width: '260px',
           }}>
             {/* Year nav */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -119,7 +106,7 @@ function MonthPicker({ monthsAgo, setMonthsAgo, maxAgo }) {
               >
                 <FiChevronLeft size={16} />
               </button>
-              <span style={{ fontSize: '14px', fontWeight: 800, color: T.text }}>{viewYear}</span>
+              <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-main)' }}>{viewYear}</span>
               <button
                 onClick={() => canNextYear && setViewYear((y) => y + 1)}
                 disabled={!canNextYear}
@@ -144,9 +131,10 @@ function MonthPicker({ monthsAgo, setMonthsAgo, maxAgo }) {
                     style={{
                       padding: '8px 0', borderRadius: '8px', fontSize: '12px',
                       fontWeight: isSel ? 800 : 600,
-                      border: isCur && !isSel ? `1px solid ${T.indigo}` : '1px solid transparent',
-                      background: isSel ? T.indigo : enabled ? T.bg : 'transparent',
-                      color: isSel ? '#fff' : enabled ? T.text : T.faint,
+                      fontFamily: 'inherit',
+                      border: isCur && !isSel ? '1px solid var(--primary)' : '1px solid transparent',
+                      background: isSel ? 'var(--primary)' : enabled ? 'var(--gray-100)' : 'transparent',
+                      color: isSel ? '#fff' : enabled ? 'var(--text-main)' : 'var(--text-faint)',
                       cursor: enabled ? 'pointer' : 'default',
                       transition: 'background 0.12s',
                     }}
@@ -164,12 +152,17 @@ function MonthPicker({ monthsAgo, setMonthsAgo, maxAgo }) {
 }
 
 const navBtn = {
-  background: T.bg, border: `1px solid ${T.border}`, borderRadius: '7px',
+  background: 'var(--gray-100)', border: '1px solid var(--border-color)', borderRadius: '7px',
   width: '30px', height: '30px', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', color: T.muted,
+  justifyContent: 'center', color: 'var(--text-muted)',
 };
 
 export default function Budgets() {
+  // Subscribe to the mask flag so toggling "hide amounts" re-renders this page.
+  // Unlike Trends/Insights, this page reads no outlet context, so without this
+  // subscription React Router's cached outlet element bails out of re-rendering
+  // and the fmt.format() amounts stay stale until the next unrelated render.
+  usePrivacy();
   const [month, setMonth] = useState('');
   const [monthsAgo, setMonthsAgo] = useState(0); // 0 = this month, 1 = last month, …
   const [monthOptions, setMonthOptions] = useState([{ monthsAgo: 0, label: 'This month' }]);
@@ -246,7 +239,7 @@ export default function Budgets() {
 
   if (loading) {
     return (
-      <div style={{ ...s.page, textAlign: 'center', paddingTop: '80px', color: T.muted }}>
+      <div style={{ ...s.page, textAlign: 'center', paddingTop: '80px', color: 'var(--text-muted)' }}>
         Loading budgets…
       </div>
     );
@@ -256,8 +249,8 @@ export default function Budgets() {
     <div style={s.page}>
       {/* ── Summary ── */}
       <div style={s.statsRow}>
-        <StatCard label={`Budgeted · ${month}`} value={fmt.format(totalBudget)} />
-        <StatCard label={monthsAgo === 0 ? 'Spent so far' : 'Spent'} value={fmt.format(totalSpent)} valueColor="#f87171" />
+        <StatCard label="Monthly budget" value={fmt.format(totalBudget)} sub="Repeats every month" />
+        <StatCard label={monthsAgo === 0 ? `Spent so far · ${month}` : `Spent · ${month}`} value={fmt.format(totalSpent)} valueColor="#f87171" />
         <StatCard
           label={totalRemaining >= 0 ? 'Remaining' : 'Over budget'}
           value={fmt.format(Math.abs(totalRemaining))}
@@ -268,10 +261,12 @@ export default function Budgets() {
       </div>
 
       <div style={s.headRow}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: T.text }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>
             Category budgets
           </h2>
+          {/* The picker only changes which month's spend is shown — the limits themselves recur. */}
+          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>· spending in</span>
           {/* Calendar month picker — bounded to months with transaction history */}
           <MonthPicker
             monthsAgo={monthsAgo}
@@ -290,13 +285,19 @@ export default function Budgets() {
         </button>
       </div>
 
+      {/* Recurring-budget explainer — set once, applies to every month. */}
+      <p style={{ margin: '-4px 0 16px', fontSize: '12.5px', color: 'var(--text-muted)', maxWidth: '660px' }}>
+        Each budget is a recurring monthly limit — you set it once and it applies to every month
+        automatically. Switch the month above to see how much you spent against it in that month.
+      </p>
+
       {/* ── Budget cards ── */}
       {budgets.length === 0 ? (
         <div style={s.card}>
           <EmptyState
             icon="🎯"
             title="No budgets yet"
-            subtitle="Set a monthly limit on a spending category to track how much you have left this month."
+            subtitle="Set a monthly limit on a category once — it applies to every month automatically, so you never have to recreate it."
           />
         </div>
       ) : (
@@ -309,12 +310,12 @@ export default function Budgets() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{
-                      fontWeight: 700, fontSize: '15px', color: T.text,
+                      fontWeight: 700, fontSize: '15px', color: 'var(--text-main)',
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>
                       {b.category}
                     </div>
-                    <div style={{ fontSize: '12px', color: T.muted, marginTop: '2px' }}>
+                    <div className="tnum" style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                       {fmt.format(b.spent)} of {fmt.format(b.monthlyLimit)}
                     </div>
                   </div>
@@ -322,14 +323,14 @@ export default function Budgets() {
                     <button style={s.iconBtn} title="Edit limit" onClick={() => setEditing({ ...b })}>
                       <FiEdit2 size={14} />
                     </button>
-                    <button style={{ ...s.iconBtn, color: T.red }} title="Remove" onClick={() => remove(b)}>
+                    <button style={{ ...s.iconBtn, color: 'var(--danger)' }} title="Remove" onClick={() => remove(b)}>
                       <FiTrash2 size={14} />
                     </button>
                   </div>
                 </div>
 
                 {/* Burn-down meter */}
-                <div style={{ height: '10px', background: T.borderSub, borderRadius: '5px', overflow: 'hidden', margin: '14px 0 8px' }}>
+                <div style={{ height: '10px', background: 'var(--gray-100)', borderRadius: '5px', overflow: 'hidden', margin: '14px 0 8px' }}>
                   <div style={{
                     width: `${Math.max(pct, 2)}%`, height: '100%',
                     background: color, borderRadius: '5px', transition: 'width 0.5s ease',
@@ -338,7 +339,7 @@ export default function Budgets() {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                   <span style={{ fontWeight: 700, color }}>{b.percent}% used</span>
-                  <span style={{ color: b.overBudget ? T.red : T.muted, fontWeight: 600 }}>
+                  <span className="tnum" style={{ color: b.overBudget ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 600 }}>
                     {b.overBudget
                       ? `${fmt.format(b.spent - b.monthlyLimit)} over`
                       : `${fmt.format(b.remaining)} left`}
@@ -351,60 +352,50 @@ export default function Budgets() {
       )}
 
       {/* ── Add / Edit modal ── */}
-      {(adding || editing) && (
-        <>
-          <div
-            onClick={() => { setAdding(false); setEditing(null); }}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000 }}
-          />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            width: '360px', background: '#fff', padding: '24px', borderRadius: '10px',
-            zIndex: 10001, boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0 }}>{editing ? 'Edit budget' : 'Add budget'}</h3>
-              <button style={s.iconBtn} onClick={() => { setAdding(false); setEditing(null); }}>
-                <FiX size={16} />
-              </button>
-            </div>
+      <Modal
+        open={adding || !!editing}
+        onClose={() => { setAdding(false); setEditing(null); }}
+        title={editing ? 'Edit budget' : 'Add budget'}
+        width={360}
+        footer={
+          <>
+            <button className="btn" onClick={() => { setAdding(false); setEditing(null); }}>Cancel</button>
+            <button className="btn primary" onClick={editing ? saveEdit : saveNew} disabled={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </>
+        }
+      >
+        <label style={s.label}>Category</label>
+        {editing ? (
+          <input className="field-input" style={{ width: '100%', marginBottom: '14px' }} value={editing.category} disabled />
+        ) : (
+          <select
+            className="field-input"
+            style={{ width: '100%', marginBottom: '14px' }}
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+          >
+            {availableCats.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
 
-            <label style={s.label}>Category</label>
-            {editing ? (
-              <input className="field-input" style={{ width: '100%', marginBottom: '14px' }} value={editing.category} disabled />
-            ) : (
-              <select
-                className="field-input"
-                style={{ width: '100%', marginBottom: '14px' }}
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              >
-                {availableCats.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            )}
-
-            <label style={s.label}>Monthly limit (₹)</label>
-            <input
-              className="field-input"
-              type="number"
-              min="1"
-              style={{ width: '100%', marginBottom: '20px' }}
-              value={editing ? editing.monthlyLimit : form.monthlyLimit}
-              onChange={(e) => editing
-                ? setEditing({ ...editing, monthlyLimit: e.target.value })
-                : setForm({ ...form, monthlyLimit: e.target.value })}
-              autoFocus
-            />
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button className="btn" onClick={() => { setAdding(false); setEditing(null); }}>Cancel</button>
-              <button className="btn primary" onClick={editing ? saveEdit : saveNew} disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+        <label style={s.label}>Monthly limit (₹)</label>
+        <input
+          className="field-input"
+          type="number"
+          min="1"
+          style={{ width: '100%' }}
+          value={editing ? editing.monthlyLimit : form.monthlyLimit}
+          onChange={(e) => editing
+            ? setEditing({ ...editing, monthlyLimit: e.target.value })
+            : setForm({ ...form, monthlyLimit: e.target.value })}
+          autoFocus
+        />
+        <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+          This limit repeats every month — set it once and it applies to all months.
+        </p>
+      </Modal>
     </div>
   );
 }

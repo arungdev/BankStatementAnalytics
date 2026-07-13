@@ -4,23 +4,23 @@ import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/EmptyState';
+import EmptyState from '../components/ui/EmptyState';
 import { currencyFormatter as fmt, formatDate } from '../utils/format';
 
-/* ─── Design tokens — aligned with Insights/Trends ──────────────────────── */
+/* ─── Design tokens — mapped to the global CSS variable system ───────────── */
 const T = {
-  indigo:     '#4f46e5',
-  indigoDim:  '#eef2ff',
-  indigoSoft: '#a5b4fc',
-  surface:    '#ffffff',
-  bg:         '#f3f4f6',
-  border:     '#e5e7eb',
-  borderSub:  '#f0f1f3',
-  text:       '#111827',
-  muted:      '#6b7280',
-  faint:      '#9ca3af',
-  red:        '#ef4444',
-  green:      '#10b981',
+  indigo:     'var(--primary)',
+  indigoDim:  'var(--primary-light)',
+  indigoSoft: 'var(--stat-tile-label)',
+  surface:    'var(--surface)',
+  bg:         'var(--bg)',
+  border:     'var(--border-color)',
+  borderSub:  'var(--border-subtle)',
+  text:       'var(--text-main)',
+  muted:      'var(--text-muted)',
+  faint:      'var(--text-faint)',
+  red:        'var(--danger)',
+  green:      'var(--success)',
 };
 
 const s = {
@@ -28,7 +28,6 @@ const s = {
     padding: '28px 32px',
     background: T.bg,
     minHeight: '100vh',
-    fontFamily: "'Inter', 'system-ui', sans-serif",
   },
   statsRow: { display: 'flex', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' },
   grid: {
@@ -41,7 +40,7 @@ const s = {
     borderRadius: '14px',
     padding: '22px 24px',
     border: `1px solid ${T.border}`,
-    boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+    boxShadow: 'var(--shadow-sm)',
   },
   cardTitle: {
     margin: '0 0 18px',
@@ -55,7 +54,7 @@ const s = {
 const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
   <div style={{
     width: w, height: h, borderRadius: r,
-    background: 'linear-gradient(90deg,#f0f1f3 25%,#e5e7eb 50%,#f0f1f3 75%)',
+    background: 'linear-gradient(90deg, var(--gray-100) 25%, var(--gray-200) 50%, var(--gray-100) 75%)',
     backgroundSize: '200% 100%',
     animation: 'shimmer 1.4s infinite',
   }} />
@@ -161,7 +160,7 @@ export default function Overview() {
                         }}>
                           {m.name}
                         </span>
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: T.red, flexShrink: 0 }}>
+                        <span className="tnum" style={{ fontSize: '13px', fontWeight: 700, color: T.red, flexShrink: 0 }}>
                           {fmt.format(m.amount)}
                         </span>
                       </div>
@@ -202,7 +201,7 @@ export default function Overview() {
                     >
                       <div style={{
                         width: '38px', height: '38px', borderRadius: '10px',
-                        background: income ? '#ecfdf5' : T.indigoDim,
+                        background: income ? 'var(--success-light)' : T.indigoDim,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         flexShrink: 0, fontSize: '16px',
                       }}>
@@ -219,7 +218,7 @@ export default function Overview() {
                           {tx.date ? formatDate(tx.date) : '—'}{tx.mode ? ` · ${tx.mode}` : ''}
                         </p>
                       </div>
-                      <p style={{
+                      <p className="tnum" style={{
                         margin: 0, fontSize: '13px', fontWeight: 700, flexShrink: 0,
                         color: income ? T.green : T.red,
                       }}>
