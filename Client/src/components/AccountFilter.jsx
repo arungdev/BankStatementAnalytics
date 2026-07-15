@@ -27,7 +27,7 @@ const last4 = (acc) => acc.accountNumber?.slice(-4) || '****';
  * account at a time (e.g. Transactions).
  *
  * When there are no accounts yet, renders an "Add account" button (via `onAdd`)
- * that takes the user to the accounts page in Settings instead of a dead select.
+ * that opens the account creation modal directly instead of a dead select.
  */
 export default function AccountFilter({ accounts = [], value, onChange, includeAll = true, onAdd }) {
   const [open, setOpen] = useState(false);
