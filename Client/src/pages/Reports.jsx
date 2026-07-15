@@ -4,7 +4,7 @@ import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { FilterGroup, FilterPill, FilterSelectChip } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
@@ -114,6 +114,7 @@ export default function Reports() {
     tick: getToken('chart-tick'),
     income: getToken('chart-income'),
     spend: getToken('chart-spend'),
+    net: getToken('chart-1'),
     cursor: getToken('primary-light'),
     tooltipBg: getToken('surface'),
     tooltipText: getToken('text-main'),
@@ -285,23 +286,28 @@ export default function Reports() {
               <div className="report-card" style={s.card}>
                 <p style={s.cardTitle}>Income vs Spends by Month</p>
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={report.monthlySeries} margin={{ left: 8, right: 8, top: 4, bottom: 0 }} barGap={2}>
+                  <ComposedChart
+                    data={report.monthlySeries.map(m => ({ ...m, net: m.income - m.spend }))}
+                    margin={{ left: 8, right: 8, top: 4, bottom: 0 }}
+                    barGap={2}
+                  >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartC.grid} />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: chartC.tick }} axisLine={false} tickLine={false} />
                     <YAxis tickFormatter={fmtK} tick={{ fontSize: 11, fill: chartC.tick }} axisLine={false} tickLine={false} />
                     <Tooltip
-                      formatter={(v, name) => [fmt.format(v), name === 'income' ? 'Income' : 'Spend']}
+                      formatter={(v, name) => [fmt.format(v), { income: 'Income', spend: 'Spend', net: 'Net' }[name] ?? name]}
                       contentStyle={{ borderRadius: '10px', border: `1px solid ${chartC.tooltipBorder}`, background: chartC.tooltipBg, color: chartC.tooltipText, boxShadow: 'var(--shadow-lg)', fontSize: '12px' }}
                       labelStyle={{ color: chartC.tooltipText }}
                       itemStyle={{ color: chartC.tooltipText }}
                       cursor={{ fill: chartC.cursor }}
                     />
                     <Legend
-                      formatter={v => <span style={{ fontSize: 12, color: T.muted }}>{v === 'income' ? 'Income' : 'Spend'}</span>}
+                      formatter={v => <span style={{ fontSize: 12, color: T.muted }}>{{ income: 'Income', spend: 'Spend', net: 'Net' }[v] ?? v}</span>}
                     />
                     <Bar dataKey="income" fill={chartC.income} radius={[4, 4, 0, 0]} maxBarSize={20} />
                     <Bar dataKey="spend" fill={chartC.spend} radius={[4, 4, 0, 0]} maxBarSize={20} />
-                  </BarChart>
+                    <Line type="monotone" dataKey="net" stroke={chartC.net} strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 2 }} />
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
             )}
