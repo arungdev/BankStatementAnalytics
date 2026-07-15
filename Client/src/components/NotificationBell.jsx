@@ -38,13 +38,19 @@ const saveReadSet = (set) => {
 /**
  * Header bell: opens a right-hand-side panel listing bills due soon. Each reminder can be
  * marked read/unread (persisted in localStorage); the badge counts only unread reminders.
+ * The panel is docked (non-modal) like the other RHS drawers — onDockChange reports the
+ * occupied width so the layout can shift the page content beside it.
  */
-export default function NotificationBell() {
+export default function NotificationBell({ onDockChange }) {
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   const [width, setWidth] = useState(420);
   const [readSet, setReadSet] = useState(loadReadSet);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    onDockChange?.(open ? width : 0);
+  }, [open, width, onDockChange]);
 
   const load = () =>
     api.get("/bills/upcoming")
@@ -135,6 +141,7 @@ export default function NotificationBell() {
         title="Reminders"
         width={width}
         onWidthChange={setWidth}
+        modal={false}
       >
         {items.length === 0 ? (
           <EmptyState message="No bills due soon." />

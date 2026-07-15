@@ -30,17 +30,23 @@ export default function PageHeader({
   // Publish the header's rendered height so overlays (the right-hand detail
   // drawer) can sit below it instead of covering the top-right controls.
   // Height is dynamic — the filters row is only present on some pages.
+  // --app-titlebar-h is row 1 alone, for panels that dock beside the filter row.
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
-    const setVar = () =>
+    const setVar = () => {
       document.documentElement.style.setProperty('--app-header-h', `${el.offsetHeight}px`);
+      const titleRow = el.firstElementChild;
+      if (titleRow)
+        document.documentElement.style.setProperty('--app-titlebar-h', `${titleRow.offsetHeight}px`);
+    };
     setVar();
     const ro = new ResizeObserver(setVar);
     ro.observe(el);
     return () => {
       ro.disconnect();
       document.documentElement.style.removeProperty('--app-header-h');
+      document.documentElement.style.removeProperty('--app-titlebar-h');
     };
   }, [filters]);
 

@@ -101,6 +101,9 @@ function Layout() {
   const [accounts, setAccounts] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [isSettingsOpen, setIsSettings] = useState(false);
+  // Width occupied by the docked Reminders drawer (0 when closed) so the
+  // page content shifts beside it, like the per-page RHS detail drawers.
+  const [remindersDock, setRemindersDock] = useState(0);
 
   const fetchAccounts = () => {
     api.get('/statements/accounts')
@@ -149,8 +152,8 @@ function Layout() {
   const isReports = location.pathname === '/reports';
   const isMerchants = location.pathname === '/merchants';
 
-  // Opens Settings, which defaults to the accounts tab, so the user can add one.
-  const goAddAccount = () => setIsSettings(true);
+  // Opens the Create Account modal directly, skipping the Settings detour.
+  const goAddAccount = () => setShowCreate(true);
 
   const filters = isOverview
     ? <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
@@ -213,7 +216,7 @@ function Layout() {
           filters={filters}
           actions={<>
             <PrivacyToggle masked={maskAmounts} onToggle={() => setMaskAmounts(m => !m)} />
-            <NotificationBell />
+            <NotificationBell onDockChange={setRemindersDock} />
           </>}
           onSettings={() => setIsSettings(true)}
         />
@@ -221,8 +224,9 @@ function Layout() {
         <Modal
           open={showCreate}
           onClose={() => setShowCreate(false)}
-          title="Create Account"
-          width={360}
+          title="Add Account"
+          subtitle="Link a bank account to start importing statements."
+          width={560}
           zIndex="var(--z-modal-top)"
         >
           <CreateAccount
@@ -261,7 +265,7 @@ function Layout() {
           accounts={accounts}
           setAccounts={setAccounts}
         />
-        <section className="content">
+        <section className="content" style={{ marginRight: remindersDock, transition: "margin-right 0.2s ease" }}>
           <Outlet context={{
             accounts,
             insightRange,
