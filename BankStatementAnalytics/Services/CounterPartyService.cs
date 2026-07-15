@@ -69,6 +69,7 @@ namespace BankStatementAnalytics.Services
                 }
 
                 t.CounterParty = merchant;
+                t.EffectiveDate = EffectiveDateCalculator.Compute(t.TransactionDate, merchant.ShiftToNextMonth == true);
             }
 
             tx.Commit();

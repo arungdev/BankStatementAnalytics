@@ -95,10 +95,10 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
 
             if (startDate.HasValue)
-                query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= startDate.Value.Date);
 
             if (endDate.HasValue)
-                query = query.Where(t => t.TransactionDate <= endDate.Value.Date.AddDays(1).AddTicks(-1));
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) <= endDate.Value.Date.AddDays(1).AddTicks(-1));
 
             // Narrow projection: only the five fields the groupings need, not whole entities.
             var rows = await query
@@ -178,10 +178,10 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
 
             if (startDate.HasValue)
-                query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= startDate.Value.Date);
 
             if (endDate.HasValue)
-                query = query.Where(t => t.TransactionDate <= endDate.Value.Date.AddDays(1).AddTicks(-1));
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) <= endDate.Value.Date.AddDays(1).AddTicks(-1));
 
             // Push the merchant/category group filter into SQL; only byTag needs in-memory
             // splitting of the CSV Tags column.

@@ -11,6 +11,11 @@ namespace BankStatementAnalytics.Models
 
         public virtual DateTime? ValueDate { get; set; }
 
+        // Month-attribution date; null means "use TransactionDate". Set to the first of
+        // the next month when the merchant is flagged ShiftToNextMonth and the transaction
+        // falls on/after EffectiveDateCalculator.MonthEndDayThreshold.
+        public virtual DateTime? EffectiveDate { get; set; }
+
         public virtual string BankReference { get; set; } = string.Empty;
 
         public virtual string TransactionType { get; set; } = string.Empty;

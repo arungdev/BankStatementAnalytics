@@ -39,19 +39,21 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var query = session.Query<BankTransaction>().Where(t => ids.Contains(t.AccountId));
 
-            // Compare against the column directly (>= start, < end+1) so the
-            // IX_BankTransactions_Account_Date index can be used; applying .Date to
-            // the column would force a scan on Postgres.
+            // Filter on COALESCE(EffectiveDate, TransactionDate) so merchants flagged
+            // ShiftToNextMonth land in the right bucket. This sacrifices the
+            // IX_BankTransactions_Account_Date index, which is acceptable locally.
             if (start.HasValue)
-                query = query.Where(t => t.TransactionDate >= start.Value);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= start.Value);
             if (end.HasValue)
             {
                 var endExclusive = end.Value.AddDays(1);
-                query = query.Where(t => t.TransactionDate < endExclusive);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) < endExclusive);
             }
 
+            // .Date is applied in memory (in the group keys) rather than in SQL: date-part
+            // extraction on a COALESCE expression is a dialect-translation risk.
             var all = await query
-                .Select(t => new { Date = t.TransactionDate.Date, Spend = t.Debit, Income = t.Credit })
+                .Select(t => new { Date = t.EffectiveDate ?? t.TransactionDate, Spend = t.Debit, Income = t.Credit })
                 .ToListAsync();
 
             if (!all.Any())
@@ -63,7 +65,7 @@ namespace BankStatementAnalytics.Controllers.Api
             {
                 case "day":
                     result = all
-                        .GroupBy(t => t.Date)
+                        .GroupBy(t => t.Date.Date)
                         .OrderBy(g => g.Key)
                         .Select(g => new {
                             date = g.Key.ToString("yyyy-MM-dd"),

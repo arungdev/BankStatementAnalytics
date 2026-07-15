@@ -19,6 +19,7 @@ namespace BankStatementAnalytics.Mapping
             Property(x => x.FriendlyName, m => m.Length(250));
             Property(x => x.Category, m => m.Length(100));
             Property(x => x.SubCategory, m => m.Length(100));
+            Property(x => x.ShiftToNextMonth);
             Property(x => x.BankCode, m => { m.Length(20); m.Index("IX_Merchant_Name_BankCode"); });
             Property(x => x.Notes, m => m.Length(500));
             Property(x => x.CreatedOn);

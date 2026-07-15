@@ -191,8 +191,8 @@ namespace BankStatementAnalytics.Controllers.Api
             var rows = await session.Query<BankTransaction>()
                 .Where(t => ownedIds.Contains(t.AccountId)
                          && t.Debit > 0
-                         && t.TransactionDate >= monthStart
-                         && t.TransactionDate < monthEnd)
+                         && (t.EffectiveDate ?? t.TransactionDate) >= monthStart
+                         && (t.EffectiveDate ?? t.TransactionDate) < monthEnd)
                 .Select(t => new
                 {
                     t.Debit,

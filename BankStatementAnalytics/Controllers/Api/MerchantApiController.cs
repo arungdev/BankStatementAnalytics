@@ -56,6 +56,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     FriendlyName = merchantEntity.FriendlyName,
                     Category = merchantEntity.Category,
                     SubCategory = merchantEntity.SubCategory,
+                    ShiftToNextMonth = merchantEntity.ShiftToNextMonth == true,
                     UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
                     Aliases = merchantEntity.Aliases.ToList(),
                     TransactionCount = txCounts.TryGetValue(merchantEntity.Id, out var c) ? c : 0
@@ -117,6 +118,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 FriendlyName = merchantEntity.FriendlyName,
                 Category = merchantEntity.Category,
                 SubCategory = merchantEntity.SubCategory,
+                ShiftToNextMonth = merchantEntity.ShiftToNextMonth == true,
                 BankCode = merchantEntity.BankCode,
                 Notes = merchantEntity.Notes,
                 UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
@@ -138,11 +140,18 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!Owns(merchantEntity))
                 return NotFound();
 
+            var oldShift = merchantEntity.ShiftToNextMonth == true;
+
             merchantEntity.Category = request.Category;
             merchantEntity.SubCategory = request.SubCategory;
+            merchantEntity.ShiftToNextMonth = request.ShiftToNextMonth;
             merchantEntity.UpdatedOn = DateTime.Now;
 
             await session.UpdateAsync(merchantEntity);
+
+            if (oldShift != request.ShiftToNextMonth)
+                await EffectiveDateCalculator.RecomputeForMerchantAsync(session, id, request.ShiftToNextMonth);
+
             await tx.CommitAsync();
 
             return NoContent();
@@ -225,6 +234,10 @@ namespace BankStatementAnalytics.Controllers.Api
                 await session.DeleteAsync(secondary);
             }
 
+            // Reassigned rows must carry the primary's month-shift semantics: rows joining a
+            // flagged primary get shifted, rows from a flagged secondary get cleared.
+            await EffectiveDateCalculator.RecomputeForMerchantAsync(session, primary.Id, primary.ShiftToNextMonth == true);
+
             await session.UpdateAsync(primary);
             await tx.CommitAsync();
 
@@ -280,6 +293,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     (t.UpiReference != null && t.UpiReference.Contains(searchAlias, StringComparison.OrdinalIgnoreCase)))
                 {
                     t.CounterParty = newCp;
+                    t.EffectiveDate = null; // newCp is freshly created and unflagged
                     await session.UpdateAsync(t);
                     movedTxs.Add(t);
                 }
@@ -320,6 +334,7 @@ namespace BankStatementAnalytics.Controllers.Api
     {
         public string? Category { get; set; }
         public string? SubCategory { get; set; }
+        public bool ShiftToNextMonth { get; set; }
     }
 
     public class MergeMerchantsRequest

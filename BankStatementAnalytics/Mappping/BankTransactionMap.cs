@@ -21,6 +21,9 @@ namespace BankStatementAnalytics.Mappping
 
             Property(x => x.TransactionDate, m => m.Index("IX_BankTransactions_Account_Date"));
             Property(x => x.ValueDate);
+            // No index: analytics filter on COALESCE(EffectiveDate, TransactionDate),
+            // which isn't sargable anyway.
+            Property(x => x.EffectiveDate);
 
 
             Property(x => x.Description, m => m.Length(2000));

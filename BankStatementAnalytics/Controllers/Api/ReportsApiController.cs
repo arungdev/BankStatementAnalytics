@@ -68,7 +68,7 @@ namespace BankStatementAnalytics.Controllers.Api
             {
                 earliest = await session.Query<BankTransaction>()
                     .Where(t => ownedIds.Contains(t.AccountId))
-                    .Select(t => (DateTime?)t.TransactionDate)
+                    .Select(t => (DateTime?)(t.EffectiveDate ?? t.TransactionDate))
                     .MinAsync();
             }
 

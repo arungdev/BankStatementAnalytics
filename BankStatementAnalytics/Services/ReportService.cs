@@ -33,14 +33,18 @@ namespace BankStatementAnalytics.Services
             using var session = DbHelper.GetSession();
 
             // Narrow projection: only the fields the report sections read, not whole entities.
+            // COALESCE(EffectiveDate, TransactionDate) attributes month-end salaries from
+            // merchants flagged ShiftToNextMonth to the following month; the month part is
+            // extracted in memory to keep the SQL translation trivial.
             var txns = await session.Query<BankTransaction>()
                 .Where(t => accountIds.Contains(t.AccountId)
-                         && t.TransactionDate >= start && t.TransactionDate < end)
+                         && (t.EffectiveDate ?? t.TransactionDate) >= start
+                         && (t.EffectiveDate ?? t.TransactionDate) < end)
                 .Select(t => new ReportRow
                 {
                     Credit = t.Credit,
                     Debit = t.Debit,
-                    Month = t.TransactionDate.Month,
+                    Date = t.EffectiveDate ?? t.TransactionDate,
                     CategoryOverride = t.CategoryOverride,
                     MerchantName = t.CounterParty != null ? t.CounterParty.Name : null,
                     MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
@@ -68,8 +72,8 @@ namespace BankStatementAnalytics.Services
                 {
                     Month = m,
                     Label = new DateTime(year, m, 1).ToString("MMM"),
-                    Income = txns.Where(t => t.Month == m).Sum(t => t.Credit),
-                    Spend = txns.Where(t => t.Month == m).Sum(t => t.Debit),
+                    Income = txns.Where(t => t.Date.Month == m).Sum(t => t.Credit),
+                    Spend = txns.Where(t => t.Date.Month == m).Sum(t => t.Debit),
                 }).ToList();
             }
 
@@ -125,7 +129,8 @@ namespace BankStatementAnalytics.Services
             {
                 var debits = await session.Query<BankTransaction>()
                     .Where(t => ownedIds.Contains(t.AccountId) && t.Debit > 0
-                             && t.TransactionDate >= start && t.TransactionDate < end)
+                             && (t.EffectiveDate ?? t.TransactionDate) >= start
+                             && (t.EffectiveDate ?? t.TransactionDate) < end)
                     .Select(t => new
                     {
                         t.Debit,
@@ -161,7 +166,7 @@ namespace BankStatementAnalytics.Services
     {
         public decimal Credit { get; set; }
         public decimal Debit { get; set; }
-        public int Month { get; set; }
+        public DateTime Date { get; set; } // effective (month-attribution) date
         public string? CategoryOverride { get; set; }
         public string? MerchantName { get; set; }
         public string? MerchantCategory { get; set; }

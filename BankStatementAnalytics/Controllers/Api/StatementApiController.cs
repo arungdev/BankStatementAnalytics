@@ -87,18 +87,23 @@ namespace BankStatementAnalytics.Controllers.Api
             var query = session.Query<BankTransaction>()
                 .Where(t => t.AccountId == accountId && t.BankType == bankType);
 
+            // Month attribution uses COALESCE(EffectiveDate, TransactionDate) so merchants
+            // flagged ShiftToNextMonth (e.g. month-end salary) appear under the next month.
             if (year.HasValue && month.HasValue)
             {
-                query = query.Where(t => t.TransactionDate.Year == year.Value && t.TransactionDate.Month == month.Value);
+                var monthStart = new DateTime(year.Value, month.Value, 1);
+                var monthEnd = monthStart.AddMonths(1);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= monthStart
+                                      && (t.EffectiveDate ?? t.TransactionDate) < monthEnd);
             }
             else
             {
                 if (startDate.HasValue)
-                    query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+                    query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= startDate.Value.Date);
                 if (endDate.HasValue)
                 {
                     var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
-                    query = query.Where(t => t.TransactionDate <= endOfDay);
+                    query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) <= endOfDay);
                 }
             }
 
