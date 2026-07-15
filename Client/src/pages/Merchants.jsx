@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from "react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { FiFilter } from "react-icons/fi";
 import api from "../api/client";
+import Button from "../components/ui/Button";
 import { currencyFormatter, isAmountMasked, MASKED_AMOUNT } from "../utils/format";
 import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
@@ -56,10 +58,8 @@ export default function Merchants() {
   // Resolved colors for the recharts sparkline (SVG can't consume var()).
   const chartC = useMemo(() => ({
     bar: getToken('primary'),
-    barDim: getToken('stat-tile-label'),
     grid: getToken('chart-grid'),
     tick: getToken('chart-tick'),
-    cursor: getToken('primary-light'),
     tooltipBg: getToken('surface'),
     tooltipText: getToken('text-main'),
     tooltipBorder: getToken('border-color'),
@@ -70,13 +70,15 @@ export default function Merchants() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  // Quick filter: show only merchants with no category yet
+  const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
 
   // Sidebar state
   const [selectedMerchantId, setSelectedMerchantId] = useState(null);
   const [merchantDetails, setMerchantDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ category: '', subCategory: '' });
+  const [editForm, setEditForm] = useState({ category: '', subCategory: '', shiftToNextMonth: false });
   const [sidebarWidth, setSidebarWidth] = useState(460);
   const [categoriesList, setCategoriesList] = useState([]);
   const [txFilterName, setTxFilterName] = useState('ALL');
@@ -179,7 +181,8 @@ export default function Merchants() {
   const handleEditClick = () => {
     setEditForm({
       category: merchantDetails.category || '',
-      subCategory: merchantDetails.subCategory || ''
+      subCategory: merchantDetails.subCategory || '',
+      shiftToNextMonth: merchantDetails.shiftToNextMonth || false
     });
     setIsEditing(true);
   };
@@ -229,9 +232,7 @@ export default function Merchants() {
           total: v,
         };
       });
-    const maxMonth = monthly.reduce((mx, x) => Math.max(mx, x.total), 0);
-
-    return { totalSpent, count, avg, first, last, monthly, maxMonth };
+    return { totalSpent, count, avg, first, last, monthly };
   }, [merchantDetails]);
 
   if (loading) {
@@ -245,6 +246,7 @@ export default function Merchants() {
 
   const term = searchQuery.toLowerCase();
   const filteredData = data.filter(merchant => {
+    if (uncategorizedOnly && merchant.category) return false;
     return merchant.friendlyName?.toLowerCase().includes(term) ||
            merchant.name?.toLowerCase().includes(term) ||
            merchant.category?.toLowerCase().includes(term) ||
@@ -362,18 +364,28 @@ export default function Merchants() {
         ))}
       </div>
 
-      {/* ── Search ── */}
-      <div style={{ position: 'relative', maxWidth: '340px', marginBottom: '16px' }}>
-        <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: T.faint, fontSize: '15px', pointerEvents: 'none' }}>
-          🔍
-        </span>
-        <input
-          type="text"
-          placeholder="Search name, category, UPI…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="mrc-search"
-        />
+      {/* ── Search + quick filters ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '0 1 340px' }}>
+          <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: T.faint, fontSize: '15px', pointerEvents: 'none' }}>
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Search name, category, UPI…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="mrc-search"
+          />
+        </div>
+        <Button
+          variant={uncategorizedOnly ? 'primary' : 'secondary'}
+          onClick={() => setUncategorizedOnly(v => !v)}
+          title="Show only merchants without a category"
+          style={{ fontSize: 'var(--text-sm)' }}
+        >
+          <FiFilter size={14} /> Uncategorized
+        </Button>
       </div>
 
       {/* ── List ── */}
@@ -402,7 +414,11 @@ export default function Merchants() {
             <EmptyState
               icon="🏬"
               title={data.length === 0 ? "No merchants yet" : "No matches"}
-              message={data.length === 0 ? "Upload a statement and merchants will appear here." : "No merchants match your search."}
+              message={
+                data.length === 0 ? "Upload a statement and merchants will appear here."
+                : uncategorizedOnly ? "No uncategorized merchants match the current filters."
+                : "No merchants match your search."
+              }
             />
           ) : (
             filteredData.map(merchant => {
@@ -580,6 +596,21 @@ export default function Merchants() {
               <Field label="Bank Code">
                 {merchantDetails.bankCode || <span style={{ color: T.faint }}>—</span>}
               </Field>
+              <Field label="Count toward next month">
+                {isEditing ? (
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '4px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editForm.shiftToNextMonth}
+                      onChange={(e) => setEditForm({ ...editForm, shiftToNextMonth: e.target.checked })}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <span style={{ fontSize: '12px', color: T.muted }}>
+                      Transactions on/after the 25th count in the following month (e.g. salary credited Jun 30 counts as July)
+                    </span>
+                  </label>
+                ) : (merchantDetails.shiftToNextMonth ? 'Yes' : <span style={{ color: T.faint }}>—</span>)}
+              </Field>
             </div>
 
             {/* UPI IDs */}
@@ -652,23 +683,29 @@ export default function Merchants() {
                       Monthly spend · last {spendStats.monthly.length} months
                     </div>
                     <ResponsiveContainer width="100%" height={160}>
-                      <BarChart data={spendStats.monthly} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                      <AreaChart data={spendStats.monthly} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                        <defs>
+                          <linearGradient id="merchantSpendFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={chartC.bar} stopOpacity={0.2} />
+                            <stop offset="100%" stopColor={chartC.bar} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartC.grid} />
                         <XAxis dataKey="month" tick={{ fontSize: 10, fill: chartC.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                         <YAxis tickFormatter={fmtShort} tick={{ fontSize: 10, fill: chartC.tick }} axisLine={false} tickLine={false} width={44} />
                         <Tooltip
                           formatter={(v) => currencyFormatter.format(v)}
-                          cursor={{ fill: chartC.cursor }}
+                          cursor={{ stroke: chartC.grid, strokeWidth: 1 }}
                           contentStyle={{ borderRadius: '10px', border: `1px solid ${chartC.tooltipBorder}`, background: chartC.tooltipBg, color: chartC.tooltipText, boxShadow: 'var(--shadow-lg)', fontSize: '12px' }}
                           labelStyle={{ color: chartC.tooltipText }}
                           itemStyle={{ color: chartC.tooltipText }}
                         />
-                        <Bar dataKey="total" radius={[4, 4, 0, 0]} maxBarSize={34}>
-                          {spendStats.monthly.map((m, i) => (
-                            <Cell key={i} fill={m.total >= spendStats.maxMonth ? chartC.bar : chartC.barDim} />
-                          ))}
-                        </Bar>
-                      </BarChart>
+                        <Area
+                          type="monotone" dataKey="total" name="Spend"
+                          stroke={chartC.bar} strokeWidth={2} fill="url(#merchantSpendFill)"
+                          dot={false} activeDot={{ r: 4, strokeWidth: 2 }}
+                        />
+                      </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 ) : (
