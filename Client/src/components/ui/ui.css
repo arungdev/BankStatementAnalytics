@@ -117,6 +117,127 @@
   color: var(--text-muted);
 }
 
+/* ── Select (custom dropdown for forms — see ui/Select.jsx) ── */
+.ui-select {
+  position: relative;
+  width: 100%;
+}
+
+.ui-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ui-select-trigger:hover:not(:disabled) {
+  border-color: var(--primary);
+}
+
+.ui-select-trigger:focus-visible,
+.ui-select-trigger.open {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.ui-select-trigger:disabled {
+  background: var(--gray-100);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.ui-select-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select-value.placeholder {
+  color: var(--text-faint);
+}
+
+.ui-select-caret {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.ui-select-trigger.open .ui-select-caret {
+  transform: rotate(180deg);
+}
+
+.ui-select-menu {
+  position: fixed;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.14);
+  z-index: var(--z-modal-top);
+  padding: 5px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+
+.ui-select-menu::-webkit-scrollbar        { width: 6px; }
+.ui-select-menu::-webkit-scrollbar-track  { background: transparent; }
+.ui-select-menu::-webkit-scrollbar-thumb  { background: var(--gray-300); border-radius: 10px; }
+.ui-select-menu::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
+
+.ui-select-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ui-select-option.highlight {
+  background: var(--gray-100);
+}
+
+.ui-select-option.active {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.ui-select-option-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select-empty {
+  padding: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* ── EmptyState ── */
 .ui-empty-state {
   display: flex;
@@ -169,14 +290,18 @@
 /* ── Drawer ── */
 .ui-drawer-backdrop {
   position: fixed;
-  inset: var(--app-header-h, 0) 0 0 0;
+  inset: var(--app-titlebar-h, 0) 0 0 0;
   background: var(--overlay);
   z-index: calc(var(--z-drawer) - 1);
 }
 
+/* Drawers dock beside the page's filter row: they start below the title row
+   (--app-titlebar-h) and their header bar is sized to end flush with the page
+   header's bottom border (--app-header-h). On pages without a filter row the
+   calc collapses to 0 and the max() keeps a normal-height bar. */
 .ui-drawer {
   position: fixed;
-  top: var(--app-header-h, 0);
+  top: var(--app-titlebar-h, 0);
   right: 0;
   bottom: 0;
   max-width: 100vw;
@@ -200,7 +325,8 @@
 }
 
 .ui-drawer-header {
-  padding: var(--space-5) var(--space-6);
+  height: max(53px, calc(var(--app-header-h, 0px) - var(--app-titlebar-h, 0px)));
+  padding: 0 var(--space-6);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -244,7 +370,9 @@
   justify-content: center;
   padding: var(--space-4);
   background: var(--overlay);
+  backdrop-filter: blur(2px);
   z-index: var(--z-modal);
+  animation: ui-modal-fade 0.15s ease;
 }
 
 .ui-modal {
@@ -256,6 +384,17 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
+  animation: ui-modal-pop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes ui-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ui-modal-pop {
+  from { opacity: 0; transform: scale(0.98) translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 
 .ui-modal-header {
@@ -266,11 +405,27 @@
   padding: var(--space-5) var(--space-5) 0;
 }
 
+.ui-modal-header.with-sub {
+  align-items: flex-start;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ui-modal-header-text {
+  min-width: 0;
+}
+
 .ui-modal-title {
   margin: 0;
   font-size: var(--text-lg);
   font-weight: 700;
   color: var(--text-main);
+}
+
+.ui-modal-subtitle {
+  margin: 4px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 .ui-modal-close {

@@ -8,13 +8,15 @@ import './ui.css';
  *   open      — render nothing when false
  *   onClose   — called on Escape, backdrop click, and the × button
  *   title     — optional heading (ReactNode)
+ *   subtitle  — optional muted line under the title; also adds a header divider
+ *               (matches the Settings modal header style)
  *   width     — panel width in px (default 420)
  *   footer    — optional ReactNode pinned under the body (action row)
  *   zIndex    — override stacking (e.g. 'var(--z-modal-top)' when the modal
  *               must sit above the Settings modal)
  *   children  — body content
  */
-export default function Modal({ open, onClose, title, width = 420, footer, zIndex, children }) {
+export default function Modal({ open, onClose, title, subtitle, width = 420, footer, zIndex, children }) {
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -34,8 +36,11 @@ export default function Modal({ open, onClose, title, width = 420, footer, zInde
         onClick={(e) => e.stopPropagation()}
       >
         {(title || onClose) && (
-          <div className="ui-modal-header">
-            {title && <h3 className="ui-modal-title">{title}</h3>}
+          <div className={`ui-modal-header${subtitle ? ' with-sub' : ''}`}>
+            <div className="ui-modal-header-text">
+              {title && <h3 className="ui-modal-title">{title}</h3>}
+              {subtitle && <p className="ui-modal-subtitle">{subtitle}</p>}
+            </div>
             {onClose && (
               <button className="ui-modal-close" onClick={onClose} aria-label="Close" title="Close">
                 ×
