@@ -1,10 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
 import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
 import EmptyState from '../components/ui/EmptyState';
+import useTheme from '../context/useTheme';
+import { getToken } from '../theme/chartTheme';
 import { currencyFormatter as fmt, formatDate } from '../utils/format';
 
 /* ─── Design tokens — mapped to the global CSS variable system ───────────── */
@@ -51,6 +56,12 @@ const s = {
   },
 };
 
+const fmtK = v => v >= 100000
+  ? `₹${(v / 100000).toFixed(1)}L`
+  : v >= 1000
+  ? `₹${(v / 1000).toFixed(0)}k`
+  : `₹${v}`;
+
 const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
   <div style={{
     width: w, height: h, borderRadius: r,
@@ -64,20 +75,45 @@ export default function Overview() {
   const { selectedAccountId } = useAccount();
   const { accounts = [] } = useOutletContext() ?? {};
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [data, setData] = useState(null);
+  const [trend, setTrend] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Resolved chart colors (recharts SVG can't read CSS var()). `theme` is the
+  // trigger: getToken() reads resolved values off the DOM, so recompute on flip.
+  const chartC = useMemo(() => ({
+    income: getToken('chart-income'),
+    spend: getToken('chart-spend'),
+    grid: getToken('chart-grid'),
+    tick: getToken('chart-tick'),
+    tooltipBg: getToken('surface'),
+    tooltipText: getToken('text-main'),
+    tooltipBorder: getToken('border-color'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [theme]);
+
   const fetchOverview = useCallback(() => {
-    if (!selectedAccountId) { setData(null); return; }
+    if (!selectedAccountId) { setData(null); setTrend([]); return; }
     // "All accounts" aggregates across every owned account; otherwise a single id.
     const isAll = selectedAccountId === ALL_ACCOUNTS;
     const allIds = accounts.map(a => a.id).join(',');
-    if (isAll && !allIds) { setData(null); return; }
+    if (isAll && !allIds) { setData(null); setTrend([]); return; }
     const query = isAll ? `accountIds=${allIds}` : `accountId=${selectedAccountId}`;
+    // Cash-flow curve covers the last 6 calendar months, inclusive of this one.
+    const now = new Date();
+    const trendStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const startParam = `${trendStart.getFullYear()}-${String(trendStart.getMonth() + 1).padStart(2, '0')}-01`;
     setLoading(true);
-    api.get(`/dashboard?${query}`)
-      .then(res => setData(res.data))
-      .catch(err => { console.error('Failed to fetch overview', err); setData(null); })
+    Promise.all([
+      api.get(`/dashboard?${query}`),
+      api.get(`/trends?${query}&period=month&startDate=${startParam}`),
+    ])
+      .then(([dash, tr]) => {
+        setData(dash.data);
+        setTrend(Array.isArray(tr.data) ? tr.data : []);
+      })
+      .catch(err => { console.error('Failed to fetch overview', err); setData(null); setTrend([]); })
       .finally(() => setLoading(false));
   }, [selectedAccountId, accounts]);
 
@@ -132,6 +168,52 @@ export default function Overview() {
           <EmptyState icon="📊" title="No transactions yet" subtitle="Upload a statement to see your income, spends, and top merchants here." />
         </div>
       ) : (
+        <>
+        {/* ── Cash-flow curve (last 6 months) ── */}
+        {!loading && trend.length > 1 && (
+          <div style={{ ...s.card, marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <p style={{ ...s.cardTitle, margin: 0 }}>Cash Flow · last {trend.length} months</p>
+              <div style={{ display: 'flex', gap: '16px', fontSize: '12px', fontWeight: 500, color: T.muted }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: chartC.income }} /> Income
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: chartC.spend }} /> Spend
+                </span>
+              </div>
+            </div>
+            <div style={{ marginTop: '16px' }}>
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={trend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="ovIncomeFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={chartC.income} stopOpacity={0.18} />
+                      <stop offset="100%" stopColor={chartC.income} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="ovSpendFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={chartC.spend} stopOpacity={0.18} />
+                      <stop offset="100%" stopColor={chartC.spend} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartC.grid} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: chartC.tick }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={fmtK} tick={{ fontSize: 11, fill: chartC.tick }} axisLine={false} tickLine={false} width={54} />
+                  <Tooltip
+                    formatter={(v, name) => [fmt.format(v), name === 'income' ? 'Income' : 'Spend']}
+                    cursor={{ stroke: chartC.grid, strokeWidth: 1 }}
+                    contentStyle={{ borderRadius: '10px', border: `1px solid ${chartC.tooltipBorder}`, background: chartC.tooltipBg, color: chartC.tooltipText, boxShadow: 'var(--shadow-lg)', fontSize: '12px' }}
+                    labelStyle={{ color: chartC.tooltipText }}
+                    itemStyle={{ color: chartC.tooltipText }}
+                  />
+                  <Area type="monotone" dataKey="income" stroke={chartC.income} strokeWidth={2} fill="url(#ovIncomeFill)" dot={false} activeDot={{ r: 4, strokeWidth: 2 }} />
+                  <Area type="monotone" dataKey="spend" stroke={chartC.spend} strokeWidth={2} fill="url(#ovSpendFill)" dot={false} activeDot={{ r: 4, strokeWidth: 2 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
         <div style={s.grid}>
           {/* ── Top merchants ── */}
           <div style={s.card}>
@@ -231,6 +313,7 @@ export default function Overview() {
             )}
           </div>
         </div>
+        </>
       )}
     </div>
   );
