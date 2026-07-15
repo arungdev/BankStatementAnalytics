@@ -1,27 +1,20 @@
-/* ── Design tokens — aliased onto the shared app tokens from index.css ──── */
-:root {
-  /* --bg and --surface are intentionally not redeclared here — inherited as-is from index.css */
-  --surface-2:    var(--gray-100);
+/* ── Local aliases — scoped to .trends-container so they don't leak onto or
+ *    clobber the global tokens in index.css (e.g. --surface-2). ─────────── */
+.trends-container {
   --border:       var(--border-color);
-  --border-soft:  #f0f2f4;
+  --border-soft:  var(--border-subtle);
 
   --ink:          var(--text-main);
   --ink-2:        var(--text-muted);
-  --ink-3:        var(--gray-400);
-
-  --primary-2:    #7c3aed;
-  --primary-mid:  rgba(79,70,229,0.12);
+  --ink-3:        var(--text-faint);
 
   --green:        var(--success);
   --green-light:  var(--success-light);
-  --green-mid:    rgba(16,185,129,0.12);
 
   --red:          var(--danger);
   --red-light:    var(--danger-light);
-  --red-mid:      rgba(239,68,68,0.10);
 
   --amber:        var(--warning);
-  --amber-mid:    rgba(217,119,6,0.10);
 
   --font-display: 'Inter', sans-serif;
   --font-body:    'Inter', sans-serif;
@@ -109,13 +102,13 @@
   overflow-y: hidden;
   cursor: grab;
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db transparent;
+  scrollbar-color: var(--gray-300) transparent;
 }
 .bars-scroll-panel:active { cursor: grabbing; }
 .bars-scroll-panel::-webkit-scrollbar        { height: 4px; }
 .bars-scroll-panel::-webkit-scrollbar-track  { background: transparent; }
-.bars-scroll-panel::-webkit-scrollbar-thumb  { background: #d1d5db; border-radius: 10px; }
-.bars-scroll-panel::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+.bars-scroll-panel::-webkit-scrollbar-thumb  { background: var(--gray-300); border-radius: 10px; }
+.bars-scroll-panel::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
 
 /* ── Loading ─────────────────────────────────────────────────────────────── */
 .chart-loader {
@@ -131,84 +124,24 @@
   border-radius: 50%;
   animation: spin .7s linear infinite;
 }
-/* ── Drill-down modal ─────────────────────────────────────────────────── */
-.drilldown-backdrop {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  animation: fadeIn 0.15s ease;
-}
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-.drilldown-modal {
-  background: var(--surface);
-  border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
-  width: 960px;
-  max-width: 96vw;
-  max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: slideUp 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-@keyframes slideUp {
-  from { transform: translateY(16px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
-
-/* Header */
-.drilldown-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 22px 28px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.drilldown-header h3 {
-  margin: 0 0 4px 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ink);
-  letter-spacing: -0.3px;
-}
-.drilldown-range {
+/* ── Drill-down drawer (rendered inside the shared <Drawer> shell) ──────── */
+/* Date-range subtitle under the drawer title */
+.drilldown-range-row {
   font-size: 12.5px;
   color: var(--ink-3);
   font-weight: 500;
-}
-.drilldown-close {
-  background: var(--surface-2);
-  border: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  font-size: 20px;
-  line-height: 1;
-  color: var(--ink-2);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-.drilldown-close:hover {
-  background: var(--border);
-  color: var(--ink);
+  margin: -4px 0 18px;
 }
 
 /* Summary strip */
 .drilldown-summary {
   display: flex;
   gap: 32px;
-  padding: 18px 28px;
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
 }
 .drilldown-summary > div {
   display: flex;
@@ -231,109 +164,82 @@
 .drilldown-summary-value.income { color: var(--green); }
 .drilldown-summary-value.spend  { color: var(--red); }
 
-/* Body / table */
+/* Body / table — scrolling is owned by the drawer's own body */
 .drilldown-body {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  min-height: 200px;
+  min-height: 120px;
 }
-.drilldown-body::-webkit-scrollbar       { width: 6px; }
-.drilldown-body::-webkit-scrollbar-track { background: transparent; }
-.drilldown-body::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
 
-.drilldown-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 13px;
+/* Transaction cards */
+.drill-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.drilldown-table th {
-  text-align: left;
+.drill-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   padding: 12px 14px;
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--ink-3);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: var(--surface);
-  z-index: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
-.drilldown-table td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-soft);
-  color: var(--ink);
-  vertical-align: top;
-  overflow: hidden;
+.drill-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
-.drilldown-table tbody tr {
-  transition: background-color 0.12s ease;
-}
-.drilldown-table tbody tr:hover td {
-  background-color: var(--surface-2);
-}
-.drilldown-table tr:last-child td { border-bottom: none; }
-
-.drilldown-table th.num,
-.drilldown-table td.num {
-  text-align: right;
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.cell-date {
-  white-space: nowrap;
-  color: var(--ink-2);
-  font-weight: 500;
-  font-size: 12.5px;
-}
-.cell-desc {
-  font-size: 12.5px;
-  color: var(--ink);
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cell-merchant {
-  font-weight: 600;
-  color: var(--ink);
-  font-size: 12.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cell-muted {
-  color: var(--ink-3);
-}
-
-.badge-cat {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
+.drill-card-avatar {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  background: var(--primary-light);
-  color: var(--primary);
+  letter-spacing: 0.02em;
+}
+.drill-card-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.drill-card-merchant {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
-  display: inline-block;
 }
+.drill-card-desc {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drill-card-date {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+  font-weight: 500;
+}
+.drill-card-amount {
+  flex: 0 0 auto;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  text-align: right;
+}
+.drill-card-amount.income { color: var(--green); }
+.drill-card-amount.spend  { color: var(--red); }
 
-.drilldown-table .text-red   { color: var(--red); }
-.drilldown-table .text-green { color: var(--green); }
-
-/* Empty state inside modal */
+/* Empty state inside drawer */
 .drilldown-body .chart-empty {
   height: 240px;
 }

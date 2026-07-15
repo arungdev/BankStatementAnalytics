@@ -1,43 +1,103 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
+import { FiFilter } from "react-icons/fi";
 import api from "../api/client";
-import { currencyFormatter } from "../utils/format";
-import Badge from "../components/ui/Badge";
+import Button from "../components/ui/Button";
+import { currencyFormatter, isAmountMasked, MASKED_AMOUNT } from "../utils/format";
 import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
+import Avatar from "../components/ui/Avatar";
+import Modal from "../components/ui/Modal";
+import { avatarColors } from "../utils/avatar";
 import { useAuth } from "../context/useAuth";
+import { useAccount } from "../context/useAccount";
+import { ALL_ACCOUNTS } from "../components/AccountFilter";
+import { usePrivacy } from "../context/usePrivacy";
+import useTheme from "../context/useTheme";
+import { getToken } from "../theme/chartTheme";
+
+/* ─── Design tokens — mapped to the global CSS variable system so DOM inline
+ * styles pick up light/dark automatically. (SVG chart colors can't use var()
+ * and are resolved separately via getToken() — see `chartC` below.) */
+const T = {
+  indigo:     'var(--primary)',
+  indigoDim:  'var(--primary-light)',
+  indigoSoft: 'var(--stat-tile-label)',
+  surface:    'var(--surface)',
+  bg:         'var(--surface-2)',
+  border:     'var(--border-color)',
+  borderSub:  'var(--border-subtle)',
+  text:       'var(--text-main)',
+  muted:      'var(--text-muted)',
+  faint:      'var(--text-faint)',
+  red:        'var(--danger)',
+  green:      'var(--success)',
+};
+
+/* Small label/value block reused across the detail drawer. */
+function Field({ label, children }) {
+  return (
+    <div>
+      <div style={{ fontSize: '11px', color: T.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        {label}
+      </div>
+      <div style={{ marginTop: '5px', color: T.text, fontSize: '14px', fontWeight: 500 }}>{children}</div>
+    </div>
+  );
+}
 
 export default function Merchants() {
   const { isAdmin } = useAuth();
+  const { theme } = useTheme();
+  // Subscribe to the mask flag so toggling "hide amounts" re-renders this page;
+  // its other contexts (auth/theme) don't change on toggle, so without this the
+  // currencyFormatter amounts would stay stale until the next unrelated render.
+  usePrivacy();
+  // Resolved colors for the recharts sparkline (SVG can't consume var()).
+  const chartC = useMemo(() => ({
+    bar: getToken('primary'),
+    grid: getToken('chart-grid'),
+    tick: getToken('chart-tick'),
+    tooltipBg: getToken('surface'),
+    tooltipText: getToken('text-main'),
+    tooltipBorder: getToken('border-color'),
+    // `theme` is the trigger: getToken() reads resolved CSS vars off the DOM,
+    // so we must recompute when the theme flips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [theme]);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  
+  // Quick filter: show only merchants with no category yet
+  const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
+
   // Sidebar state
   const [selectedMerchantId, setSelectedMerchantId] = useState(null);
   const [merchantDetails, setMerchantDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ category: '', subCategory: '' });
-  const [sidebarWidth, setSidebarWidth] = useState(450);
+  const [editForm, setEditForm] = useState({ category: '', subCategory: '', shiftToNextMonth: false });
+  const [sidebarWidth, setSidebarWidth] = useState(460);
   const [categoriesList, setCategoriesList] = useState([]);
   const [txFilterName, setTxFilterName] = useState('ALL');
-  
+
   // Merge state
   const [selectedIds, setSelectedIds] = useState([]);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [primaryMergeId, setPrimaryMergeId] = useState("");
 
+  // Account scoping: "All accounts" (or no selection yet) sends no params, which the
+  // API treats as unfiltered — identical to the pre-filter behavior.
+  const { selectedAccountId } = useAccount();
+  const isAllAccounts = !selectedAccountId || selectedAccountId === ALL_ACCOUNTS;
+  const accountQuery = isAllAccounts ? '' : `?accountId=${selectedAccountId}`;
+
+  const fetchMerchants = () =>
+    api.get(`/merchants${accountQuery}`).then(res => setData(res.data || []));
+
   useEffect(() => {
-    api.get("/merchants")
-      .then(res => {
-        setData(res.data || []);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-      
     api.get("/categories")
       .then(res => setCategoriesList(res.data || []))
       .catch(err => console.error("Failed to load categories", err));
@@ -47,8 +107,8 @@ export default function Merchants() {
     setSelectedMerchantId(id);
     setLoadingDetails(true);
     setTxFilterName('ALL');
-    
-    api.get(`/merchants/${id}`)
+
+    api.get(`/merchants/${id}${accountQuery}`)
       .then(res => {
         setMerchantDetails(res.data);
         setLoadingDetails(false);
@@ -59,6 +119,17 @@ export default function Merchants() {
       });
   };
 
+  useEffect(() => {
+    setLoading(true);
+    fetchMerchants()
+      .catch(err => console.error(err))
+      .finally(() => setLoading(false));
+    // Merge selection is scope-dependent; an open drawer refetches under the new scope.
+    setSelectedIds([]);
+    if (selectedMerchantId) handleRowClick(selectedMerchantId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountQuery]);
+
   const toggleSelection = (id, e) => {
     e.stopPropagation();
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -67,13 +138,12 @@ export default function Merchants() {
   const handleMergeSubmit = () => {
     if (!primaryMergeId) return alert("Select a primary merchant");
     const secondaryIds = selectedIds.filter(id => id !== parseInt(primaryMergeId));
-    
-    api.post('/merchants/merge', { 
-      primaryId: parseInt(primaryMergeId), 
-      secondaryIds 
+
+    api.post('/merchants/merge', {
+      primaryId: parseInt(primaryMergeId),
+      secondaryIds
     }).then(() => {
-      api.get("/merchants").then(res => {
-        setData(res.data || []);
+      fetchMerchants().then(() => {
         setSelectedIds([]);
         setShowMergeModal(false);
       });
@@ -85,13 +155,13 @@ export default function Merchants() {
 
   const handleUnmerge = (alias) => {
     if (!window.confirm(`Are you sure you want to unmerge "${alias}"? This will create a new merchant and attempt to restore its transactions.`)) return;
-    
-    api.post('/merchants/unmerge', { 
-      primaryId: merchantDetails.id, 
-      aliasName: alias 
+
+    api.post('/merchants/unmerge', {
+      primaryId: merchantDetails.id,
+      aliasName: alias
     }).then(() => {
       // Refresh main table
-      api.get("/merchants").then(res => setData(res.data || []));
+      fetchMerchants();
       // Refresh sidebar details
       handleRowClick(merchantDetails.id);
       setTxFilterName('ALL');
@@ -111,7 +181,8 @@ export default function Merchants() {
   const handleEditClick = () => {
     setEditForm({
       category: merchantDetails.category || '',
-      subCategory: merchantDetails.subCategory || ''
+      subCategory: merchantDetails.subCategory || '',
+      shiftToNextMonth: merchantDetails.shiftToNextMonth || false
     });
     setIsEditing(true);
   };
@@ -122,7 +193,7 @@ export default function Merchants() {
         setMerchantDetails({ ...merchantDetails, ...editForm });
         setIsEditing(false);
         // Update the main list so changes reflect immediately in the table
-        setData(prevData => prevData.map(merchant => 
+        setData(prevData => prevData.map(merchant =>
           merchant.id === merchantDetails.id ? { ...merchant, ...editForm } : merchant
         ));
       })
@@ -130,6 +201,39 @@ export default function Merchants() {
         console.error("Failed to update merchant", err);
       });
   };
+
+  // ── Merchant deep-dive: spend-over-time + headline stats, from loaded txns ──
+  // Declared before the early return so hook order stays stable across renders.
+  const spendStats = useMemo(() => {
+    const txs = merchantDetails?.transactions || [];
+    const debits = txs.filter((t) => (t.debit ?? 0) > 0);
+    const totalSpent = debits.reduce((sum, t) => sum + (t.debit || 0), 0);
+    const count = debits.length;
+    const avg = count ? totalSpent / count : 0;
+
+    const times = txs.map((t) => new Date(t.transactionDate).getTime()).filter((n) => !isNaN(n));
+    const first = times.length ? new Date(Math.min(...times)) : null;
+    const last = times.length ? new Date(Math.max(...times)) : null;
+
+    const byMonth = {};
+    debits.forEach((t) => {
+      const d = new Date(t.transactionDate);
+      if (isNaN(d)) return;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      byMonth[key] = (byMonth[key] || 0) + (t.debit || 0);
+    });
+    const monthly = Object.entries(byMonth)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([k, v]) => {
+        const [y, m] = k.split("-");
+        return {
+          month: new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
+          total: v,
+        };
+      });
+    return { totalSpent, count, avg, first, last, monthly };
+  }, [merchantDetails]);
 
   if (loading) {
     return (
@@ -142,141 +246,283 @@ export default function Merchants() {
 
   const term = searchQuery.toLowerCase();
   const filteredData = data.filter(merchant => {
+    if (uncategorizedOnly && merchant.category) return false;
     return merchant.friendlyName?.toLowerCase().includes(term) ||
-           merchant.name?.toLowerCase().includes(term) || 
+           merchant.name?.toLowerCase().includes(term) ||
            merchant.category?.toLowerCase().includes(term) ||
            merchant.upiIds?.some(upi => upi?.toLowerCase().includes(term)) ||
            merchant.aliases?.some(alias => alias?.toLowerCase().includes(term));
   });
 
+  const categorizedCount = data.filter(m => m.category).length;
+  const linkedCount = data.filter(m => (m.aliases?.length || 0) > 0).length;
+
   const displayedTxs = merchantDetails?.transactions?.filter(tx => {
     if (txFilterName === 'ALL') return true;
-    
-    // Process of elimination: if searching for the primary name, return 
+
+    // Process of elimination: if searching for the primary name, return
     // transactions that don't belong to any of the merged aliases
     if (txFilterName === merchantDetails.name) {
       const matchesAlias = merchantDetails.aliases?.some(alias => {
         if (!alias) return false;
         const aliasTerm = alias.toLowerCase();
-        return tx.description?.toLowerCase().includes(aliasTerm) || 
+        return tx.description?.toLowerCase().includes(aliasTerm) ||
                tx.upiReference?.toLowerCase().includes(aliasTerm);
       });
       return !matchesAlias;
     }
 
     const filterTerm = txFilterName.toLowerCase();
-    return tx.description?.toLowerCase().includes(filterTerm) || 
+    return tx.description?.toLowerCase().includes(filterTerm) ||
            tx.upiReference?.toLowerCase().includes(filterTerm);
   }) || [];
 
+  const allSelected = filteredData.length > 0 && selectedIds.length === filteredData.length;
+
+  const fmtShort = (v) =>
+    isAmountMasked() ? MASKED_AMOUNT :
+    v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : v >= 1000 ? `₹${(v / 1000).toFixed(0)}k` : `₹${v}`;
+  const fmtMY = (d) => (d ? d.toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "—");
+
   return (
     <div style={{ marginRight: selectedMerchantId ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <h1 style={{ marginBottom: 0 }}>Merchants</h1>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {isAdmin && selectedIds.length > 1 && (
-            <button className="btn primary" onClick={() => { setShowMergeModal(true); setPrimaryMergeId(selectedIds[0]); }}>
-              Merge Selected ({selectedIds.length})
-            </button>
+      <style>{`
+        .mrc-row {
+          display: grid;
+          grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 150px 120px 96px 20px;
+          align-items: center;
+          gap: 16px;
+          padding: 14px 20px;
+          border-bottom: 1px solid ${T.borderSub};
+          cursor: pointer;
+          transition: background 0.12s;
+        }
+        .mrc-row:hover { background: ${T.bg}; }
+        .mrc-row.selected { background: ${T.indigoDim}; }
+        .mrc-row:last-child { border-bottom: none; }
+        .mrc-chevron { color: ${T.faint}; opacity: 0; transition: opacity 0.12s, transform 0.12s; }
+        .mrc-row:hover .mrc-chevron { opacity: 1; transform: translateX(2px); }
+        .mrc-head {
+          display: grid;
+          grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 150px 120px 96px 20px;
+          gap: 16px;
+          padding: 12px 20px;
+          font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; color: ${T.faint};
+          border-bottom: 1px solid ${T.border};
+          background: ${T.bg};
+        }
+        .mrc-chip {
+          display: inline-flex; align-items: center; gap: 4px;
+          font-size: 11px; font-weight: 600; color: ${T.muted};
+          background: ${T.bg}; border: 1px solid ${T.border};
+          padding: 2px 8px; border-radius: 999px;
+        }
+        .mrc-search {
+          width: 100%; padding: 10px 14px 10px 38px;
+          border: 1px solid ${T.border}; border-radius: 10px;
+          font-size: 14px; font-family: inherit; background: ${T.surface};
+          color: ${T.text}; outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .mrc-search:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
+        @media (max-width: 720px) {
+          .mrc-row, .mrc-head { grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 88px 20px; }
+          .mrc-col-cat, .mrc-col-meta { display: none; }
+        }
+      `}</style>
+
+      {/* ── Merge action (title/subtitle now come from the shared PageHeader) ── */}
+      {isAdmin && selectedIds.length > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+          <button
+            className="btn primary"
+            onClick={() => { setShowMergeModal(true); setPrimaryMergeId(String(selectedIds[0])); }}
+          >
+            Merge selected ({selectedIds.length})
+          </button>
+        </div>
+      )}
+
+      {/* ── Summary strip ── */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        {[
+          { label: 'Total merchants', value: data.length, accent: T.indigo },
+          { label: 'Categorized', value: `${categorizedCount} / ${data.length}`, accent: T.green },
+          { label: 'Merged groups', value: linkedCount, accent: T.faint },
+        ].map((stat) => (
+          <div key={stat.label} style={{
+            flex: '1 1 160px', background: T.surface, border: `1px solid ${T.border}`,
+            borderRadius: '14px', padding: '16px 18px', boxShadow: 'var(--shadow-sm)',
+          }}>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {stat.label}
+            </div>
+            <div className="tnum" style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: stat.accent, letterSpacing: '-0.5px' }}>
+              {stat.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Search + quick filters ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '0 1 340px' }}>
+          <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: T.faint, fontSize: '15px', pointerEvents: 'none' }}>
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Search name, category, UPI…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="mrc-search"
+          />
+        </div>
+        <Button
+          variant={uncategorizedOnly ? 'primary' : 'secondary'}
+          onClick={() => setUncategorizedOnly(v => !v)}
+          title="Show only merchants without a category"
+          style={{ fontSize: 'var(--text-sm)' }}
+        >
+          <FiFilter size={14} /> Uncategorized
+        </Button>
+      </div>
+
+      {/* ── List ── */}
+      <div style={{
+        background: T.surface, border: `1px solid ${T.border}`,
+        borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
+      }}>
+        <div className="mrc-head">
+          {isAdmin && (
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={(e) => setSelectedIds(e.target.checked ? filteredData.map(c => c.id) : [])}
+              style={{ cursor: 'pointer' }}
+            />
           )}
-          <Badge variant="blue">{filteredData.length} Total Merchants</Badge>
+          <span>Merchant</span>
+          <span className="mrc-col-cat">Category</span>
+          <span className="mrc-col-meta">Identifiers</span>
+          <span style={{ textAlign: 'right' }}>Transactions</span>
+          <span />
+        </div>
+
+        <div style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto' }}>
+          {filteredData.length === 0 ? (
+            <EmptyState
+              icon="🏬"
+              title={data.length === 0 ? "No merchants yet" : "No matches"}
+              message={
+                data.length === 0 ? "Upload a statement and merchants will appear here."
+                : uncategorizedOnly ? "No uncategorized merchants match the current filters."
+                : "No merchants match your search."
+              }
+            />
+          ) : (
+            filteredData.map(merchant => {
+              const display = merchant.friendlyName || merchant.name || "-";
+              const hasOriginal = merchant.friendlyName && merchant.name !== merchant.friendlyName;
+              const upiCount = merchant.upiIds?.length || 0;
+              const aliasCount = merchant.aliases?.length || 0;
+              const [, catFg] = avatarColors(merchant.category || '');
+              return (
+                <div
+                  key={merchant.id}
+                  className={`mrc-row${selectedMerchantId === merchant.id ? ' selected' : ''}`}
+                  onClick={() => handleRowClick(merchant.id)}
+                >
+                  {isAdmin && (
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(merchant.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => toggleSelection(merchant.id, e)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                    <Avatar name={display} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{
+                        fontSize: '14px', fontWeight: 700, color: T.text,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {display}
+                      </div>
+                      <div style={{
+                        fontSize: '12px', color: T.faint, marginTop: '1px',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {hasOriginal ? merchant.name : (upiCount > 0 ? merchant.upiIds[0] : 'No UPI on record')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mrc-col-cat">
+                    {merchant.category ? (
+                      <span style={{
+                        display: 'inline-block', maxWidth: '100%',
+                        fontSize: '12px', fontWeight: 600, color: catFg,
+                        background: avatarColors(merchant.category)[0],
+                        padding: '3px 10px', borderRadius: '999px',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {merchant.category}
+                      </span>
+                    ) : (
+                      <span style={{ color: T.faint, fontSize: '13px' }}>Uncategorized</span>
+                    )}
+                  </div>
+
+                  <div className="mrc-col-meta" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {upiCount > 0 && <span className="mrc-chip">🆔 {upiCount}</span>}
+                    {aliasCount > 0 && <span className="mrc-chip">🔗 {aliasCount}</span>}
+                    {upiCount === 0 && aliasCount === 0 && <span style={{ color: T.faint, fontSize: '13px' }}>—</span>}
+                  </div>
+
+                  <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: 700, color: T.text }}>
+                    {(merchant.transactionCount ?? 0).toLocaleString('en-IN')}
+                  </div>
+
+                  <span className="mrc-chevron">›</span>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
-      <div style={{ marginBottom: 'var(--space-4)' }}>
-        <input
-          type="text"
-          placeholder="Search merchants..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="field-input"
-          style={{ maxWidth: '300px' }}
-        />
-      </div>
-
-      <div className="table-container" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
-        <table>
-          <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--gray-50)', zIndex: 10, boxShadow: 'inset 0 -1px 0 var(--border-color)' }}>
-            <tr>
-              <th style={{ width: '40px', textAlign: 'center' }}>
-                <input 
-                  type="checkbox" 
-                  checked={filteredData.length > 0 && selectedIds.length === filteredData.length}
-                  onChange={(e) => {
-                    if (e.target.checked) setSelectedIds(filteredData.map(c => c.id));
-                    else setSelectedIds([]);
-                  }}
-                />
-              </th>
-              <th>Name</th>
-              <th>Category</th>
-              <th>UPI IDs</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData.map(merchant => (
-              <tr
-                key={merchant.id}
-                onClick={() => handleRowClick(merchant.id)}
-                style={{
-                  cursor: 'pointer',
-                  backgroundColor: selectedMerchantId === merchant.id ? 'var(--primary-light)' : undefined,
-                }}
-              >
-                <td onClick={(e) => e.stopPropagation()} style={{ textAlign: 'center' }}>
-                  <input type="checkbox" checked={selectedIds.includes(merchant.id)} onChange={(e) => toggleSelection(merchant.id, e)} />
-                </td>
-                <td style={{ fontWeight: 700, color: "var(--text-main)" }}>{merchant.friendlyName || merchant.name || "-"}</td>
-                <td>
-                  {merchant.category ? (
-                    <Badge variant="purple">{merchant.category}</Badge>
-                  ) : "-"}
-                </td>
-                <td style={{ fontFamily: 'monospace', color: 'var(--gray-600)', fontSize: '13px' }}>{merchant.upiIds?.join(", ") || "-"}</td>
-                <td><Badge variant="green">Active</Badge></td>
-              </tr>
-            ))}
-            {filteredData.length === 0 && (
-              <tr>
-                <td colSpan="5" style={{ padding: 0 }}>
-                  <EmptyState message={data.length === 0 ? "No merchants found." : "No merchants match your search."} />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
       {/* Merge Modal */}
-      {showMergeModal && (
-        <>
-          <div onClick={() => setShowMergeModal(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10000 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '400px', backgroundColor: '#fff', padding: '24px', borderRadius: '8px', zIndex: 10001, boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-            <h2 style={{ marginTop: 0 }}>Merge Merchants</h2>
-            <p style={{ color: '#6b7280', fontSize: '14px' }}>
-              Select the primary merchant to keep. The others will be merged into this one and then deleted.
-            </p>
-            <div style={{ margin: '20px 0' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>Primary Merchant</label>
-              <select 
-                value={primaryMergeId} 
-                onChange={e => setPrimaryMergeId(e.target.value)}
-                style={{ width: '100%', padding: '8px', border: '1px solid #d1d5db', borderRadius: '4px' }}
-              >
-                {selectedIds.map(id => {
-                  const merchant = data.find(x => x.id === id);
-                  return <option key={id} value={id}>{merchant?.name}</option>;
-                })}
-              </select>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button className="btn" onClick={() => setShowMergeModal(false)}>Cancel</button>
-              <button className="btn primary" onClick={handleMergeSubmit}>Confirm Merge</button>
-            </div>
-          </div>
-        </>
-      )}
+      <Modal
+        open={showMergeModal}
+        onClose={() => setShowMergeModal(false)}
+        title="Merge merchants"
+        width={420}
+        footer={
+          <>
+            <button className="btn" onClick={() => setShowMergeModal(false)}>Cancel</button>
+            <button className="btn primary" onClick={handleMergeSubmit}>Confirm merge</button>
+          </>
+        }
+      >
+        <p style={{ color: T.muted, fontSize: '13px', margin: '0 0 20px' }}>
+          Pick the primary merchant to keep. The other {selectedIds.length - 1} will be folded into it and removed.
+        </p>
+        <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '13px', color: T.text }}>Primary merchant</label>
+        <select
+          value={primaryMergeId}
+          onChange={e => setPrimaryMergeId(e.target.value)}
+          className="field-select"
+        >
+          {selectedIds.map(id => {
+            const merchant = data.find(x => x.id === id);
+            return <option key={id} value={id}>{merchant?.friendlyName || merchant?.name}</option>;
+          })}
+        </select>
+      </Modal>
 
       {/* RHS detail drawer — non-modal so the list & sidebar stay interactive */}
       <Drawer
@@ -287,150 +533,228 @@ export default function Merchants() {
         onWidthChange={setSidebarWidth}
         modal={false}
       >
-              {loadingDetails ? (
-                <div style={{ textAlign: 'center', color: '#6b7280', marginTop: '40px' }}>Loading details...</div>
-              ) : merchantDetails ? (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '20px', color: '#111827' }}>{merchantDetails.friendlyName || merchantDetails.name}</h3>
-                      <p style={{ margin: '0 0 24px 0', color: '#6b7280', fontSize: '14px' }}>
-                        {merchantDetails.friendlyName && merchantDetails.name !== merchantDetails.friendlyName ? `Original Name: ${merchantDetails.name}` : 'Original Name Matches'}
-                      </p>
-                    </div>
-                    {isAdmin && (!isEditing ? (
-                      <button onClick={handleEditClick} style={{ padding: '6px 12px', fontSize: '13px', backgroundColor: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer' }}>Edit</button>
-                    ) : (
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => setIsEditing(false)} style={{ padding: '6px 12px', fontSize: '13px', backgroundColor: '#fff', border: '1px solid #d1d5db', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
-                        <button onClick={handleSaveClick} style={{ padding: '6px 12px', fontSize: '13px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Save</button>
-                      </div>
+        {loadingDetails ? (
+          <div style={{ textAlign: 'center', color: T.muted, marginTop: '40px' }}>Loading details...</div>
+        ) : merchantDetails ? (
+          <div>
+            {/* Identity header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '24px' }}>
+              <Avatar name={merchantDetails.friendlyName || merchantDetails.name} size={52} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{ margin: '0 0 2px 0', fontSize: '19px', color: T.text, letterSpacing: '-0.02em' }}>
+                  {merchantDetails.friendlyName || merchantDetails.name}
+                </h3>
+                <p style={{ margin: 0, color: T.muted, fontSize: '13px' }}>
+                  {merchantDetails.friendlyName && merchantDetails.name !== merchantDetails.friendlyName
+                    ? merchantDetails.name
+                    : 'Original name matches'}
+                </p>
+              </div>
+              {isAdmin && (!isEditing ? (
+                <button className="btn small" onClick={handleEditClick}>Edit</button>
+              ) : (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn small" onClick={() => setIsEditing(false)}>Cancel</button>
+                  <button className="btn primary small" onClick={handleSaveClick}>Save</button>
+                </div>
+              ))}
+            </div>
+
+            {/* Detail fields */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginBottom: '24px' }}>
+              <Field label="Category">
+                {isEditing ? (
+                  <select
+                    value={editForm.category}
+                    onChange={(e) => setEditForm({ ...editForm, category: e.target.value, subCategory: '' })}
+                    className="field-select"
+                    style={{ marginTop: '2px' }}
+                  >
+                    <option value="">-- None --</option>
+                    {categoriesList.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
                     ))}
-                  </div>
+                  </select>
+                ) : (merchantDetails.category || <span style={{ color: T.faint }}>—</span>)}
+              </Field>
+              <Field label="Sub-Category">
+                {isEditing ? (
+                  <select
+                    value={editForm.subCategory}
+                    onChange={(e) => setEditForm({ ...editForm, subCategory: e.target.value })}
+                    className="field-select"
+                    style={{ marginTop: '2px' }}
+                    disabled={!editForm.category || (categoriesList.find(c => c.name === editForm.category)?.subCategories?.length || 0) === 0}
+                  >
+                    <option value="">-- None --</option>
+                    {categoriesList.find(c => c.name === editForm.category)?.subCategories?.map(sub => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                ) : (merchantDetails.subCategory || <span style={{ color: T.faint }}>—</span>)}
+              </Field>
+              <Field label="Bank Code">
+                {merchantDetails.bankCode || <span style={{ color: T.faint }}>—</span>}
+              </Field>
+              <Field label="Count toward next month">
+                {isEditing ? (
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '4px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editForm.shiftToNextMonth}
+                      onChange={(e) => setEditForm({ ...editForm, shiftToNextMonth: e.target.checked })}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <span style={{ fontSize: '12px', color: T.muted }}>
+                      Transactions on/after the 25th count in the following month (e.g. salary credited Jun 30 counts as July)
+                    </span>
+                  </label>
+                ) : (merchantDetails.shiftToNextMonth ? 'Yes' : <span style={{ color: T.faint }}>—</span>)}
+              </Field>
+            </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
-                      {isEditing ? (
-                        <select 
-                          value={editForm.category} 
-                          onChange={(e) => setEditForm({...editForm, category: e.target.value, subCategory: ''})} 
-                          style={{ marginTop: '4px', width: '100%', padding: '6px', border: '1px solid #d1d5db', borderRadius: '4px', backgroundColor: '#fff' }} 
-                        >
-                          <option value="">-- None --</option>
-                          {categoriesList.map(cat => (
-                            <option key={cat.id} value={cat.name}>{cat.name}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div style={{ marginTop: '4px', color: '#111827' }}>{merchantDetails.category || '-'}</div>
-                      )}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Sub-Category</div>
-                      {isEditing ? (
-                        <select 
-                          value={editForm.subCategory} 
-                          onChange={(e) => setEditForm({...editForm, subCategory: e.target.value})} 
-                          style={{ marginTop: '4px', width: '100%', padding: '6px', border: '1px solid #d1d5db', borderRadius: '4px', backgroundColor: '#fff' }} 
-                          disabled={!editForm.category || (categoriesList.find(c => c.name === editForm.category)?.subCategories?.length || 0) === 0}
-                        >
-                          <option value="">-- None --</option>
-                          {categoriesList.find(c => c.name === editForm.category)?.subCategories?.map(sub => (
-                            <option key={sub} value={sub}>{sub}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div style={{ marginTop: '4px', color: '#111827' }}>{merchantDetails.subCategory || '-'}</div>
-                      )}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase' }}>Bank Code</div>
-                      <div style={{ marginTop: '4px', color: '#111827' }}>{merchantDetails.bankCode || '-'}</div>
-                    </div>
-                  </div>
-
-                  <div style={{ marginBottom: '24px' }}>
-                    <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>UPI IDs</div>
-                    {merchantDetails.upiIds?.length > 0 ? (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                        {merchantDetails.upiIds.map((upi, idx) => (
-                          <span key={`${upi}-${idx}`} className="badge" style={{ backgroundColor: '#f3f4f6', color: '#374151', padding: '4px 8px', fontSize: '12px', border: '1px solid #e5e7eb' }}>
-                            {upi}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ color: '#9ca3af', fontSize: '14px' }}>None</div>
-                    )}
-                  </div>
-
-                  <div style={{ marginBottom: '24px' }}>
-                    <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', marginBottom: '8px' }}>Merged Names (Aliases)</div>
-                    {merchantDetails.aliases?.length > 0 ? (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                        {merchantDetails.aliases.map((alias, idx) => (
-                          <span key={`${alias}-${idx}`} className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#fff', color: '#4b5563', padding: '4px 8px', fontSize: '12px', border: '1px dashed #d1d5db' }}>
-                            {alias}
-                            {isAdmin && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleUnmerge(alias); }}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontWeight: 'bold', lineHeight: 1, fontSize: '14px', display: 'flex', alignItems: 'center' }}
-                                title="Unmerge"
-                              >
-                                &times;
-                              </button>
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ color: '#9ca3af', fontSize: '14px' }}>None</div>
-                    )}
-                  </div>
-
-                  <hr style={{ border: '0', borderTop: '1px solid #e5e7eb', margin: '24px 0' }} />
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <h4 style={{ margin: 0, fontSize: '16px', color: '#111827' }}>Recent Transactions ({displayedTxs.length})</h4>
-                    {merchantDetails.aliases?.length > 0 && (
-                      <select 
-                        value={txFilterName}
-                        onChange={(e) => setTxFilterName(e.target.value)}
-                        style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #d1d5db', fontSize: '13px', backgroundColor: '#fff', outline: 'none' }}
-                      >
-                        <option value="ALL">All Names</option>
-                        <option value={merchantDetails.name}>{merchantDetails.name}</option>
-                        {merchantDetails.aliases.map(alias => (
-                          <option key={alias} value={alias}>{alias}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-
-                  {displayedTxs.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
-                      {displayedTxs.map((tx, idx) => (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '12px', borderBottom: '1px solid #f3f4f6' }}>
-                          <div>
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>{new Date(tx.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-                            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>{tx.mode || 'Transfer'}</div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '13px', fontWeight: 700, color: tx.credit ? '#10b981' : '#ef4444' }}>
-                              {tx.credit ? '+' : '-'}{currencyFormatter.format(Math.max(tx.credit, tx.debit))}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p style={{ color: '#9ca3af', fontSize: '14px' }}>No matching transactions found for "{txFilterName}".</p>
-                  )}
+            {/* UPI IDs */}
+            <div style={{ marginBottom: '22px' }}>
+              <div style={{ fontSize: '11px', color: T.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>UPI IDs</div>
+              {merchantDetails.upiIds?.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {merchantDetails.upiIds.map((upi, idx) => (
+                    <span key={`${upi}-${idx}`} style={{ fontFamily: 'ui-monospace, monospace', fontSize: '12px', color: T.text, background: T.bg, padding: '5px 10px', borderRadius: '8px', border: `1px solid ${T.border}` }}>
+                      {upi}
+                    </span>
+                  ))}
                 </div>
               ) : (
-                <div style={{ textAlign: 'center', color: 'var(--danger)' }}>Failed to load details.</div>
+                <div style={{ color: T.faint, fontSize: '13px' }}>None on record</div>
               )}
+            </div>
+
+            {/* Aliases */}
+            <div style={{ marginBottom: '4px' }}>
+              <div style={{ fontSize: '11px', color: T.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Merged names (aliases)</div>
+              {merchantDetails.aliases?.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {merchantDetails.aliases.map((alias, idx) => (
+                    <span key={`${alias}-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', backgroundColor: T.surface, color: T.muted, padding: '5px 10px', fontSize: '12px', fontWeight: 500, borderRadius: '8px', border: `1px dashed ${T.border}` }}>
+                      {alias}
+                      {isAdmin && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleUnmerge(alias); }}
+                          style={{ background: 'none', border: 'none', color: T.red, cursor: 'pointer', padding: 0, fontWeight: 'bold', lineHeight: 1, fontSize: '15px', display: 'flex', alignItems: 'center' }}
+                          title="Unmerge"
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ color: T.faint, fontSize: '13px' }}>None</div>
+              )}
+            </div>
+
+            <hr style={{ border: '0', borderTop: `1px solid ${T.border}`, margin: '24px 0' }} />
+
+            {/* ── Spend deep-dive ── */}
+            {spendStats.count > 0 && (
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ margin: '0 0 14px', fontSize: '15px', fontWeight: 700, color: T.text }}>Spending trend</h4>
+
+                {/* Headline stats */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '16px' }}>
+                  {[
+                    { label: 'Total spent', value: currencyFormatter.format(spendStats.totalSpent), color: T.red },
+                    { label: 'Payments', value: spendStats.count.toLocaleString('en-IN'), color: T.text },
+                    { label: 'Avg / payment', value: currencyFormatter.format(Math.round(spendStats.avg)), color: T.text },
+                    { label: 'Active since', value: fmtMY(spendStats.first), color: T.text },
+                  ].map((st) => (
+                    <div key={st.label} style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '10px 12px' }}>
+                      <div style={{ fontSize: '10px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{st.label}</div>
+                      <div className="tnum" style={{ marginTop: '3px', fontSize: '15px', fontWeight: 800, color: st.color, letterSpacing: '-0.3px' }}>{st.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Monthly spend chart */}
+                {spendStats.monthly.length > 1 ? (
+                  <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '14px 12px 6px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: T.muted, marginBottom: '8px', paddingLeft: '4px' }}>
+                      Monthly spend · last {spendStats.monthly.length} months
+                    </div>
+                    <ResponsiveContainer width="100%" height={160}>
+                      <AreaChart data={spendStats.monthly} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                        <defs>
+                          <linearGradient id="merchantSpendFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={chartC.bar} stopOpacity={0.2} />
+                            <stop offset="100%" stopColor={chartC.bar} stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartC.grid} />
+                        <XAxis dataKey="month" tick={{ fontSize: 10, fill: chartC.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                        <YAxis tickFormatter={fmtShort} tick={{ fontSize: 10, fill: chartC.tick }} axisLine={false} tickLine={false} width={44} />
+                        <Tooltip
+                          formatter={(v) => currencyFormatter.format(v)}
+                          cursor={{ stroke: chartC.grid, strokeWidth: 1 }}
+                          contentStyle={{ borderRadius: '10px', border: `1px solid ${chartC.tooltipBorder}`, background: chartC.tooltipBg, color: chartC.tooltipText, boxShadow: 'var(--shadow-lg)', fontSize: '12px' }}
+                          labelStyle={{ color: chartC.tooltipText }}
+                          itemStyle={{ color: chartC.tooltipText }}
+                        />
+                        <Area
+                          type="monotone" dataKey="total" name="Spend"
+                          stroke={chartC.bar} strokeWidth={2} fill="url(#merchantSpendFill)"
+                          dot={false} activeDot={{ r: 4, strokeWidth: 2 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: T.faint }}>Not enough history yet for a monthly trend.</div>
+                )}
+              </div>
+            )}
+
+            {/* Transactions */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: T.text }}>Recent Transactions ({displayedTxs.length})</h4>
+              {merchantDetails.aliases?.length > 0 && (
+                <select
+                  value={txFilterName}
+                  onChange={(e) => setTxFilterName(e.target.value)}
+                  style={{ padding: '5px 10px', borderRadius: '8px', border: `1px solid ${T.border}`, fontSize: '13px', background: T.surface, color: T.text, outline: 'none' }}
+                >
+                  <option value="ALL">All names</option>
+                  <option value={merchantDetails.name}>{merchantDetails.name}</option>
+                  {merchantDetails.aliases.map(alias => (
+                    <option key={alias} value={alias}>{alias}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {displayedTxs.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                {displayedTxs.map((tx, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 0', borderBottom: idx < displayedTxs.length - 1 ? `1px solid ${T.borderSub}` : 'none' }}>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: T.text }}>
+                        {new Date(tx.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                      <div style={{ fontSize: '12px', color: T.muted, marginTop: '2px' }}>{tx.mode || 'Transfer'}</div>
+                    </div>
+                    <div className="tnum" style={{ fontSize: '14px', fontWeight: 700, color: tx.credit ? T.green : T.red }}>
+                      {tx.credit ? '+' : '−'}{currencyFormatter.format(Math.max(tx.credit, tx.debit))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: T.faint, fontSize: '13px' }}>No matching transactions found for "{txFilterName}".</p>
+            )}
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', color: T.red }}>Failed to load details.</div>
+        )}
       </Drawer>
     </div>
   );

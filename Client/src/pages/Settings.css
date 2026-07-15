@@ -5,9 +5,9 @@
 .settings-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--overlay);
   backdrop-filter: blur(2px);
-  z-index: 9999;
+  z-index: var(--z-modal);
   animation: settings-fade 0.15s ease;
 }
 
@@ -21,8 +21,9 @@
   height: 640px;
   max-height: 92vh;
   background: var(--surface);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  z-index: 10000;
+  z-index: calc(var(--z-modal) + 1);
   box-shadow: var(--shadow-lg);
   display: flex;
   overflow: hidden;
@@ -216,6 +217,24 @@
   color: var(--text-muted);
 }
 
+.settings-row-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.settings-row-balance-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.settings-row-balance-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .settings-row-actions {
   display: flex;
   gap: var(--space-2);
@@ -382,10 +401,59 @@
   color: var(--text-muted);
 }
 
-/* ---- Small button variant (used across settings) ---- */
-.btn.small {
-  padding: 6px 12px;
+/* ---- Theme picker (Appearance tab) ---- */
+.theme-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-4);
+  max-width: 560px;
+}
+
+.theme-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.theme-option:hover {
+  border-color: var(--gray-300);
+  box-shadow: var(--shadow-sm);
+}
+
+.theme-option.active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.theme-option-icon {
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.theme-option.active .theme-option-icon,
+.theme-option.active .theme-option-label {
+  color: var(--primary);
+}
+
+.theme-option-label {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.theme-option-sub {
   font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 /* ---- Responsive ---- */

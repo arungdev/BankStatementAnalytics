@@ -16,12 +16,15 @@ namespace BankStatementAnalytics.Mappping
                 m.Property(x => x.AccountId, p => p.Index("IX_BankTransactions_Account_Date"));
                 m.Property(x => x.BankReference);
                 m.Property(x => x.BankType, p => p.Length(10));
+                m.Property(x => x.TransactionType, m => m.Length(10));
             });
 
             Property(x => x.TransactionDate, m => m.Index("IX_BankTransactions_Account_Date"));
             Property(x => x.ValueDate);
+            // No index: analytics filter on COALESCE(EffectiveDate, TransactionDate),
+            // which isn't sargable anyway.
+            Property(x => x.EffectiveDate);
 
-            Property(x => x.TransactionType, m => m.Length(10));
 
             Property(x => x.Description, m => m.Length(2000));
 
@@ -48,6 +51,7 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.CategoryOverride);
             Property(x => x.SubCategoryOverride);
             Property(x => x.Tags);
+            Property(x => x.Note, m => m.Length(2000));
 
             ManyToOne(x => x.CounterParty, m =>
             {

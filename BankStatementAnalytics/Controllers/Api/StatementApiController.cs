@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
@@ -26,9 +27,41 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // GET: api/statements/accounts
         [HttpGet("accounts")]
-        public IActionResult GetAccounts()
+        public async Task<IActionResult> GetAccounts()
         {
-            return Ok(DbHelper.GetAll<Account>().Where(a => a.OwnerUserId == CurrentUserId));
+            var accounts = await DbHelper.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId);
+
+            using var session = DbHelper.GetSession();
+            var result = new List<object>();
+            foreach (var a in accounts)
+            {
+                var bankType = a.BankName.ToString();
+                var txns = session.Query<BankTransaction>()
+                    .Where(t => t.AccountId == a.Id && t.BankType == bankType);
+
+                decimal? balance = a.BankName == Bank.HDFCCreditCard
+                    // Credit card statements carry no running balance, so derive the amount owed.
+                    ? txns.Sum(t => (decimal?)(t.Debit - t.Credit))
+                    // No surrogate Id on BankTransaction; ImportedOn breaks same-date ties.
+                    : txns.OrderByDescending(t => t.TransactionDate)
+                          .ThenByDescending(t => t.ImportedOn)
+                          .Select(t => (decimal?)t.Balance)
+                          .FirstOrDefault();
+
+                result.Add(new
+                {
+                    a.Id,
+                    a.OwnerUserId,
+                    a.AccountNumber,
+                    a.AccountHolderName,
+                    a.BankName,
+                    a.BranchCode,
+                    a.MaskedAccountNumber,
+                    Balance = balance,
+                    BalanceLabel = a.BankName == Bank.HDFCCreditCard ? "Outstanding" : "Balance"
+                });
+            }
+            return Ok(result);
         }
 
         // GET: api/statements/{accountId}
@@ -40,7 +73,8 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] int? year = null,
      [FromQuery] int? month = null,
      [FromQuery] DateTime? startDate = null,
-     [FromQuery] DateTime? endDate = null)
+     [FromQuery] DateTime? endDate = null,
+     [FromQuery] bool uncategorizedOnly = false)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
             if (!Owns(account))
@@ -53,19 +87,32 @@ namespace BankStatementAnalytics.Controllers.Api
             var query = session.Query<BankTransaction>()
                 .Where(t => t.AccountId == accountId && t.BankType == bankType);
 
+            // Month attribution uses COALESCE(EffectiveDate, TransactionDate) so merchants
+            // flagged ShiftToNextMonth (e.g. month-end salary) appear under the next month.
             if (year.HasValue && month.HasValue)
             {
-                query = query.Where(t => t.TransactionDate.Year == year.Value && t.TransactionDate.Month == month.Value);
+                var monthStart = new DateTime(year.Value, month.Value, 1);
+                var monthEnd = monthStart.AddMonths(1);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= monthStart
+                                      && (t.EffectiveDate ?? t.TransactionDate) < monthEnd);
             }
             else
             {
                 if (startDate.HasValue)
-                    query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+                    query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= startDate.Value.Date);
                 if (endDate.HasValue)
                 {
                     var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
-                    query = query.Where(t => t.TransactionDate <= endOfDay);
+                    query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) <= endOfDay);
                 }
+            }
+
+            if (uncategorizedOnly)
+            {
+                // Uncategorized = no per-transaction override and no merchant default.
+                query = query.Where(t =>
+                    (t.CategoryOverride == null || t.CategoryOverride == "") &&
+                    (t.CounterParty == null || t.CounterParty.Category == null || t.CounterParty.Category == ""));
             }
 
             var projectedQuery = query
@@ -84,7 +131,8 @@ namespace BankStatementAnalytics.Controllers.Api
                     BankType = bankType,
                     Category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
                     SubCategory = t.SubCategoryOverride ?? (t.CounterParty != null ? t.CounterParty.SubCategory : null),
-                    Tags = t.Tags != null ? t.Tags.Split(',').ToList() : new List<string>()
+                    Tags = t.Tags != null ? t.Tags.Split(',').ToList() : new List<string>(),
+                    Note = t.Note
                 });
 
             var paged = await projectedQuery.ToPagedResultAsync(page, pageSize);
@@ -103,15 +151,13 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("uploads")]
         public IActionResult GetUploads([FromQuery] int? accountId)
         {
-            var ownedAccountIds = DbHelper.GetAll<Account>()
-                .Where(a => a.OwnerUserId == CurrentUserId)
-                .Select(a => (int)a.Id)
-                .ToHashSet();
+            using var session = DbHelper.GetSession();
+
+            var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
 
             if (accountId.HasValue && !ownedAccountIds.Contains(accountId.Value))
                 return NotFound();
 
-            using var session = DbHelper.GetSession();
             var uploadsQuery = session.Query<Models.Upload>();
 
             if (accountId.HasValue)
@@ -125,23 +171,33 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Where(u => u.AccountId.HasValue && ownedAccountIds.Contains(u.AccountId.Value))
                 .ToList();
 
+            // Only count transactions tied to the uploads we're actually returning.
+            var uploadIds = uploads.Select(u => u.Id).ToHashSet();
             var txCounts = session.Query<BankTransaction>()
-                .Where(t => t.UploadId != null)
+                .Where(t => t.UploadId != null && uploadIds.Contains(t.UploadId.Value))
                 .GroupBy(t => t.UploadId)
                 .Select(g => new { UploadId = g.Key, Count = g.Count() })
                 .ToList();
 
-            var result = uploads.OrderByDescending(u => u.UploadedAt).Select(u => new
+            var result = uploads.OrderByDescending(u => u.UploadedAt).Select(u =>
             {
-                u.Id,
-                u.FileName,
-                u.StoredName,
-                u.AccountId,
-                u.Path,
-                u.UploadedAt,
-                u.TransactionId,
-                TransactionCount = txCounts.FirstOrDefault(c => c.UploadId.HasValue &&
-                 c.UploadId.Value == u.Id)?.Count ?? 0
+                // Legacy uploads (created before total/new tracking) have 0 stored - fall back
+                // to the count of transactions tied to this UploadId for the total.
+                var tiedCount = txCounts.FirstOrDefault(c => c.UploadId.HasValue && c.UploadId.Value == u.Id)?.Count ?? 0;
+                var total = u.TotalCount > 0 ? u.TotalCount : tiedCount;
+                return new
+                {
+                    u.Id,
+                    u.FileName,
+                    u.StoredName,
+                    u.AccountId,
+                    u.Path,
+                    u.UploadedAt,
+                    u.TransactionId,
+                    TotalCount = total,
+                    NewCount = u.NewCount,
+                    TransactionCount = total   // back-compat alias
+                };
             });
 
             return Ok(result);
@@ -158,16 +214,35 @@ namespace BankStatementAnalytics.Controllers.Api
             if (file == null || file.Length == 0)
                 return BadRequest("File is empty");
 
-            var folder = Path.Combine(AppContext.BaseDirectory, "Uploads");
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (ext != ".txt" && ext != ".csv")
+                return BadRequest("Only TXT and CSV files are supported.");
+
+            // Read once so we can both hash (for duplicate detection) and persist the bytes.
+            byte[] bytes;
+            using (var ms = new MemoryStream())
+            {
+                await file.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+            var fileHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+
+            // Reject an exact re-upload of the same file for the same account.
+            using (var checkSession = DbHelper.GetSession())
+            {
+                bool alreadyUploaded = checkSession.Query<Models.Upload>()
+                    .Any(u => u.AccountId == accountId && u.FileHash == fileHash);
+                if (alreadyUploaded)
+                    return Conflict("This statement file has already been uploaded for this account.");
+            }
+
+            var folder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
             Directory.CreateDirectory(folder);
 
             var storedName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
             var path = Path.Combine(folder, storedName);
 
-            using (var stream = new FileStream(path, FileMode.Create))
-                await file.CopyToAsync(stream);
-
-            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
 
             var uploadId = Guid.NewGuid();
             var upload = new Models.Upload
@@ -177,10 +252,9 @@ namespace BankStatementAnalytics.Controllers.Api
                 StoredName = storedName,
                 AccountId = accountId,
                 Path = $"/Uploads/{storedName}",
-                UploadedAt = DateTime.UtcNow
+                UploadedAt = DateTime.UtcNow,
+                FileHash = fileHash
             };
-
-            await DbHelper.SaveAsync(upload);
 
             var tx = new Models.UploadTransaction
             {
@@ -189,28 +263,24 @@ namespace BankStatementAnalytics.Controllers.Api
                 Description = $"Uploaded statement {file.FileName}",
                 CreatedAt = DateTime.UtcNow
             };
-
-            await DbHelper.SaveAsync(tx);
-
             upload.TransactionId = tx.Id;
+
+            // Persist the upload + its transaction record in one round-trip instead of three.
+            using (var session = DbHelper.GetSession())
+            using (var saveTx = session.BeginTransaction())
+            {
+                await session.SaveAsync(upload);
+                await session.SaveAsync(tx);
+                await saveTx.CommitAsync();
+            }
+
+            var (total, newCount) = await _textService.ExtractAsync(
+                path, accountId, uploadId,
+                ext == ".csv" ? StatementFileFormat.Csv : StatementFileFormat.Txt);
+
+            upload.TotalCount = total;
+            upload.NewCount = newCount;
             await DbHelper.UpdateAsync(upload);
-
-
-            if (ext == ".txt")
-            {
-                await _textService.ExtractAsync(path, accountId, uploadId, StatementFileFormat.Txt);
-            }
-            else if (ext == ".csv")
-            {
-                await _textService.ExtractAsync(path, accountId, uploadId, StatementFileFormat.Csv);
-            }
-            else
-            {
-                return BadRequest("Only TXT and CSV files are supported.");
-            }
-
-            using var session = DbHelper.GetSession();
-            int txCount = session.Query<BankTransaction>().Count(t => t.UploadId == uploadId);
 
             return Ok(new
             {
@@ -221,7 +291,9 @@ namespace BankStatementAnalytics.Controllers.Api
                 upload.Path,
                 upload.UploadedAt,
                 upload.TransactionId,
-                TransactionCount = txCount
+                TotalCount = total,
+                NewCount = newCount,
+                TransactionCount = total   // back-compat alias
             });
         }
 
@@ -254,7 +326,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             await sessionTx.CommitAsync();
 
-            var folder = Path.Combine(AppContext.BaseDirectory, "Uploads");
+            var folder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
             var filePath = Path.Combine(folder, upload.StoredName);
             if (System.IO.File.Exists(filePath))
                 System.IO.File.Delete(filePath);

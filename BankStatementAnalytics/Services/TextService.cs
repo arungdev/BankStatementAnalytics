@@ -2,6 +2,7 @@ using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services.Parser;
 using Common.Framework.Data;
+using Common.Framework.Logging;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BankStatementAnalytics.Services
@@ -28,13 +29,19 @@ namespace BankStatementAnalytics.Services
     public class TextService
     {
         private readonly IServiceProvider _serviceProvider;
+        private readonly CounterPartyService _counterPartyService;
 
-        public TextService(IServiceProvider serviceProvider)
+        public TextService(IServiceProvider serviceProvider, CounterPartyService counterPartyService)
         {
             _serviceProvider = serviceProvider;
+            _counterPartyService = counterPartyService;
         }
 
-        public async Task ExtractAsync(
+        /// <summary>
+        /// Parses the statement and upserts its transactions. Returns the total number of
+        /// transactions found in the file and how many of them were new (not already imported).
+        /// </summary>
+        public async Task<(int total, int newCount)> ExtractAsync(
             string filePath, int accountId, Guid uploadId, StatementFileFormat format)
         {
             var ext = format == StatementFileFormat.Csv ? ".csv" : ".txt";
@@ -63,7 +70,26 @@ namespace BankStatementAnalytics.Services
                 tx.AccountId = accountId;
             }
 
+            // Resolve all counterparty names to merchants in a single batch (one session /
+            // transaction) instead of a session per parsed row.
+            _counterPartyService.ResolveOrCreateBatch(accountId, transactions);
+
+            int newCount;
+            using (var session = DbHelper.GetSession())
+            {
+                var existingKeys = session.Query<BankTransaction>()
+                    .Where(t => t.AccountId == accountId)
+                    .Select(t => new { t.BankReference, t.BankType })
+                    .ToList()
+                    .Select(x => $"{x.BankReference}|{x.BankType}")
+                    .ToHashSet();
+
+                newCount = transactions.Count(t => !existingKeys.Contains($"{t.BankReference}|{t.BankType}"));
+            }
+
             await DbHelper.SaveOrUpdateManyAsync(transactions);
+
+            return (transactions.Count, newCount);
         }
 
 

@@ -1,0 +1,118 @@
+/* ── CreateAccount modal form ──
+   Styled to match the Settings modal design language (see Settings.css):
+   card-like option tiles, same field spacing, primary highlight on select. */
+
+.ca-form {
+  padding-top: var(--space-2);
+}
+
+.ca-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--space-4);
+}
+
+@media (max-width: 560px) {
+  .ca-field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Bank tiles — same pattern as the Appearance theme picker */
+.ca-bank-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  max-height: 264px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+
+.ca-bank-grid::-webkit-scrollbar        { width: 6px; }
+.ca-bank-grid::-webkit-scrollbar-track  { background: transparent; }
+.ca-bank-grid::-webkit-scrollbar-thumb  { background: var(--gray-300); border-radius: 10px; }
+.ca-bank-grid::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
+
+.ca-bank-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  min-height: 58px;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.ca-bank-option:hover {
+  border-color: var(--gray-300);
+  box-shadow: var(--shadow-sm);
+}
+
+.ca-bank-option.active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.ca-bank-option.active .ca-bank-label {
+  color: var(--primary);
+}
+
+.ca-bank-avatar {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--primary-light);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ca-bank-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ca-bank-check {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+/* Loading placeholders while the bank list fetches */
+.ca-bank-option.skeleton {
+  pointer-events: none;
+  background: var(--gray-50);
+  animation: ca-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ca-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.ca-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-color);
+}

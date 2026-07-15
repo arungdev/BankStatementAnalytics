@@ -1,14 +1,18 @@
 import { useState, useEffect } from "react";
-import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX } from "react-icons/fi";
+import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor } from "react-icons/fi";
 import api from "../api/client";
 import { useAccount } from "../context/useAccount";
 import { useAuth } from "../context/useAuth";
+import useTheme from "../context/useTheme";
 import ProfileSettings from "../components/ProfileSettings";
+import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
+import { currencyFormatterFull } from "../utils/format";
 import "./Settings.css";
 
 export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreated, accounts = [], setAccounts }) {
   const { selectedAccountId, setSelectedAccountId } = useAccount();
   const { isAdmin } = useAuth();
+  const { preference, setPreference } = useTheme();
   const [activeTab, setActiveTab] = useState('accounts');
   const [categories, setCategories] = useState([]);
 
@@ -24,6 +28,57 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
   // Account states
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editAccountName, setEditAccountName] = useState("");
+
+  // Reminder states (client-side preferences persisted in localStorage)
+  const [remEnabled, setRemEnabled] = useState(() => localStorage.getItem(REMINDERS_ENABLED_KEY) === "true");
+  const [remWindow, setRemWindow] = useState(() => Number(localStorage.getItem(REMINDER_WINDOW_KEY)) || 7);
+  const [notifPermission, setNotifPermission] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+
+  const toggleReminders = async () => {
+    if (remEnabled) {
+      localStorage.setItem(REMINDERS_ENABLED_KEY, "false");
+      setRemEnabled(false);
+      return;
+    }
+    if (typeof Notification === "undefined") {
+      alert("Desktop notifications aren't supported in this browser.");
+      return;
+    }
+    let perm = Notification.permission;
+    if (perm === "default") perm = await Notification.requestPermission();
+    setNotifPermission(perm);
+    if (perm !== "granted") {
+      alert("Please allow notifications in your browser to enable desktop reminders.");
+      return;
+    }
+    localStorage.setItem(REMINDERS_ENABLED_KEY, "true");
+    setRemEnabled(true);
+    // Immediately confirm it works so the user sees a toast the moment they opt in.
+    sendTestNotification();
+  };
+
+  const updateWindow = (days) => {
+    const n = Math.max(1, Math.min(31, Number(days) || 7));
+    setRemWindow(n);
+    localStorage.setItem(REMINDER_WINDOW_KEY, String(n));
+  };
+
+  const handleTestNotification = async () => {
+    const res = await sendTestNotification();
+    if (res.ok) return; // toast shown
+    setNotifPermission(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+    if (res.reason === "unsupported") {
+      alert("Desktop notifications aren't supported in this browser.");
+    } else if (res.reason === "denied") {
+      alert("Notifications are blocked for this site. Allow them in your browser's site settings (the icon in the address bar), then try again.");
+    } else if (res.reason === "default") {
+      alert("Notification permission wasn't granted. Click Enable and choose Allow when prompted.");
+    } else {
+      alert("Could not show a notification: " + (res.error || "unknown error"));
+    }
+  };
 
   const fetchCategories = async () => {
     try {
@@ -165,14 +220,24 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
   const TABS = [
     { id: 'accounts', label: 'Accounts', icon: <FiCreditCard size={17} /> },
     { id: 'categories', label: 'Categories', icon: <FiTag size={17} /> },
+    { id: 'reminders', label: 'Reminders', icon: <FiBell size={17} /> },
+    { id: 'appearance', label: 'Appearance', icon: <FiSun size={17} /> },
     { id: 'profile', label: 'Profile', icon: <FiUser size={17} /> },
   ];
 
   const HEADERS = {
     accounts: { title: 'Manage Accounts', subtitle: 'Add, rename, or remove your linked bank accounts.' },
     categories: { title: 'Categories', subtitle: 'Organize your spending into categories and sub-categories.' },
+    reminders: { title: 'Bill Reminders', subtitle: 'Get a desktop notification when a recurring bill is due soon.' },
+    appearance: { title: 'Appearance', subtitle: 'Choose how the app looks on this device.' },
     profile: { title: 'Profile', subtitle: 'Manage your account and personal details.' },
   };
+
+  const THEME_OPTIONS = [
+    { id: 'system', label: 'System', sub: 'Follow your device setting', icon: <FiMonitor size={20} /> },
+    { id: 'light', label: 'Light', sub: 'Bright surfaces, dark text', icon: <FiSun size={20} /> },
+    { id: 'dark', label: 'Dark', sub: 'Dim surfaces, light text', icon: <FiMoon size={20} /> },
+  ];
 
   return (
     <>
@@ -231,6 +296,121 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
             {/* ── Profile ── */}
             {activeTab === 'profile' && <ProfileSettings />}
 
+            {/* ── Appearance ── */}
+            {activeTab === 'appearance' && (
+              <div className="theme-options" role="radiogroup" aria-label="Theme">
+                {THEME_OPTIONS.map(opt => (
+                  <button
+                    key={opt.id}
+                    role="radio"
+                    aria-checked={preference === opt.id}
+                    className={`theme-option${preference === opt.id ? ' active' : ''}`}
+                    onClick={() => setPreference(opt.id)}
+                  >
+                    <span className="theme-option-icon">{opt.icon}</span>
+                    <span className="theme-option-label">{opt.label}</span>
+                    <span className="theme-option-sub">{opt.sub}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* ── Reminders ── */}
+            {activeTab === 'reminders' && (
+              <div className="settings-list">
+                <div className="settings-row">
+                  <div className="settings-row-head">
+                    <div style={{ minWidth: 0 }}>
+                      <h3 className="settings-row-title">Desktop notifications</h3>
+                      <p className="settings-row-sub">
+                        Show a Windows notification when a confirmed bill is due within your reminder window.
+                        Reminders fire while the app is open.
+                      </p>
+                    </div>
+                    <div className="settings-row-actions" style={{ gap: '8px' }}>
+                      <button className="btn small" onClick={handleTestNotification}>
+                        Send test
+                      </button>
+                      <button
+                        className={`btn small${remEnabled ? '' : ' primary'}`}
+                        onClick={toggleReminders}
+                      >
+                        {remEnabled ? 'Disable' : 'Enable'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {notifPermission === 'denied' && (
+                    <p className="settings-row-sub" style={{ color: 'var(--danger, #ef4444)' }}>
+                      Notifications are blocked in your browser settings. Allow them for this site (click the icon in the address bar) to use reminders.
+                    </p>
+                  )}
+                  <p className="settings-row-sub" style={{ marginTop: '8px' }}>
+                    Tip: if a toast doesn't pop up, check Windows notification settings —
+                    turn off Focus assist / Do not disturb, and make sure notifications are on
+                    for your browser. The toast may also appear in the Windows Action Center.
+                  </p>
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-row-head">
+                    <div style={{ minWidth: 0 }}>
+                      <h3 className="settings-row-title">Reminder window</h3>
+                      <p className="settings-row-sub">Remind me this many days before a bill is due.</p>
+                    </div>
+                    <div className="settings-row-actions" style={{ alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={remWindow}
+                        onChange={(e) => updateWindow(e.target.value)}
+                        className="field-input"
+                        style={{ width: '72px' }}
+                      />
+                      <span className="settings-row-sub">days</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Diagnostics — tells you exactly why a toast can't show */}
+                <div className="settings-row">
+                  <div style={{ minWidth: 0 }}>
+                    <h3 className="settings-row-title">Diagnostics</h3>
+                    {(() => {
+                      const supported = typeof Notification !== 'undefined';
+                      const secure = typeof window !== 'undefined' && window.isSecureContext;
+                      const perm = supported ? Notification.permission : 'n/a';
+                      const embedded = /electron|vscode/i.test(navigator.userAgent);
+                      const rows = [
+                        ['Notifications API', supported ? 'available' : 'NOT available', supported],
+                        ['Secure context', secure ? 'yes' : 'NO (needs https or localhost)', secure],
+                        ['Permission', perm, perm === 'granted'],
+                        ['Reminders enabled', remEnabled ? 'yes' : 'no', remEnabled],
+                        ['Origin', typeof window !== 'undefined' ? window.location.origin : '-', true],
+                        ['Embedded browser', embedded ? 'YES — use a real browser' : 'no', !embedded],
+                      ];
+                      return (
+                        <div style={{ marginTop: '8px', fontSize: '12px', fontFamily: 'monospace', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 16px' }}>
+                          {rows.map(([k, v, ok]) => (
+                            <div key={k} style={{ display: 'contents' }}>
+                              <span style={{ color: 'var(--text-muted, #6b7280)' }}>{k}</span>
+                              <span style={{ color: ok ? 'var(--success, #16a34a)' : 'var(--danger, #ef4444)', fontWeight: 600 }}>{String(v)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                    <p className="settings-row-sub" style={{ marginTop: '10px' }}>
+                      If any row above is red, that's the cause. Web notifications do not work in
+                      VS Code's Simple Browser or embedded webviews — open the app in Chrome/Edge at{' '}
+                      <code>{window.location.origin}</code>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── Accounts ── */}
             {activeTab === 'accounts' && (
               accounts.length === 0 ? (
@@ -272,6 +452,13 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                             </p>
                           </div>
                         </div>
+
+                        {acc.balance != null && (
+                          <div className="settings-row-balance">
+                            <span className="settings-row-balance-label">{acc.balanceLabel || 'Balance'}</span>
+                            <span className="settings-row-balance-value">{currencyFormatterFull.format(acc.balance)}</span>
+                          </div>
+                        )}
 
                         {isAdmin && (
                           <div className="settings-row-actions">

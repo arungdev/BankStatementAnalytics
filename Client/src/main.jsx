@@ -4,13 +4,19 @@ import './index.css'
 import App from './App'
 import { AccountProvider } from './context/AccountContext'
 import { AuthProvider } from './context/AuthContext'
+import { PrivacyProvider } from './context/PrivacyContext'
+import { ThemeProvider } from './context/ThemeContext'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AuthProvider>
-      <AccountProvider>
-        <App />
-      </AccountProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AccountProvider>
+          <PrivacyProvider>
+            <App />
+          </PrivacyProvider>
+        </AccountProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

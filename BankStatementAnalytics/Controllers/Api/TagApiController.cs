@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Threading.Tasks;
 using BankStatementAnalytics.Models;
 using Common.Framework.Data;
 using Common.Framework.Web;
@@ -10,10 +12,9 @@ namespace BankStatementAnalytics.Controllers.Api
     public class TagApiController : TenantControllerBase
     {
         [HttpGet]
-        public IActionResult GetAll()
+        public async Task<IActionResult> GetAll()
         {
-            var tags = DbHelper.GetAll<Tag>()
-                .Where(t => t.OwnerUserId == CurrentUserId)
+            var tags = (await DbHelper.QueryAsync<Tag>(t => t.OwnerUserId == CurrentUserId))
                 .OrderBy(t => t.Name)
                 .Select(t => new { t.Id, t.Name })
                 .ToList();

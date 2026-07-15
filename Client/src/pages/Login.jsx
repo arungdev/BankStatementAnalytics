@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
+import { AuthShell, AuthField, AuthPasswordField, AuthError, AuthSubmit } from '../components/AuthShell';
 
 export default function Login() {
   const { login } = useAuth();
@@ -28,54 +29,38 @@ export default function Login() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'var(--gray-50)',
-    }}>
-      <form onSubmit={submit} className="card" style={{ width: '360px', maxWidth: '90vw' }}>
-        <h1 style={{ margin: '0 0 4px', fontSize: 'var(--text-xl)' }}>Sign in</h1>
-        <p style={{ margin: '0 0 20px', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-          BankStatementAnalytics
-        </p>
+    <AuthShell
+      title="Welcome back"
+      subtitle="Sign in to BankStatementAnalytics"
+      onSubmit={submit}
+    >
+      <AuthField
+        label="Username"
+        value={username}
+        onChange={e => setUsername(e.target.value)}
+        placeholder="Enter your username"
+        autoComplete="username"
+        autoFocus
+        required
+      />
+      <AuthPasswordField
+        label="Password"
+        value={password}
+        onChange={e => setPassword(e.target.value)}
+        placeholder="Enter your password"
+        autoComplete="current-password"
+        required
+      />
 
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{ display: 'block', marginBottom: '6px', fontSize: 'var(--text-sm)' }}>Username</label>
-          <input
-            className="field-input"
-            style={{ width: '100%' }}
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            autoFocus
-            required
-          />
-        </div>
+      <AuthError>{error}</AuthError>
 
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{ display: 'block', marginBottom: '6px', fontSize: 'var(--text-sm)' }}>Password</label>
-          <input
-            className="field-input"
-            style={{ width: '100%' }}
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-          />
-        </div>
+      <AuthSubmit submitting={submitting} busyLabel="Signing in...">
+        Sign in
+      </AuthSubmit>
 
-        {error && (
-          <p style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)', marginBottom: '14px' }}>{error}</p>
-        )}
-
-        <button type="submit" className="btn primary" style={{ width: '100%' }} disabled={submitting}>
-          {submitting ? 'Signing in...' : 'Sign in'}
-        </button>
-
-        <p style={{ margin: '16px 0 0', textAlign: 'center', fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
-          <Link to="/setup" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>
-            Create account
-          </Link>
-        </p>
-      </form>
-    </div>
+      <p className="auth-footer">
+        New here? <Link to="/setup">Create account</Link>
+      </p>
+    </AuthShell>
   );
 }

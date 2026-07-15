@@ -3,6 +3,7 @@ using NHibernate.Linq;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -15,79 +16,61 @@ namespace BankStatementAnalytics.Controllers.Api
     public class DashboardApiController : TenantControllerBase
     {
         [HttpGet]
-        public async Task<IActionResult> GetDashboardData([FromQuery] int accountId)
+        public async Task<IActionResult> GetDashboardData(
+            [FromQuery] int accountId,
+            [FromQuery] string accountIds = null)
         {
-            if (accountId == 0)
-            {
-                return Ok(null); // Frontend handles null data
-            }
-
-            var account = DbHelper.GetById<Account>((long)accountId);
-            if (!Owns(account))
-                return NotFound();
-
             using var session = DbHelper.GetSession();
 
-            // Fetch all transactions for the account (HDFC + IOB unified)
-            var transactions = await session.Query<BankTransaction>()
-                .Where(t => t.AccountId == accountId)
-                .Fetch(t => t.CounterParty) // Eagerly fetch CounterParty
+            // Resolve the accounts to aggregate: either the comma-separated
+            // "All accounts" list or a single accountId, filtered to owned.
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            if (ids.Count == 0)
+                return Ok(null); // Frontend handles null data
+
+            var baseQuery = session.Query<BankTransaction>().Where(t => ids.Contains(t.AccountId));
+
+            // Totals computed in SQL rather than by loading every row.
+            var totalIncome = await baseQuery.SumAsync(t => (decimal?)t.Credit) ?? 0m;
+            var totalSpends = await baseQuery.SumAsync(t => (decimal?)t.Debit) ?? 0m;
+            var totalTransactions = await baseQuery.CountAsync();
+
+            // Top spending merchants — grouped server-side.
+            var topMerchants = await baseQuery
+                .Where(t => t.Debit > 0 && t.CounterParty != null
+                         && t.CounterParty.Name != null && t.CounterParty.Name != "")
+                .GroupBy(t => t.CounterParty.Name)
+                .Select(g => new { name = g.Key, amount = g.Sum(t => t.Debit) })
+                .OrderByDescending(x => x.amount)
+                .Take(5)
                 .ToListAsync();
 
-            var allTransactions = transactions
-                .Select(t => new UnifiedTransaction
-                {
-                    Id = t.BankReference,
-                    Date = t.TransactionDate,
-                    Spend = t.Debit,
-                    Income = t.Credit,
-                    CounterPartyName = t.CounterParty?.Name,
-                    Mode = t.Mode
-                })
-                .ToList();
-
-            if (!allTransactions.Any())
-            {
-                // Return a default structure if no transactions
-                return Ok(new
-                {
-                    totalIncome = 0,
-                    totalSpends = 0,
-                    totalTransactions = 0,
-                    topMerchants = new List<object>(),
-                    recentTransactions = new List<object>()
-                });
-            }
-
-            // Calculate stats
-            var totalIncome = allTransactions.Sum(t => t.Income);
-            var totalSpends = allTransactions.Sum(t => t.Spend);
-            var totalTransactions = allTransactions.Count();
-
-            // Calculate top spending merchants
-            var topMerchants = allTransactions
-                .Where(t => t.Spend > 0 && !string.IsNullOrEmpty(t.CounterPartyName))
-                .GroupBy(t => t.CounterPartyName)
-                .Select(g => new {
-                    name = g.Key,
-                    amount = g.Sum(t => t.Spend)
-                })
-                .OrderByDescending(g => g.amount)
+            // Most recent 5 — only these rows leave the DB.
+            var recent = await baseQuery
+                .OrderByDescending(t => t.TransactionDate)
                 .Take(5)
-                .ToList();
-
-            // Get recent transactions
-            var recentTransactions = allTransactions
-                .OrderByDescending(t => t.Date)
-                .Take(5)
-                .Select(t => new {
-                    id = t.Id,
-                    name = t.CounterPartyName ?? "N/A",
-                    date = t.Date,
+                .Select(t => new
+                {
+                    id = t.BankReference,
+                    name = t.CounterParty != null ? t.CounterParty.Name : null,
+                    date = t.TransactionDate,
                     mode = t.Mode,
-                    amount = t.Income > 0 ? t.Income : -t.Spend // Frontend expects negative for spends
+                    income = t.Credit,
+                    spend = t.Debit
                 })
-                .ToList();
+                .ToListAsync();
+
+            var recentTransactions = recent.Select(t => new
+            {
+                id = t.id,
+                name = t.name ?? "N/A",
+                date = t.date,
+                mode = t.mode,
+                amount = t.income > 0 ? t.income : -t.spend // Frontend expects negative for spends
+            }).ToList();
 
             return Ok(new { totalIncome, totalSpends, totalTransactions, topMerchants, recentTransactions });
         }
@@ -100,37 +83,38 @@ namespace BankStatementAnalytics.Controllers.Api
             if (string.IsNullOrWhiteSpace(accountIds))
                 return BadRequest("accountIds is required.");
 
-            var ownedIds = DbHelper.GetAll<Account>()
-                .Where(a => a.OwnerUserId == CurrentUserId)
-                .Select(a => a.Id)
-                .ToHashSet();
+            using var session = DbHelper.GetSession();
 
-            var ids = accountIds.Split(',')
-                .Select(s => long.TryParse(s.Trim(), out var id) ? id : 0)
-                .Where(id => id > 0 && ownedIds.Contains(id))
-                .ToList();
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var ids = AccountAccess.FilterOwned(accountIds, ownedIds);
 
             if (!ids.Any())
                 return BadRequest("No valid accountIds provided.");
-
-            using var session = DbHelper.GetSession();
 
             var query = session.Query<BankTransaction>()
                 .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
 
             if (startDate.HasValue)
-                query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= startDate.Value.Date);
 
             if (endDate.HasValue)
-                query = query.Where(t => t.TransactionDate <= endDate.Value.Date.AddDays(1).AddTicks(-1));
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) <= endDate.Value.Date.AddDays(1).AddTicks(-1));
 
-            var transactions = await query
-                .Fetch(t => t.CounterParty)
+            // Narrow projection: only the five fields the groupings need, not whole entities.
+            var rows = await query
+                .Select(t => new
+                {
+                    t.Debit,
+                    t.CategoryOverride,
+                    MerchantName = t.CounterParty != null ? t.CounterParty.Name : null,
+                    MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null,
+                    t.Tags
+                })
                 .ToListAsync();
 
             // By Category
-            var byCategory = transactions
-                .GroupBy(t => t.CategoryOverride ?? t.CounterParty?.Category ?? "Uncategorized")
+            var byCategory = rows
+                .GroupBy(t => t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized")
                 .Select(g => new
                 {
                     name = g.Key,
@@ -141,9 +125,9 @@ namespace BankStatementAnalytics.Controllers.Api
                 .ToList();
 
             // By Merchant
-            var byMerchant = transactions
-                .Where(t => t.CounterParty != null)
-                .GroupBy(t => t.CounterParty!.Name)
+            var byMerchant = rows
+                .Where(t => t.MerchantName != null)
+                .GroupBy(t => t.MerchantName!)
                 .Select(g => new
                 {
                     name = g.Key,
@@ -154,8 +138,8 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Take(20)
                 .ToList();
 
-            // By Tag
-            var byTag = transactions
+            // By Tag (Tags is a CSV column — must be split in memory)
+            var byTag = rows
                 .Where(t => !string.IsNullOrWhiteSpace(t.Tags))
                 .SelectMany(t => t.Tags!.Split(',')
                     .Select(tag => new { tag = tag.Trim(), t.Debit }))
@@ -182,75 +166,69 @@ namespace BankStatementAnalytics.Controllers.Api
             if (string.IsNullOrWhiteSpace(accountIds))
                 return BadRequest("accountIds is required.");
 
-            var ownedIds = DbHelper.GetAll<Account>()
-                .Where(a => a.OwnerUserId == CurrentUserId)
-                .Select(a => a.Id)
-                .ToHashSet();
+            using var session = DbHelper.GetSession();
 
-            var ids = accountIds.Split(',')
-                .Select(s => long.TryParse(s.Trim(), out var id) ? id : 0)
-                .Where(id => id > 0 && ownedIds.Contains(id))
-                .ToList();
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var ids = AccountAccess.FilterOwned(accountIds, ownedIds);
 
             if (!ids.Any())
                 return BadRequest("No valid accountIds provided.");
 
-            using var session = DbHelper.GetSession();
-
-            // Build IQueryable<BankTransaction> first — no Fetch yet
             IQueryable<BankTransaction> query = session.Query<BankTransaction>()
                 .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
 
             if (startDate.HasValue)
-                query = query.Where(t => t.TransactionDate >= startDate.Value.Date);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= startDate.Value.Date);
 
             if (endDate.HasValue)
-                query = query.Where(t => t.TransactionDate <= endDate.Value.Date.AddDays(1).AddTicks(-1));
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) <= endDate.Value.Date.AddDays(1).AddTicks(-1));
 
-            // Apply Fetch at the end, after all Where clauses
-            var transactions = await query
-                .Fetch(t => t.CounterParty)
-                .ToListAsync();
-
-            // Filter in-memory by the clicked group
-            IEnumerable<BankTransaction> filtered = groupBy switch
+            // Push the merchant/category group filter into SQL; only byTag needs in-memory
+            // splitting of the CSV Tags column.
+            switch (groupBy)
             {
-                "byCategory" => transactions.Where(t =>
-                    (t.CategoryOverride ?? t.CounterParty?.Category ?? "Uncategorized") == groupValue),
+                case "byMerchant":
+                    query = query.Where(t => t.CounterParty != null && t.CounterParty.Name == groupValue);
+                    break;
 
-                "byMerchant" => transactions.Where(t =>
-                    t.CounterParty?.Name == groupValue),
+                case "byCategory" when groupValue == "Uncategorized":
+                    query = query.Where(t => t.CategoryOverride == null
+                        && (t.CounterParty == null || t.CounterParty.Category == null));
+                    break;
 
-                "byTag" => transactions.Where(t =>
-                    !string.IsNullOrWhiteSpace(t.Tags) &&
-                    t.Tags.Split(',').Select(tag => tag.Trim()).Contains(groupValue)),
+                case "byCategory":
+                    query = query.Where(t => t.CategoryOverride == groupValue
+                        || (t.CategoryOverride == null && t.CounterParty != null && t.CounterParty.Category == groupValue));
+                    break;
 
-                _ => Enumerable.Empty<BankTransaction>()
-            };
+                case "byTag":
+                    break; // handled in memory below
 
-            var result = filtered
+                default:
+                    return Ok(new List<object>());
+            }
+
+            var projected = query
                 .OrderByDescending(t => t.TransactionDate)
-                .Select(t => new {
+                .Select(t => new
+                {
                     id = t.BankReference,
                     date = t.TransactionDate,
-                    description = t.CounterParty?.Name ?? t.BankReference,
+                    description = t.CounterParty != null ? t.CounterParty.Name : t.BankReference,
                     accountId = t.AccountId,
-                    amount = t.Debit
-                })
-                .ToList();
+                    amount = t.Debit,
+                    tags = t.Tags
+                });
 
-            return Ok(result);
+            var rows = await projected.ToListAsync();
+
+            IEnumerable<object> result = groupBy == "byTag"
+                ? rows.Where(t => !string.IsNullOrWhiteSpace(t.tags)
+                        && t.tags.Split(',').Select(tag => tag.Trim()).Contains(groupValue))
+                      .Select(t => new { t.id, t.date, t.description, t.accountId, t.amount })
+                : rows.Select(t => new { t.id, t.date, t.description, t.accountId, t.amount });
+
+            return Ok(result.ToList());
         }
-    }
-
-    // Helper class for unified transaction data
-    internal class UnifiedTransaction
-    {
-        public string Id { get; set; }
-        public DateTime Date { get; set; }
-        public decimal Spend { get; set; }
-        public decimal Income { get; set; }
-        public string CounterPartyName { get; set; }
-        public string Mode { get; set; }
     }
 }

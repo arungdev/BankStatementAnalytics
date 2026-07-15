@@ -23,7 +23,10 @@ namespace BankStatementAnalytics
                 catch (InvalidOperationException)
                 {
                     var appDir = Common.Framework.AppPaths.ResolveAppDirectory();
-                    var dataDir = Path.Combine(appDir, "Data");
+                    // Writable state (DB + embedded Postgres data) may need to live outside a
+                    // read-only Program Files install dir - resolve it separately from appDir,
+                    // which still points at the read-only bundled pgsql binaries and appsettings.
+                    var dataDir = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Data");
                     var dbPath = Path.Combine(dataDir, "DataBase.db");
 
                     // Layer config the same way the ASP.NET host does: base file, then the
@@ -42,9 +45,11 @@ namespace BankStatementAnalytics
                     var isPostgres = string.Equals(config["Database:Provider"], "Postgres", StringComparison.OrdinalIgnoreCase);
                     var isEmbedded = isPostgres && string.Equals(config["Database:Embedded"], "true", StringComparison.OrdinalIgnoreCase);
 
+                    Log.Info($"NHibernate init: appDir='{appDir}', dataDir='{dataDir}', dbPath='{dbPath}', provider={(isPostgres ? "Postgres" : "SQLite")}, embedded={isEmbedded}.");
+
                     if (isEmbedded)
                     {
-                        EmbeddedPostgresManager.EnsureStarted(appDir, databaseName: "bankstatements");
+                        EmbeddedPostgresManager.EnsureStarted(appDir, dataDir, databaseName: "bankstatements");
                     }
 
                     NHibernateManager.Initialize(dbPath, mapper =>
@@ -59,6 +64,9 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<CategoryMap>();
                         mapper.AddMapping<SubCategoryMap>();
                         mapper.AddMapping<TagMap>();
+                        mapper.AddMapping<RecurringBillMap>();
+                        mapper.AddMapping<BudgetMap>();
+                        mapper.AddMapping<DepositMap>();
                     }, null,
                     isPostgres
                         ? db =>

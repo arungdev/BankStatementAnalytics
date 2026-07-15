@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
+import { AuthShell, AuthField, AuthPasswordField, AuthError, AuthSubmit } from '../components/AuthShell';
 
 export default function Setup() {
   const { setup } = useAuth();
@@ -30,66 +31,46 @@ export default function Setup() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'var(--gray-50)',
-    }}>
-      <form onSubmit={submit} className="card" style={{ width: '380px', maxWidth: '90vw' }}>
-        <h1 style={{ margin: '0 0 4px', fontSize: 'var(--text-xl)' }}>Welcome</h1>
-        <p style={{ margin: '0 0 20px', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
-          Create the first admin account to get started.
-        </p>
+    <AuthShell
+      title="Welcome"
+      subtitle="Create the first admin account to get started"
+      onSubmit={submit}
+    >
+      <AuthField
+        label="Username"
+        value={username}
+        onChange={e => setUsername(e.target.value)}
+        placeholder="Choose a username"
+        autoComplete="username"
+        autoFocus
+        required
+      />
+      <AuthPasswordField
+        label="Password"
+        value={password}
+        onChange={e => setPassword(e.target.value)}
+        placeholder="Choose a password"
+        autoComplete="new-password"
+        required
+      />
+      <AuthPasswordField
+        label="Confirm password"
+        value={confirmPassword}
+        onChange={e => setConfirmPassword(e.target.value)}
+        placeholder="Re-enter your password"
+        autoComplete="new-password"
+        required
+      />
 
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{ display: 'block', marginBottom: '6px', fontSize: 'var(--text-sm)' }}>Username</label>
-          <input
-            className="field-input"
-            style={{ width: '100%' }}
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            autoFocus
-            required
-          />
-        </div>
+      <AuthError>{error}</AuthError>
 
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{ display: 'block', marginBottom: '6px', fontSize: 'var(--text-sm)' }}>Password</label>
-          <input
-            className="field-input"
-            style={{ width: '100%' }}
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-          />
-        </div>
+      <AuthSubmit submitting={submitting} busyLabel="Creating...">
+        Create admin account
+      </AuthSubmit>
 
-        <div style={{ marginBottom: '14px' }}>
-          <label style={{ display: 'block', marginBottom: '6px', fontSize: 'var(--text-sm)' }}>Confirm password</label>
-          <input
-            className="field-input"
-            style={{ width: '100%' }}
-            type="password"
-            value={confirmPassword}
-            onChange={e => setConfirmPassword(e.target.value)}
-            required
-          />
-        </div>
-
-        {error && (
-          <p style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)', marginBottom: '14px' }}>{error}</p>
-        )}
-
-        <button type="submit" className="btn primary" style={{ width: '100%' }} disabled={submitting}>
-          {submitting ? 'Creating...' : 'Create admin account'}
-        </button>
-
-        <p style={{ margin: '16px 0 0', textAlign: 'center', fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
-          <Link to="/login" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>
-            Back to sign in
-          </Link>
-        </p>
-      </form>
-    </div>
+      <p className="auth-footer">
+        Already have an account? <Link to="/login">Sign in</Link>
+      </p>
+    </AuthShell>
   );
 }

@@ -10,12 +10,8 @@ namespace BankStatementAnalytics.Services.Parser
 {
     public class HdfcTransactionParser : IBankParser
     {
-        private readonly CounterPartyService _counterPartyService;
-
-        public HdfcTransactionParser(CounterPartyService counterPartyService)
-        {
-            _counterPartyService = counterPartyService;
-        }
+        // Parsers are pure: they extract the counterparty NAME onto the transaction
+        // (PendingCounterPartyName); the import pipeline resolves it to a Merchant in one batch.
 
         // ── Compiled regexes ─────────────────────────────────────────
 
@@ -343,8 +339,7 @@ namespace BankStatementAnalytics.Services.Parser
             ParseNarration(narration, tx, out string? counterPartyName);
 
             if (!string.IsNullOrWhiteSpace(counterPartyName))
-                tx.CounterParty = _counterPartyService.ResolveOrCreate(
-                    counterPartyName, tx.BankCode, tx.AccountId, upiId: tx.UpiVpa);
+                tx.PendingCounterPartyName = counterPartyName;
 
             if (string.IsNullOrWhiteSpace(tx.BankReference) || tx.BankReference == "0")
                 tx.BankReference = GenerateReference(tx);

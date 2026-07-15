@@ -4,6 +4,7 @@ using Common.Framework.Data;
 using Common.Framework.Web;
 using BankStatementAnalytics.Dtos;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -17,29 +18,59 @@ namespace BankStatementAnalytics.Controllers.Api
     {
         // GET: api/merchants
         [HttpGet]
-        public IActionResult GetAll()
+        public IActionResult GetAll([FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
         {
             using var session = DbHelper.GetSession();
 
-            var merchants = session.Query<Merchant>()
+            var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, scopeIds) = AccountAccess.ResolveScope(ownedAccountIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            var filterByAccount = status == AccountAccess.ScopeStatus.Ok;
+
+            var merchantEntities = session.Query<Merchant>()
                 .Where(x => x.OwnerUserId == CurrentUserId)
                 .FetchMany(x => x.UpiIds)
+                .ToList();
+
+            // Transaction count per merchant, scoped to this user's merchants (not a scan of
+            // every user's transactions).
+            var ownedMerchantIds = merchantEntities.Select(m => m.Id).ToHashSet();
+            var txQuery = session.Query<BankTransaction>()
+                .Where(t => t.CounterParty != null && ownedMerchantIds.Contains(t.CounterParty.Id));
+            if (filterByAccount)
+                txQuery = txQuery.Where(t => scopeIds.Contains(t.AccountId));
+            var txCounts = txQuery
+                .GroupBy(t => t.CounterParty.Id)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
                 .ToList()
+                .ToDictionary(x => x.Id, x => x.Count);
+
+            var merchants = merchantEntities
+                // Under an account filter a merchant only belongs if it has in-scope transactions.
+                .Where(m => !filterByAccount || txCounts.ContainsKey(m.Id))
                 .Select(merchantEntity => new
                 {
                     Id = merchantEntity.Id,
                     Name = merchantEntity.Name,
+                    FriendlyName = merchantEntity.FriendlyName,
                     Category = merchantEntity.Category,
+                    SubCategory = merchantEntity.SubCategory,
+                    ShiftToNextMonth = merchantEntity.ShiftToNextMonth == true,
                     UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
-                    Aliases = merchantEntity.Aliases.ToList()
-                }).ToList();
+                    Aliases = merchantEntity.Aliases.ToList(),
+                    TransactionCount = txCounts.TryGetValue(merchantEntity.Id, out var c) ? c : 0
+                })
+                .OrderByDescending(m => m.TransactionCount)
+                .ThenBy(m => m.FriendlyName ?? m.Name)
+                .ToList();
 
             return Ok(merchants);
         }
 
         // GET: api/merchants/{id}
         [HttpGet("{id}")]
-        public IActionResult GetById(int id)
+        public IActionResult GetById(int id, [FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
         {
             using var session = DbHelper.GetSession();
 
@@ -51,9 +82,17 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!Owns(merchantEntity))
                 return NotFound();
 
-            var transactions = session.Query<BankTransaction>()
-                .Where(x => x.CounterParty != null && x.CounterParty.Id == id)
-                .ToList();
+            var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, scopeIds) = AccountAccess.ResolveScope(ownedAccountIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            var filterByAccount = status == AccountAccess.ScopeStatus.Ok;
+
+            var txQuery = session.Query<BankTransaction>()
+                .Where(x => x.CounterParty != null && x.CounterParty.Id == id);
+            if (filterByAccount)
+                txQuery = txQuery.Where(x => scopeIds.Contains(x.AccountId));
+            var transactions = txQuery.ToList();
 
             var allTransactions = transactions
                 .Select(x => new
@@ -79,6 +118,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 FriendlyName = merchantEntity.FriendlyName,
                 Category = merchantEntity.Category,
                 SubCategory = merchantEntity.SubCategory,
+                ShiftToNextMonth = merchantEntity.ShiftToNextMonth == true,
                 BankCode = merchantEntity.BankCode,
                 Notes = merchantEntity.Notes,
                 UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
@@ -100,11 +140,18 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!Owns(merchantEntity))
                 return NotFound();
 
+            var oldShift = merchantEntity.ShiftToNextMonth == true;
+
             merchantEntity.Category = request.Category;
             merchantEntity.SubCategory = request.SubCategory;
+            merchantEntity.ShiftToNextMonth = request.ShiftToNextMonth;
             merchantEntity.UpdatedOn = DateTime.Now;
 
             await session.UpdateAsync(merchantEntity);
+
+            if (oldShift != request.ShiftToNextMonth)
+                await EffectiveDateCalculator.RecomputeForMerchantAsync(session, id, request.ShiftToNextMonth);
+
             await tx.CommitAsync();
 
             return NoContent();
@@ -169,16 +216,27 @@ namespace BankStatementAnalytics.Controllers.Api
                 // No need to clear secondary.UpiIds or delete them manually;
                 // NHibernate's Cascade.All will delete them when we delete secondary.
 
-                // Reassign Transactions to primary (single unified table)
-                var txs = session.Query<BankTransaction>().Where(t => t.CounterParty != null && t.CounterParty.Id == secId).ToList();
-                foreach (var t in txs)
+                // Union account memberships so the stored bag stays truthful after the merge.
+                foreach (var accId in secondary.AccountIds)
                 {
-                    t.CounterParty = primary;
-                    await session.UpdateAsync(t);
+                    if (!primary.AccountIds.Contains(accId))
+                        primary.AccountIds.Add(accId);
                 }
+
+                // Reassign transactions to primary in one bulk UPDATE rather than loading and
+                // updating each row. Runs directly against the DB (single unified table).
+                await session.CreateQuery(
+                        "update BankTransaction set CounterParty = :primary where CounterParty.Id = :secId")
+                    .SetParameter("primary", primary)
+                    .SetParameter("secId", secId)
+                    .ExecuteUpdateAsync();
 
                 await session.DeleteAsync(secondary);
             }
+
+            // Reassigned rows must carry the primary's month-shift semantics: rows joining a
+            // flagged primary get shifted, rows from a flagged secondary get cleared.
+            await EffectiveDateCalculator.RecomputeForMerchantAsync(session, primary.Id, primary.ShiftToNextMonth == true);
 
             await session.UpdateAsync(primary);
             await tx.CommitAsync();
@@ -235,6 +293,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     (t.UpiReference != null && t.UpiReference.Contains(searchAlias, StringComparison.OrdinalIgnoreCase)))
                 {
                     t.CounterParty = newCp;
+                    t.EffectiveDate = null; // newCp is freshly created and unflagged
                     await session.UpdateAsync(t);
                     movedTxs.Add(t);
                 }
@@ -275,6 +334,7 @@ namespace BankStatementAnalytics.Controllers.Api
     {
         public string? Category { get; set; }
         public string? SubCategory { get; set; }
+        public bool ShiftToNextMonth { get; set; }
     }
 
     public class MergeMerchantsRequest

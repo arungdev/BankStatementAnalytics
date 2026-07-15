@@ -10,3 +10,6 @@ Client/node_modules/
 /BankStatementAnalytics/Uploads
 /Publish
 /Setup
+/BankStatementAnalytics/bin
+/server.log
+/server.err.log

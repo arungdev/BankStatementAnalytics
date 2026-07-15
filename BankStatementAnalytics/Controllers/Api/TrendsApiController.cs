@@ -3,6 +3,7 @@ using NHibernate.Linq;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -17,31 +18,42 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public async Task<IActionResult> GetTrends(
             [FromQuery] int accountId,
+            [FromQuery] string accountIds = null,
             [FromQuery] string period = "week",
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null)
         {
-            if (accountId == 0)
-                return Ok(new List<object>());
-
-            var account = DbHelper.GetById<Account>((long)accountId);
-            if (!Owns(account))
-                return NotFound();
-
             using var session = DbHelper.GetSession();
+
+            // Resolve the set of accounts to aggregate: either the comma-separated
+            // "All accounts" list or a single accountId. Both are filtered to owned.
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            if (ids.Count == 0)
+                return Ok(new List<object>());
 
             var start = startDate.HasValue ? startDate.Value.Date : (DateTime?)null;
             var end = endDate.HasValue ? endDate.Value.Date : (DateTime?)null;
 
-            var query = session.Query<BankTransaction>().Where(t => t.AccountId == accountId);
+            var query = session.Query<BankTransaction>().Where(t => ids.Contains(t.AccountId));
 
+            // Filter on COALESCE(EffectiveDate, TransactionDate) so merchants flagged
+            // ShiftToNextMonth land in the right bucket. This sacrifices the
+            // IX_BankTransactions_Account_Date index, which is acceptable locally.
             if (start.HasValue)
-                query = query.Where(t => t.TransactionDate.Date >= start.Value);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= start.Value);
             if (end.HasValue)
-                query = query.Where(t => t.TransactionDate.Date <= end.Value);
+            {
+                var endExclusive = end.Value.AddDays(1);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) < endExclusive);
+            }
 
+            // .Date is applied in memory (in the group keys) rather than in SQL: date-part
+            // extraction on a COALESCE expression is a dialect-translation risk.
             var all = await query
-                .Select(t => new { Date = t.TransactionDate.Date, Spend = t.Debit, Income = t.Credit })
+                .Select(t => new { Date = t.EffectiveDate ?? t.TransactionDate, Spend = t.Debit, Income = t.Credit })
                 .ToListAsync();
 
             if (!all.Any())
@@ -53,7 +65,7 @@ namespace BankStatementAnalytics.Controllers.Api
             {
                 case "day":
                     result = all
-                        .GroupBy(t => t.Date)
+                        .GroupBy(t => t.Date.Date)
                         .OrderBy(g => g.Key)
                         .Select(g => new {
                             date = g.Key.ToString("yyyy-MM-dd"),

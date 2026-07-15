@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAccount } from '../context/useAccount';
+import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import { Bar } from 'react-chartjs-2';
 import {
@@ -16,24 +17,45 @@ import {
 import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/EmptyState';
-import { currencyFormatter } from '../utils/format';
+import EmptyState from '../components/ui/EmptyState';
+import Drawer from '../components/ui/Drawer';
+import useTheme from '../context/useTheme';
+import { getToken } from '../theme/chartTheme';
+import { currencyFormatter, isAmountMasked } from '../utils/format';
 import './Trends.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-// ── Chart colour tokens — aligned with the app's --success/--danger palette ──
-const C = {
-  green: '#10b981',
-  greenFill: 'rgba(16,185,129,0.72)',
-  red: '#ef4444',
-  redFill: 'rgba(239,68,68,0.70)',
-  grid: '#f0f2f4',
-  tickColor: '#9ca3af',
-  tooltipBg: '#1e293b',
+// chart.js paints on a canvas and can't consume CSS var()s, so chart colors
+// are resolved from tokens at render time. rgba variants drive the gradients.
+const hexToRgba = (hex, a) => {
+  const h = (hex || '').replace('#', '');
+  const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const r = parseInt(n.slice(0, 2), 16) || 0;
+  const g = parseInt(n.slice(2, 4), 16) || 0;
+  const b = parseInt(n.slice(4, 6), 16) || 0;
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+// ── Vertical fill gradient (top vivid → bottom soft), cached per canvas ─────
+const gradientCache = new WeakMap();
+const makeFill = (top, bottom) => (ctx) => {
+  const { ctx: g, chartArea } = ctx.chart;
+  if (!chartArea) return top;
+  let byKey = gradientCache.get(g);
+  if (!byKey) { byKey = {}; gradientCache.set(g, byKey); }
+  const key = `${top}|${bottom}|${Math.round(chartArea.top)}|${Math.round(chartArea.bottom)}`;
+  if (!byKey[key]) {
+    const grad = g.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+    grad.addColorStop(0, top);
+    grad.addColorStop(1, bottom);
+    byKey[key] = grad;
+  }
+  return byKey[key];
 };
 
 const formatShort = (v) => {
+  if (isAmountMasked()) return '••';
   if (v >= 10000000) return (v / 10000000).toFixed(1) + 'Cr';
   if (v >= 100000)   return (v / 100000).toFixed(2) + 'L';
   if (v >= 1000)     return (v / 1000).toFixed(1) + 'k';
@@ -46,7 +68,7 @@ const VISIBLE_GROUPS = 8;
 export function TrendsFilters({ period, setPeriod, dateRange, setDateRange }) {
   return (
     <>
-      <FilterGroup label="Period" style={{ position: 'relative', zIndex: 500 }}>
+      <FilterGroup style={{ position: 'relative', zIndex: 500 }}>
         <DateRangePicker
           value={dateRange}
           onChange={setDateRange}
@@ -69,6 +91,7 @@ export function TrendsFilters({ period, setPeriod, dateRange, setDateRange }) {
 
 const Trends = () => {
   const {
+    accounts:     accounts    = [],
     trendsPeriod: period       = 'week',
     trendsRange:  dateRange    = { start: null, end: null, preset: 'ALL' },
   } = useOutletContext() ?? {};
@@ -76,16 +99,39 @@ const Trends = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const { selectedAccountId } = useAccount();
+  const { theme } = useTheme();
+  const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
+
+  // Resolved chart colors — recomputed whenever the theme flips.
+  const C = useMemo(() => {
+    const income = getToken('chart-income');
+    const spend  = getToken('chart-spend');
+    return {
+      green: income,
+      greenTop: hexToRgba(income, 0.95),
+      greenBottom: hexToRgba(income, 0.55),
+      greenHover: income,
+      red: spend,
+      redTop: hexToRgba(spend, 0.92),
+      redBottom: hexToRgba(spend, 0.52),
+      redHover: spend,
+      grid: getToken('chart-grid'),
+      tickColor: getToken('chart-tick'),
+      tooltipBg: '#1e293b',
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme]);
 
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: Infinity });
   const scrollRef   = useRef(null);
   const debounceRef = useRef(null);
-  const barGroupWidth = period === 'day' ? 150 : 60;
+  const barGroupWidth = period === 'day' ? 84 : 62;
 
   // ── Drill-down modal state ─────────────────────────────────────────────
   const [drillDown, setDrillDown]           = useState(null);
   const [drillTransactions, setDrillTransactions] = useState([]);
   const [drillLoading, setDrillLoading]     = useState(false);
+  const [drillWidth, setDrillWidth]         = useState(720);
 
   // ── Helper: Date → "yyyy-MM-dd" string in local time ──────────────────
   const toLocalDate = (d) =>
@@ -94,11 +140,17 @@ const Trends = () => {
   // ── Fetch ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedAccountId) { setLoading(false); setData([]); return; }
+
+    // "All accounts" aggregates across every owned account; otherwise a single id.
+    const allIds = accounts.map(a => a.id).join(',');
+    if (isAllAccounts && !allIds) { setLoading(false); setData([]); return; }
     setLoading(true);
 
     const { start: startDate, end: endDate } = dateRange;
 
-    const params = new URLSearchParams({ accountId: selectedAccountId, period });
+    const params = new URLSearchParams({ period });
+    if (isAllAccounts) params.append('accountIds', allIds);
+    else               params.append('accountId', selectedAccountId);
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
 
@@ -124,7 +176,7 @@ const Trends = () => {
       })
       .catch(() => setData([]))
       .finally(() => setLoading(false));
-  }, [period, selectedAccountId, dateRange]);
+  }, [period, selectedAccountId, dateRange, accounts, isAllAccounts]);
 
   useEffect(() => {
     setVisibleRange({ start: 0, end: Math.min(VISIBLE_GROUPS, data.length) });
@@ -192,11 +244,21 @@ const Trends = () => {
 
     const params = new URLSearchParams({ startDate: bStart, endDate: bEnd, pageSize: 0 });
 
-    api.get(`/statements/${selectedAccountId}?${params.toString()}`)
-      .then(res => setDrillTransactions(res.data?.transactions || []))
+    // The statements endpoint is single-account, so for "all" we fan out over
+    // every account and merge the bucket's transactions.
+    const idsToFetch = isAllAccounts ? accounts.map(a => a.id) : [selectedAccountId];
+
+    Promise.all(
+      idsToFetch.map(id =>
+        api.get(`/statements/${id}?${params.toString()}`)
+          .then(res => res.data?.transactions || [])
+          .catch(() => [])
+      )
+    )
+      .then(results => setDrillTransactions(results.flat()))
       .catch(() => setDrillTransactions([]))
       .finally(() => setDrillLoading(false));
-  }, [data, selectedAccountId, getBucketRange]);
+  }, [data, selectedAccountId, isAllAccounts, accounts, getBucketRange]);
 
   const closeDrillDown = () => {
     setDrillDown(null);
@@ -238,25 +300,27 @@ const Trends = () => {
       {
         label: 'Spends',
         data: data.map(d => d.spend),
-        backgroundColor: C.redFill,
-        hoverBackgroundColor: C.red,
-        borderColor: C.red,
-        borderWidth: { top: 3, left: 0, right: 0, bottom: 0 },
-        borderRadius: { topLeft: 5, topRight: 5 },
+        backgroundColor: makeFill(C.redTop, C.redBottom),
+        hoverBackgroundColor: C.redHover,
+        borderRadius: { topLeft: 6, topRight: 6 },
         borderSkipped: false,
+        maxBarThickness: 30,
+        categoryPercentage: 0.68,
+        barPercentage: 0.92,
       },
       {
         label: 'Income',
         data: data.map(d => d.income),
-        backgroundColor: C.greenFill,
-        hoverBackgroundColor: C.green,
-        borderColor: C.green,
-        borderWidth: { top: 3, left: 0, right: 0, bottom: 0 },
-        borderRadius: { topLeft: 5, topRight: 5 },
+        backgroundColor: makeFill(C.greenTop, C.greenBottom),
+        hoverBackgroundColor: C.greenHover,
+        borderRadius: { topLeft: 6, topRight: 6 },
         borderSkipped: false,
+        maxBarThickness: 30,
+        categoryPercentage: 0.68,
+        barPercentage: 0.92,
       },
     ],
-  }), [data]);
+  }), [data, C]);
 
   const mainOptions = useMemo(() => ({
     responsive: true,
@@ -301,7 +365,7 @@ const Trends = () => {
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [visibleYMax, handleBarClick]);
+  }), [visibleYMax, handleBarClick, C]);
 
   // ── Render helpers ─────────────────────────────────────────────────────
   const renderChart = () => {
@@ -328,11 +392,11 @@ const Trends = () => {
     return (
       <div className="split-chart-container">
         <div className="y-axis-panel">
-          <Bar data={axisData} options={axisOptions} />
+          <Bar key={theme} data={axisData} options={axisOptions} />
         </div>
         <div className="bars-scroll-panel" ref={scrollRef} onScroll={handleScroll}>
-          <div style={{ position: 'relative', height: '100%', minWidth: `${data.length * barGroupWidth}px` }}>
-            <Bar data={mainData} options={mainOptions} />
+          <div style={{ position: 'relative', height: '100%', minWidth: `max(100%, ${data.length * barGroupWidth}px)` }}>
+            <Bar key={theme} data={mainData} options={mainOptions} />
           </div>
         </div>
       </div>
@@ -352,7 +416,10 @@ const Trends = () => {
   }, [drillTransactions]);
 
   return (
-    <div className="trends-container">
+    <div
+      className="trends-container"
+      style={{ marginRight: drillDown ? drillWidth : 0, transition: 'margin-right 0.2s ease' }}
+    >
 
       {/* Summary cards */}
       <div className="summary-stats">
@@ -387,17 +454,19 @@ const Trends = () => {
         <div className="chart-wrapper">{renderChart()}</div>
       </div>
 
-      {/* Drill-down modal */}
-      {drillDown && (
-        <div className="drilldown-backdrop" onClick={closeDrillDown}>
-          <div className="drilldown-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="drilldown-header">
-              <div>
-                <h3>{drillDown.label}</h3>
-                <span className="drilldown-range">{drillDown.start} → {drillDown.end}</span>
-              </div>
-              <button className="drilldown-close" onClick={closeDrillDown}>&times;</button>
-            </div>
+      {/* Drill-down — RHS slide-in drawer (shared shell with Transactions) */}
+      <Drawer
+        open={!!drillDown}
+        onClose={closeDrillDown}
+        title={drillDown?.label || ''}
+        width={drillWidth}
+        onWidthChange={setDrillWidth}
+        minWidth={420}
+        modal={false}
+      >
+        {drillDown && (
+          <>
+            <div className="drilldown-range-row">{drillDown.start} → {drillDown.end}</div>
 
             {!drillLoading && drillTransactions.length > 0 && (
               <div className="drilldown-summary">
@@ -429,49 +498,47 @@ const Trends = () => {
                   <EmptyState icon="📭" title="No transactions found" subtitle={`for ${drillDown.label}.`} compact />
                 </div>
               ) : (
-                <table className="drilldown-table">
-                  <colgroup>
-                    <col style={{ width: '110px' }} />
-                    <col style={{ width: 'auto' }} />
-                    <col style={{ width: '160px' }} />
-                    <col style={{ width: '110px' }} />
-                    <col style={{ width: '110px' }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Description</th>
-                      <th>Merchant</th>
-                      <th className="num">Debit</th>
-                      <th className="num">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {drillTransactions.map((t, i) => {
-                      const debit    = t.Debit    ?? t.debit    ?? 0;
-                      const credit   = t.Credit   ?? t.credit   ?? 0;
-                      const date     = t.TransactionDate ?? t.transactionDate;
-                      const desc     = t.Description    ?? t.description;
-                      const merchant = t.Merchant       ?? t.merchant;
-                      return (
-                        <tr key={t.Id ?? t.id ?? i}>
-                          <td className="cell-date">
+                <div className="drill-cards">
+                  {drillTransactions.map((t, i) => {
+                    const debit    = t.Debit    ?? t.debit    ?? 0;
+                    const credit   = t.Credit   ?? t.credit   ?? 0;
+                    const date     = t.TransactionDate ?? t.transactionDate;
+                    const desc     = t.Description    ?? t.description;
+                    const merchant = t.Merchant       ?? t.merchant;
+                    const isCredit = credit > 0;
+                    const amount   = isCredit ? credit : debit;
+                    const name     = merchant && merchant !== '-' ? merchant : (desc || '—');
+                    const initials = name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+                    const hue      = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+                    return (
+                      <div className="drill-card" key={t.Id ?? t.id ?? i}>
+                        <div
+                          className="drill-card-avatar"
+                          style={{ background: `hsl(${hue} 70% 92%)`, color: `hsl(${hue} 55% 38%)` }}
+                        >
+                          {initials}
+                        </div>
+                        <div className="drill-card-main">
+                          <div className="drill-card-merchant" title={name}>{name}</div>
+                          {desc && desc !== name && (
+                            <div className="drill-card-desc" title={desc}>{desc}</div>
+                          )}
+                          <div className="drill-card-date">
                             {date ? new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
-                          </td>
-                          <td className="cell-desc"     title={desc     || ''}>{desc     || '-'}</td>
-                          <td className="cell-merchant" title={merchant || ''}>{merchant && merchant !== '-' ? merchant : '-'}</td>
-                          <td className="num">{debit  > 0 ? <span className="text-red">{currencyFormatter.format(debit)}</span>   : <span className="cell-muted">-</span>}</td>
-                          <td className="num">{credit > 0 ? <span className="text-green">{currencyFormatter.format(credit)}</span> : <span className="cell-muted">-</span>}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+                        <div className={`drill-card-amount ${isCredit ? 'income' : 'spend'}`}>
+                          {isCredit ? '+' : '-'}{currencyFormatter.format(amount)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Drawer>
 
     </div>
   );
