@@ -389,8 +389,8 @@ export default function Insights() {
                     <div className="tnum" style={{ fontSize: '17px', fontWeight: 800, color: T.text, letterSpacing: '-0.5px' }}>{fmtK(grandTotal)}</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-                  {chartData.slice(0, 8).map((item, i) => (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px', maxHeight: 96, overflowY: 'auto', paddingRight: '4px' }}>
+                  {chartData.map((item, i) => (
                     <div
                       key={i} onClick={() => handleSliceClick(item)}
                       style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: T.muted, cursor: 'pointer' }}
@@ -399,9 +399,6 @@ export default function Insights() {
                       {item.name}
                     </div>
                   ))}
-                  {chartData.length > 8 && (
-                    <div style={{ fontSize: '11px', color: T.faint }}>+{chartData.length - 8} more</div>
-                  )}
                 </div>
               </div>
             </div>
