@@ -11,3 +11,5 @@ Client/node_modules/
 /Publish
 /Setup
 /BankStatementAnalytics/bin
+/server.log
+/server.err.log
