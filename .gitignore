@@ -13,3 +13,5 @@ Client/node_modules/
 /BankStatementAnalytics/bin
 /server.log
 /server.err.log
+# Real bank statements used for tuning PDF extraction - never commit (contain account numbers)
+/samples/
