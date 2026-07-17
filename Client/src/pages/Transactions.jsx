@@ -5,7 +5,7 @@ import usePersistedState from "../hooks/usePersistedState";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { useAuth } from "../context/useAuth";
-import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter } from "react-icons/fi";
+import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
 import { getUploads, revertStatement } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
@@ -70,6 +70,9 @@ export default function Transactions() {
 
   const [tx, setTx] = useState([]);
   const [loading, setLoading] = useState(!effectiveAccountId);
+  // Full-page loader only before the first load — later refetches (search typing,
+  // paging) keep the list mounted so the search input doesn't lose focus.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [totalTransactions, setTotalTransactions] = useState(0);
 
   // Categories from API
@@ -85,6 +88,17 @@ export default function Transactions() {
     setUncategorizedOnly(v => !v);
     setCurrentPage(1);
   };
+
+  // Search — searchInput follows the textbox, search is its debounced value used for fetching
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
 
   // Sidebar state
   const [selectedTx, setSelectedTx] = useState(null);
@@ -163,6 +177,7 @@ export default function Transactions() {
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
     if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
+    if (search) params.append('search', search);
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -180,6 +195,14 @@ export default function Transactions() {
 
         if (!isServerPaginated) {
           if (uncategorizedOnly) allTx = allTx.filter(t => !t.category);
+          if (search) {
+            const q = search.toLowerCase();
+            allTx = allTx.filter(t =>
+              (t.merchant || '').toLowerCase().includes(q) ||
+              (t.description || '').toLowerCase().includes(q) ||
+              (t.upiReference || '').toLowerCase().includes(q)
+            );
+          }
           // Client-side date filtering
           allTx = allTx.filter(t => {
             if (!startDate && !endDate) return true;
@@ -203,14 +226,16 @@ export default function Transactions() {
           setTotalTransactions(res.data.totalCount);
         }
         setLoading(false);
+        setHasLoaded(true);
       })
       .catch(err => {
         console.error(err);
         setLoading(false);
+        setHasLoaded(true);
       });
-  }, [effectiveAccountId, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly]);
+  }, [effectiveAccountId, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search]);
 
-  if (loading) {
+  if (loading && !hasLoaded) {
     return (
       <div className="loader-container">
         <div className="spinner"></div>
@@ -345,6 +370,7 @@ export default function Transactions() {
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
     if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
+    if (search) params.append('search', search);
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -440,6 +466,14 @@ export default function Transactions() {
           background: ${T.blueDim}; color: ${T.blue};
           padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
         }
+        .tx-search {
+          width: 100%; padding: 8px 14px 8px 36px;
+          border: 1px solid ${T.border}; border-radius: 10px;
+          font-size: 13px; font-family: inherit; background: ${T.surface};
+          color: ${T.text}; outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .tx-search:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
+        .tx-search::placeholder { color: ${T.faint}; }
         @media (max-width: 720px) {
           .tx-row, .tx-head { grid-template-columns: 60px minmax(0,1fr) 110px; }
           .tx-col-cat { display: none; }
@@ -447,7 +481,17 @@ export default function Transactions() {
       `}</style>
 
       {/* ── Action strip — title/date-filter now live in the shared header ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-5)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-5)', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '0 1 300px', marginRight: 'auto' }}>
+          <FiSearch size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: T.faint, pointerEvents: 'none' }} />
+          <input
+            type="text"
+            placeholder="Search merchant, description, UPI…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="tx-search"
+          />
+        </div>
         {isAdmin && (
           <Button onClick={() => setShowUpload(true)} style={{ fontSize: 'var(--text-sm)' }}>
             <FiUploadCloud size={14} /> Upload Statement
@@ -732,9 +776,9 @@ export default function Transactions() {
         )}
       </Drawer>
 
-      {/* Upload statement modal — scoped to the selected account, refreshes the list on success */}
+      {/* Upload statement modal — scoped to the selected account; closes itself and refreshes the list on success */}
       <Modal open={showUpload} onClose={() => setShowUpload(false)} width={760}>
-        <UploadStatement onUploaded={() => setRefreshKey(k => k + 1)} showHistory={false} />
+        <UploadStatement onUploaded={() => { setShowUpload(false); setRefreshKey(k => k + 1); }} showHistory={false} />
       </Modal>
     </div>
   );
