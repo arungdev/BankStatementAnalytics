@@ -26,6 +26,8 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.AccountHolderName);
             Property(x => x.BankName);
             Property(x => x.BranchCode);
+            Property(x => x.CreditLimit);
+            Property(x => x.StatementDay);
         }
     }
 }

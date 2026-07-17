@@ -60,6 +60,7 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<MerchantMap>();
                         mapper.AddMapping<BankTransactionMap>();
                         mapper.AddMapping<UploadMap>();
+                        mapper.AddMapping<CardStatementSummaryMap>();
                         mapper.AddMapping<UploadTransactionMap>();
                         mapper.AddMapping<CategoryMap>();
                         mapper.AddMapping<SubCategoryMap>();

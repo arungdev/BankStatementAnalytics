@@ -18,7 +18,15 @@ namespace BankStatementAnalytics.Models
 
         public virtual Bank BankName { get; set; } 
 
-        public virtual string BranchCode { get; set; } = string.Empty; 
+        public virtual string BranchCode { get; set; } = string.Empty;
+
+        // Credit-card-only metadata. Auto-filled from a parsed statement summary
+        // when a CC PDF is uploaded; editable manually in Settings as a fallback.
+        public virtual decimal? CreditLimit { get; set; }
+
+        // Day of month the card's statement is generated (1-31), used to derive
+        // billing-cycle boundaries when no parsed statement summary exists.
+        public virtual int? StatementDay { get; set; }
 
         // Computed property that exposes a masked version of the account number
         public virtual string MaskedAccountNumber
