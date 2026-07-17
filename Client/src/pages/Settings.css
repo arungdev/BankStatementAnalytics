@@ -341,7 +341,7 @@
 
 .subcat-empty {
   font-size: var(--text-sm);
-  color: var(--gray-400);
+  color: var(--text-faint);
   font-style: italic;
 }
 

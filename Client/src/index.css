@@ -20,15 +20,16 @@
   --gray-800: #1f2937;
   --gray-900: #111827;
 
-  /* Surfaces */
-  --bg: var(--gray-100);
+  /* Surfaces — bg sits a step below surface-2 so white cards read as raised;
+     text-muted/faint stay ≥4.5:1 on white for small-label legibility. */
+  --bg: #edeff4;
   --surface: #ffffff;
-  --surface-2: var(--gray-50);
-  --border-color: var(--gray-200);
-  --border-subtle: #f0f1f3;
+  --surface-2: #f4f5f9;
+  --border-color: #dcdfe6;
+  --border-subtle: #e7e9ef;
   --text-main: var(--gray-900);
-  --text-muted: var(--gray-500);
-  --text-faint: var(--gray-400);
+  --text-muted: var(--gray-600);
+  --text-faint: var(--gray-500);
   --overlay: rgba(15, 23, 42, 0.45);
 
   /* Legacy aliases kept for existing components */
@@ -57,7 +58,7 @@
   --chart-income: #059669;
   --chart-spend: #dc2626;
   --chart-grid: var(--gray-200);
-  --chart-tick: var(--gray-500);
+  --chart-tick: var(--gray-600);
 
   /* Stat tile (branded KPI card) */
   --stat-tile-bg: linear-gradient(135deg, #1e1b4b, #312e81);
