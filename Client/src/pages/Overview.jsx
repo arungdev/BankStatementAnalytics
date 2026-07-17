@@ -7,6 +7,7 @@ import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
+import CreditCardPanel from '../components/CreditCardPanel';
 import EmptyState from '../components/ui/EmptyState';
 import useTheme from '../context/useTheme';
 import { getToken } from '../theme/chartTheme';
@@ -73,7 +74,7 @@ const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
 
 export default function Overview() {
   const { selectedAccountId } = useAccount();
-  const { accounts = [] } = useOutletContext() ?? {};
+  const { accounts = [], openSettings } = useOutletContext() ?? {};
   const navigate = useNavigate();
   const { theme } = useTheme();
   const [data, setData] = useState(null);
@@ -129,6 +130,12 @@ export default function Overview() {
 
   const isEmpty = !loading && data && (data.totalTransactions ?? 0) === 0;
 
+  // Credit-card-only panel: statement dues, utilization, cycle spend.
+  const selectedAccount = selectedAccountId !== ALL_ACCOUNTS
+    ? accounts.find(a => a.id === selectedAccountId)
+    : null;
+  const isCreditCard = selectedAccount?.bankName === 'HDFCCreditCard';
+
   return (
     <div style={s.page}>
       <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
@@ -158,6 +165,10 @@ export default function Overview() {
           accent={T.indigoSoft}
         />
       </div>
+
+      {isCreditCard && (
+        <CreditCardPanel accountId={selectedAccountId} onOpenSettings={openSettings} />
+      )}
 
       {!selectedAccountId ? (
         <div style={s.card}>

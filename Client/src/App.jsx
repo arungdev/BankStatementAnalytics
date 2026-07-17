@@ -268,6 +268,7 @@ function Layout() {
         <section className="content" style={{ marginRight: remindersDock, transition: "margin-right 0.2s ease" }}>
           <Outlet context={{
             accounts,
+            openSettings: () => setIsSettings(true),
             insightRange,
             insightGroupBy,
             trendsPeriod,
