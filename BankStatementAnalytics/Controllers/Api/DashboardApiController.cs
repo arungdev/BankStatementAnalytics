@@ -33,13 +33,18 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var baseQuery = session.Query<BankTransaction>().Where(t => ids.Contains(t.AccountId));
 
+            // TRANSFER rows (credit-card bill payments etc.) are the user's own
+            // money moving between accounts — excluded from income/spend so they
+            // don't inflate both sides. Null-safe: SQL NULL != 'TRANSFER' drops rows.
+            var analyticsQuery = baseQuery.Where(t => t.Mode == null || t.Mode != "TRANSFER");
+
             // Totals computed in SQL rather than by loading every row.
-            var totalIncome = await baseQuery.SumAsync(t => (decimal?)t.Credit) ?? 0m;
-            var totalSpends = await baseQuery.SumAsync(t => (decimal?)t.Debit) ?? 0m;
+            var totalIncome = await analyticsQuery.SumAsync(t => (decimal?)t.Credit) ?? 0m;
+            var totalSpends = await analyticsQuery.SumAsync(t => (decimal?)t.Debit) ?? 0m;
             var totalTransactions = await baseQuery.CountAsync();
 
             // Top spending merchants — grouped server-side.
-            var topMerchants = await baseQuery
+            var topMerchants = await analyticsQuery
                 .Where(t => t.Debit > 0 && t.CounterParty != null
                          && t.CounterParty.Name != null && t.CounterParty.Name != "")
                 .GroupBy(t => t.CounterParty.Name)
@@ -92,7 +97,8 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest("No valid accountIds provided.");
 
             var query = session.Query<BankTransaction>()
-                .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
+                .Where(t => ids.Contains(t.AccountId) && t.Debit > 0
+                         && (t.Mode == null || t.Mode != "TRANSFER")); // own-money moves aren't spend
 
             if (startDate.HasValue)
                 query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= startDate.Value.Date);
@@ -175,7 +181,8 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest("No valid accountIds provided.");
 
             IQueryable<BankTransaction> query = session.Query<BankTransaction>()
-                .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
+                .Where(t => ids.Contains(t.AccountId) && t.Debit > 0
+                         && (t.Mode == null || t.Mode != "TRANSFER")); // mirror the insights filter
 
             if (startDate.HasValue)
                 query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= startDate.Value.Date);

@@ -37,7 +37,11 @@ namespace BankStatementAnalytics.Controllers.Api
             var start = startDate.HasValue ? startDate.Value.Date : (DateTime?)null;
             var end = endDate.HasValue ? endDate.Value.Date : (DateTime?)null;
 
-            var query = session.Query<BankTransaction>().Where(t => ids.Contains(t.AccountId));
+            var query = session.Query<BankTransaction>()
+                .Where(t => ids.Contains(t.AccountId)
+                         // TRANSFER rows (e.g. credit-card bill payments) are the
+                         // user's own money — not income or spend.
+                         && (t.Mode == null || t.Mode != "TRANSFER"));
 
             // Filter on COALESCE(EffectiveDate, TransactionDate) so merchants flagged
             // ShiftToNextMonth land in the right bucket. This sacrifices the

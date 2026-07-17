@@ -191,6 +191,9 @@ namespace BankStatementAnalytics.Controllers.Api
             var rows = await session.Query<BankTransaction>()
                 .Where(t => ownedIds.Contains(t.AccountId)
                          && t.Debit > 0
+                         // TRANSFER rows (e.g. credit-card bill payments) are the
+                         // user's own money — they don't consume a budget.
+                         && (t.Mode == null || t.Mode != "TRANSFER")
                          && (t.EffectiveDate ?? t.TransactionDate) >= monthStart
                          && (t.EffectiveDate ?? t.TransactionDate) < monthEnd)
                 .Select(t => new

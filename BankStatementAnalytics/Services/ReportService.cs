@@ -39,7 +39,10 @@ namespace BankStatementAnalytics.Services
             var txns = await session.Query<BankTransaction>()
                 .Where(t => accountIds.Contains(t.AccountId)
                          && (t.EffectiveDate ?? t.TransactionDate) >= start
-                         && (t.EffectiveDate ?? t.TransactionDate) < end)
+                         && (t.EffectiveDate ?? t.TransactionDate) < end
+                         // TRANSFER rows (e.g. credit-card bill payments) are the
+                         // user's own money — not income or spend.
+                         && (t.Mode == null || t.Mode != "TRANSFER"))
                 .Select(t => new ReportRow
                 {
                     Credit = t.Credit,
@@ -129,6 +132,7 @@ namespace BankStatementAnalytics.Services
             {
                 var debits = await session.Query<BankTransaction>()
                     .Where(t => ownedIds.Contains(t.AccountId) && t.Debit > 0
+                             && (t.Mode == null || t.Mode != "TRANSFER") // own-money moves don't consume budgets
                              && (t.EffectiveDate ?? t.TransactionDate) >= start
                              && (t.EffectiveDate ?? t.TransactionDate) < end)
                     .Select(t => new
