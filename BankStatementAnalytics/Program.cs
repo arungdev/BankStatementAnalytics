@@ -172,7 +172,7 @@ app.UseAuthentication();
 
 app.UseRoleGate(options =>
 {
-    options.FullAccessRole = nameof(AppRole.Admin);
+    options.FullAccessRoles = new[] { nameof(AppRole.Admin), nameof(AppRole.User) };
     options.AllowedOrigins = allowedOrigins;
     // In dev the SPA runs on a localhost port that varies (Vite); accept any loopback
     // origin so uploads/mutations aren't blocked. Production stays strict.

@@ -35,6 +35,13 @@ export function AuthProvider({ children }) {
     return res.data;
   };
 
+  // Self-registration: first account ever becomes Admin, later ones are regular users.
+  const register = async (username, password) => {
+    const res = await api.post('/auth/register', { username, password });
+    await refresh();
+    return res.data;
+  };
+
   const logout = async () => {
     await api.post('/auth/logout');
     await refresh();
@@ -45,6 +52,7 @@ export function AuthProvider({ children }) {
     isAdmin: status.role === 'Admin',
     login,
     setup,
+    register,
     logout,
     refresh,
   };
