@@ -51,9 +51,12 @@ namespace BankStatementAnalytics.Services
 
             foreach (var t in pending)
             {
-                var name = t.PendingCounterPartyName!;
-                var upiId = t.UpiVpa;
-                var bankCode = t.BankCode;
+                // Clamp to the mapped column sizes (Merchant.Name 250, BankCode 20,
+                // MerchantUpi.UpiId 100): a misparsed statement row can produce a
+                // monster name, and one oversized insert must not fail the import.
+                var name = Truncate(t.PendingCounterPartyName, 250)!;
+                var upiId = Truncate(t.UpiVpa, 100);
+                var bankCode = Truncate(t.BankCode, 20);
 
                 var cacheKey = !string.IsNullOrWhiteSpace(upiId) ? "U:" + upiId : $"N:{name}|{bankCode}";
 
@@ -114,6 +117,9 @@ namespace BankStatementAnalytics.Services
             TrackAccountAndUpi(session, found, accountId, upiId);
             return found;
         }
+
+        private static string? Truncate(string? value, int max) =>
+            value != null && value.Length > max ? value[..max] : value;
 
         // Track which account this merchant was funded from, and register a new UPI id.
         private static void TrackAccountAndUpi(ISession session, Merchant merchant, long accountId, string? upiId)

@@ -107,7 +107,7 @@ namespace BankStatementAnalytics.Services.Parser
             var tx = new BankTransaction
             {
                 AccountId = accountId,
-                BankType = Bank.HDFCCreditCard.ToString(),
+                BankType = BankTypeCode.For(Bank.HDFCCreditCard),
                 BankReference = string.Empty, // filled below
                 TransactionDate = txDate,
                 ValueDate = txDate,
@@ -124,6 +124,14 @@ namespace BankStatementAnalytics.Services.Parser
             // Parse description for mode, counterparty, UPI ref etc.
             ParseNarration(desc, tx, out string? counterPartyName);
 
+            // Bill payments are the user's own money arriving from their bank
+            // account — mark TRANSFER (analytics exclude these from income/spend).
+            if (isCredit && desc.Contains("CREDIT CARD PAYMENT", StringComparison.OrdinalIgnoreCase))
+            {
+                tx.Mode = "TRANSFER";
+                counterPartyName = "CREDIT CARD PAYMENT";
+            }
+
             // Record CounterParty name for batch resolution after parsing.
             if (!string.IsNullOrWhiteSpace(counterPartyName))
                 tx.PendingCounterPartyName = counterPartyName;
@@ -137,7 +145,8 @@ namespace BankStatementAnalytics.Services.Parser
         }
 
         // ── Narration parser ──────────────────────────────────────────────
-        private static void ParseNarration(
+        // internal: also reused by HdfcCreditCardPdfParser.
+        internal static void ParseNarration(
             string narration,
             BankTransaction tx,
             out string? counterPartyName)
@@ -234,7 +243,8 @@ namespace BankStatementAnalytics.Services.Parser
         }
 
         // ── Reference generator (same SHA1 pattern as HdfcTransactionParser) ──
-        private static string GenerateReference(BankTransaction tx)
+        // internal: also reused by HdfcCreditCardPdfParser.
+        internal static string GenerateReference(BankTransaction tx)
         {
             var raw = $"{tx.AccountId}|{tx.BankType}|{tx.TransactionDate:yyyyMMddHHmmss}|{tx.Amount}|{tx.Description}";
             var hash = Convert.ToHexString(
