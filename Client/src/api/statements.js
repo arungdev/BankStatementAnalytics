@@ -6,11 +6,12 @@ export const getAccounts = () => api.get("/statements/accounts");
 // Transactions by account
 export const getAccountTransactions = (id) => api.get(`/statements/${id}`);
 
-// Upload statement
-export const uploadStatement = (accountId, file, onUploadProgress) => {
+// Upload statement (password: optional, for protected PDF statements)
+export const uploadStatement = (accountId, file, onUploadProgress, password) => {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("accountId", accountId);
+  if (password) formData.append("password", password);
 
   const config = {
     headers: {

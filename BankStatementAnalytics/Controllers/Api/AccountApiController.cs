@@ -1,6 +1,7 @@
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using Microsoft.AspNetCore.Mvc;
@@ -23,19 +24,20 @@ namespace BankStatementAnalytics.Controllers.Api
             var account = DbHelper.GetById<Account>((long)id);
             if (!Owns(account)) return NotFound();
 
-            var formats = account.BankName switch
+            // Registry-driven so new parser registrations (e.g. PDF) flow to the
+            // client's file-picker accept attribute automatically.
+            var (formats, label) = TextService.GetSupportedFormats(account.BankName);
+            if (formats.Length == 0)
             {
-                Bank.HDFC => new[] { ".txt" },
-                Bank.HDFCCreditCard => new[] { ".csv" },
-                Bank.IOB => new[] { ".txt" },
-                _ => new[] { ".txt" }
-            };
+                formats = new[] { ".txt" };
+                label = "TXT";
+            }
 
             return Ok(new
             {
                 bankName = account.BankName.ToString(),
                 formats,
-                label = string.Join(", ", formats.Select(f => f.TrimStart('.').ToUpper())),
+                label,
                 downloadGuide = DownloadGuide(account.BankName)
             });
         }
@@ -45,35 +47,38 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             Bank.HDFC => new
             {
-                label = "HDFC Bank (.txt)",
+                label = "HDFC Bank (.txt / .pdf)",
                 steps = new[]
                 {
                     "Log in to HDFC NetBanking.",
                     "Go to Accounts → Enquire → Statement of Account (or \"Download Historical Transactions\").",
                     "Pick the account and the date range you want.",
-                    "Choose the \"Delimited (.txt)\" file type and download."
+                    "Choose the \"Delimited (.txt)\" file type and download.",
+                    "Or upload the monthly e-statement PDF emailed by the bank — enter its PDF password if it's protected."
                 }
             },
             Bank.HDFCCreditCard => new
             {
-                label = "HDFC Credit Card (.csv)",
+                label = "HDFC Credit Card (.csv / .pdf)",
                 steps = new[]
                 {
                     "Log in to HDFC NetBanking.",
                     "Go to Cards → Credit Cards → View / Download Statement.",
                     "Select the card and billing period.",
-                    "Download the statement in CSV format."
+                    "Download the statement in CSV format.",
+                    "Or upload the monthly e-statement PDF emailed by the bank — enter its PDF password if it's protected."
                 }
             },
             Bank.IOB => new
             {
-                label = "Indian Overseas Bank (.txt)",
+                label = "Indian Overseas Bank (.txt / .pdf)",
                 steps = new[]
                 {
                     "Log in to IOB NetBanking.",
                     "Go to Account Statement / Statement of Account.",
                     "Select the account and the period you want.",
-                    "Download / export the statement as a text (.txt) file."
+                    "Download / export the statement as a text (.txt) file.",
+                    "Or upload the e-statement PDF — enter its PDF password if it's protected."
                 }
             },
             _ => null
@@ -206,7 +211,6 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Where(u => u.AccountId == id)
                 .ToList();
 
-            var uploadsFolder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
             foreach (var upload in uploads)
             {
                 if (upload.TransactionId.HasValue)
@@ -216,12 +220,7 @@ namespace BankStatementAnalytics.Controllers.Api
                         await session.DeleteAsync(uploadTx);
                 }
 
-                if (!string.IsNullOrEmpty(upload.StoredName))
-                {
-                    var filePath = Path.Combine(uploadsFolder, upload.StoredName);
-                    if (System.IO.File.Exists(filePath))
-                        System.IO.File.Delete(filePath);
-                }
+                UploadStorage.DeleteFile(upload.StoredName);
 
                 await session.DeleteAsync(upload);
             }

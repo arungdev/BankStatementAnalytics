@@ -3,6 +3,7 @@ using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
 using BankStatementAnalytics.Services.Parser;
+using BankStatementAnalytics.Services.Pdf;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using Microsoft.AspNetCore.Mvc;
@@ -19,10 +20,12 @@ namespace BankStatementAnalytics.Controllers.Api
     public class StatementApiController : TenantControllerBase
     {
         private readonly TextService _textService;
+        private readonly PdfStatementReader _pdfReader;
 
-        public StatementApiController(TextService textService)
+        public StatementApiController(TextService textService, PdfStatementReader pdfReader)
         {
             _textService = textService;
+            _pdfReader = pdfReader;
         }
 
         // GET: api/statements/accounts
@@ -35,18 +38,28 @@ namespace BankStatementAnalytics.Controllers.Api
             var result = new List<object>();
             foreach (var a in accounts)
             {
-                var bankType = a.BankName.ToString();
+                var bankType = BankTypeCode.For(a.BankName);
                 var txns = session.Query<BankTransaction>()
                     .Where(t => t.AccountId == a.Id && t.BankType == bankType);
+
+                // No surrogate Id on BankTransaction; ImportedOn breaks same-date ties.
+                var lastTxn = txns.OrderByDescending(t => t.TransactionDate)
+                    .ThenByDescending(t => t.ImportedOn)
+                    .Select(t => new
+                    {
+                        t.TransactionDate,
+                        t.Description,
+                        Merchant = t.CounterParty != null ? t.CounterParty.Name : null,
+                        t.Debit,
+                        t.Credit,
+                        t.Balance
+                    })
+                    .FirstOrDefault();
 
                 decimal? balance = a.BankName == Bank.HDFCCreditCard
                     // Credit card statements carry no running balance, so derive the amount owed.
                     ? txns.Sum(t => (decimal?)(t.Debit - t.Credit))
-                    // No surrogate Id on BankTransaction; ImportedOn breaks same-date ties.
-                    : txns.OrderByDescending(t => t.TransactionDate)
-                          .ThenByDescending(t => t.ImportedOn)
-                          .Select(t => (decimal?)t.Balance)
-                          .FirstOrDefault();
+                    : lastTxn?.Balance;
 
                 result.Add(new
                 {
@@ -58,7 +71,13 @@ namespace BankStatementAnalytics.Controllers.Api
                     a.BranchCode,
                     a.MaskedAccountNumber,
                     Balance = balance,
-                    BalanceLabel = a.BankName == Bank.HDFCCreditCard ? "Outstanding" : "Balance"
+                    BalanceLabel = a.BankName == Bank.HDFCCreditCard ? "Outstanding" : "Balance",
+                    LastTransaction = lastTxn == null ? null : new
+                    {
+                        Date = lastTxn.TransactionDate,
+                        Description = !string.IsNullOrEmpty(lastTxn.Merchant) ? lastTxn.Merchant : lastTxn.Description,
+                        Amount = lastTxn.Credit - lastTxn.Debit
+                    }
                 });
             }
             return Ok(result);
@@ -74,7 +93,8 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] int? month = null,
      [FromQuery] DateTime? startDate = null,
      [FromQuery] DateTime? endDate = null,
-     [FromQuery] bool uncategorizedOnly = false)
+     [FromQuery] bool uncategorizedOnly = false,
+     [FromQuery] string search = null)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
             if (!Owns(account))
@@ -82,7 +102,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             using var session = DbHelper.GetSession();
 
-            var bankType = account.BankName.ToString();
+            var bankType = BankTypeCode.For(account.BankName);
 
             var query = session.Query<BankTransaction>()
                 .Where(t => t.AccountId == accountId && t.BankType == bankType);
@@ -113,6 +133,15 @@ namespace BankStatementAnalytics.Controllers.Api
                 query = query.Where(t =>
                     (t.CategoryOverride == null || t.CategoryOverride == "") &&
                     (t.CounterParty == null || t.CounterParty.Category == null || t.CounterParty.Category == ""));
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                query = query.Where(t =>
+                    (t.CounterParty != null && t.CounterParty.Name.Contains(term)) ||
+                    t.Description.Contains(term) ||
+                    t.UpiReference.Contains(term));
             }
 
             var projectedQuery = query
@@ -205,7 +234,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // POST: api/statements/upload
         [HttpPost("upload")]
-        public async Task<IActionResult> Upload(IFormFile file, [FromForm] int accountId)
+        public async Task<IActionResult> Upload(IFormFile file, [FromForm] int accountId, [FromForm] string? password = null)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
             if (!Owns(account))
@@ -215,8 +244,8 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest("File is empty");
 
             var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (ext != ".txt" && ext != ".csv")
-                return BadRequest("Only TXT and CSV files are supported.");
+            if (ext != ".txt" && ext != ".csv" && ext != ".pdf")
+                return BadRequest("Only TXT, CSV and PDF files are supported.");
 
             // Read once so we can both hash (for duplicate detection) and persist the bytes.
             byte[] bytes;
@@ -225,6 +254,22 @@ namespace BankStatementAnalytics.Controllers.Api
                 await file.CopyToAsync(ms);
                 bytes = ms.ToArray();
             }
+
+            // Pre-flight PDFs BEFORE any DB write: a wrong password / scanned PDF
+            // must not leave an Upload row behind, or the corrected retry would
+            // trip the duplicate-hash check below and 409.
+            if (ext == ".pdf")
+            {
+                try
+                {
+                    _pdfReader.Validate(bytes, password);
+                }
+                catch (PdfExtractionException pex)
+                {
+                    return BadRequest(pex.Message);
+                }
+            }
+
             var fileHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
 
             // Reject an exact re-upload of the same file for the same account.
@@ -236,11 +281,12 @@ namespace BankStatementAnalytics.Controllers.Api
                     return Conflict("This statement file has already been uploaded for this account.");
             }
 
-            var folder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
+            var accountFolder = UploadStorage.AccountFolderName(account);
+            var folder = Path.Combine(UploadStorage.Root, accountFolder);
             Directory.CreateDirectory(folder);
 
-            var storedName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-            var path = Path.Combine(folder, storedName);
+            var storedName = $"{accountFolder}/{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+            var path = Path.Combine(UploadStorage.Root, storedName);
 
             await System.IO.File.WriteAllBytesAsync(path, bytes);
 
@@ -274,9 +320,39 @@ namespace BankStatementAnalytics.Controllers.Api
                 await saveTx.CommitAsync();
             }
 
-            var (total, newCount) = await _textService.ExtractAsync(
-                path, accountId, uploadId,
-                ext == ".csv" ? StatementFileFormat.Csv : StatementFileFormat.Txt);
+            var format = ext switch
+            {
+                ".csv" => StatementFileFormat.Csv,
+                ".pdf" => StatementFileFormat.Pdf,
+                _ => StatementFileFormat.Txt,
+            };
+
+            int total, newCount;
+            try
+            {
+                (total, newCount) = await _textService.ExtractAsync(
+                    path, accountId, uploadId, format, password);
+            }
+            catch (Exception ex)
+            {
+                // Extraction/import failed after the Upload row was written — roll
+                // back the stored file and DB rows so a corrected retry doesn't 409
+                // on the duplicate-hash check. Friendly parse errors become explicit
+                // 400s (the global middleware would flatten them into a generic 500);
+                // anything else rethrows for the middleware to log as a 500.
+                using (var session = DbHelper.GetSession())
+                using (var cleanupTx = session.BeginTransaction())
+                {
+                    await session.DeleteAsync(tx);
+                    await session.DeleteAsync(upload);
+                    await cleanupTx.CommitAsync();
+                }
+                UploadStorage.DeleteFile(storedName);
+
+                if (ex is PdfExtractionException or NotSupportedException)
+                    return BadRequest(ex.Message);
+                throw;
+            }
 
             upload.TotalCount = total;
             upload.NewCount = newCount;
@@ -326,10 +402,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             await sessionTx.CommitAsync();
 
-            var folder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
-            var filePath = Path.Combine(folder, upload.StoredName);
-            if (System.IO.File.Exists(filePath))
-                System.IO.File.Delete(filePath);
+            UploadStorage.DeleteFile(upload.StoredName);
 
             await DbHelper.DeleteAsync(upload);
 
