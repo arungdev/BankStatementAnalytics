@@ -4,7 +4,7 @@ import { useAuth } from '../context/useAuth';
 import { AuthShell, AuthField, AuthPasswordField, AuthError, AuthSubmit } from '../components/AuthShell';
 
 export default function Setup() {
-  const { setup } = useAuth();
+  const { needsSetup, register } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -22,9 +22,9 @@ export default function Setup() {
 
     setSubmitting(true);
     try {
-      await setup(username, password);
+      await register(username, password);
     } catch (err) {
-      setError(err.response?.data || 'Could not complete setup.');
+      setError(err.response?.data || 'Could not create the account.');
     } finally {
       setSubmitting(false);
     }
@@ -32,8 +32,10 @@ export default function Setup() {
 
   return (
     <AuthShell
-      title="Welcome"
-      subtitle="Create the first admin account to get started"
+      title={needsSetup ? 'Welcome' : 'Create account'}
+      subtitle={needsSetup
+        ? 'Create the first admin account to get started'
+        : 'Sign up to start tracking your finances'}
       onSubmit={submit}
     >
       <AuthField
@@ -65,7 +67,7 @@ export default function Setup() {
       <AuthError>{error}</AuthError>
 
       <AuthSubmit submitting={submitting} busyLabel="Creating...">
-        Create admin account
+        {needsSetup ? 'Create admin account' : 'Create account'}
       </AuthSubmit>
 
       <p className="auth-footer">
