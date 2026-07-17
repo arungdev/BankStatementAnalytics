@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor } from "react-icons/fi";
 import api from "../api/client";
+import { updateCardSettings } from "../api/cards";
 import { useAccount } from "../context/useAccount";
 import { useAuth } from "../context/useAuth";
 import useTheme from "../context/useTheme";
@@ -28,6 +29,41 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
   // Account states
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [editAccountName, setEditAccountName] = useState("");
+
+  // Credit-card metadata drafts (credit limit / statement day), keyed by account id.
+  // Values usually come parsed from the PDF statement; these fields are the manual fallback.
+  const [cardDrafts, setCardDrafts] = useState({});
+  const cardDraft = (acc) => cardDrafts[acc.id] ?? {
+    creditLimit: acc.creditLimit ?? "",
+    statementDay: acc.statementDay ?? "",
+  };
+  const setCardDraft = (id, patch) =>
+    setCardDrafts(prev => ({ ...prev, [id]: { ...(prev[id] ?? {}), ...patch } }));
+
+  const handleSaveCardSettings = async (acc) => {
+    const d = cardDraft(acc);
+    const body = {
+      creditLimit: d.creditLimit === "" ? null : Number(d.creditLimit),
+      statementDay: d.statementDay === "" ? null : Number(d.statementDay),
+    };
+    if (body.statementDay != null && (body.statementDay < 1 || body.statementDay > 31)) {
+      alert("Statement day must be between 1 and 31.");
+      return;
+    }
+    if (body.creditLimit != null && body.creditLimit < 0) {
+      alert("Credit limit cannot be negative.");
+      return;
+    }
+    try {
+      await updateCardSettings(acc.id, body);
+      setAccounts(accounts.map(a =>
+        a.id === acc.id ? { ...a, creditLimit: body.creditLimit, statementDay: body.statementDay } : a));
+      setCardDrafts(prev => { const next = { ...prev }; delete next[acc.id]; return next; });
+    } catch (err) {
+      console.error("Failed to update card settings", err);
+      alert("Failed to update card settings. Please try again.");
+    }
+  };
 
   // Reminder states (client-side preferences persisted in localStorage)
   const [remEnabled, setRemEnabled] = useState(() => localStorage.getItem(REMINDERS_ENABLED_KEY) === "true");
@@ -486,6 +522,43 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                           </div>
                         )}
                       </div>
+
+                      {/* Credit-card-only metadata: usually auto-filled from the PDF
+                          statement; editable here as the manual fallback. */}
+                      {acc.bankName === 'HDFCCreditCard' && isAdmin && (
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' }}>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Credit limit (₹)
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="e.g. 100000"
+                              value={cardDraft(acc).creditLimit}
+                              onChange={(e) => setCardDraft(acc.id, { creditLimit: e.target.value })}
+                              className="field-input"
+                              style={{ width: '140px' }}
+                            />
+                          </label>
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Statement day (1–31)
+                            <input
+                              type="number"
+                              min="1"
+                              max="31"
+                              placeholder="e.g. 23"
+                              value={cardDraft(acc).statementDay}
+                              onChange={(e) => setCardDraft(acc.id, { statementDay: e.target.value })}
+                              className="field-input"
+                              style={{ width: '120px' }}
+                            />
+                          </label>
+                          {cardDrafts[acc.id] && (
+                            <button className="btn primary small" onClick={() => handleSaveCardSettings(acc)}>
+                              Save card settings
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
