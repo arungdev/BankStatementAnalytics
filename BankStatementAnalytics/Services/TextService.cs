@@ -79,8 +79,11 @@ namespace BankStatementAnalytics.Services
 
             // PDFs are converted to normalized delimiter-separated rows first;
             // text/CSV statements are parsed from the raw file content.
-            var text = format == StatementFileFormat.Pdf
-                ? _pdfReader.ExtractNormalizedText(await File.ReadAllBytesAsync(filePath), bank, password)
+            byte[]? pdfBytes = format == StatementFileFormat.Pdf
+                ? await File.ReadAllBytesAsync(filePath)
+                : null;
+            var text = pdfBytes != null
+                ? _pdfReader.ExtractNormalizedText(pdfBytes, bank, password)
                 : await File.ReadAllTextAsync(filePath);
 
             IBankParser parser = config != null
@@ -116,7 +119,80 @@ namespace BankStatementAnalytics.Services
 
             await DbHelper.SaveOrUpdateManyAsync(transactions);
 
+            // Credit card PDFs also carry a statement summary block (dues, due date,
+            // limits) — capture it best-effort; a failure here must never undo the
+            // transaction import that just succeeded.
+            if (pdfBytes != null && bank == Bank.HDFCCreditCard)
+                CaptureCardSummary(pdfBytes, accountId, uploadId, password);
+
             return (transactions.Count, newCount);
+        }
+
+        private void CaptureCardSummary(byte[] pdfBytes, int accountId, Guid uploadId, string? password)
+        {
+            try
+            {
+                var summary = HdfcCcSummaryExtractor.Extract(_pdfReader, pdfBytes, password);
+                if (!summary.HasAnyValue)
+                {
+                    Log.Info($"CC summary extraction found no fields for account {accountId} (layout change?).");
+                    return;
+                }
+
+                summary.AccountId = accountId;
+                summary.UploadId = uploadId;
+
+                using var session = DbHelper.GetSession();
+                using var tx = session.BeginTransaction();
+
+                // One summary per billed statement: re-uploading replaces the row.
+                var existing = summary.StatementDate != null
+                    ? session.Query<CardStatementSummary>()
+                        .FirstOrDefault(s => s.AccountId == accountId && s.StatementDate == summary.StatementDate)
+                    : session.Query<CardStatementSummary>()
+                        .FirstOrDefault(s => s.AccountId == accountId && s.UploadId == uploadId);
+
+                if (existing != null)
+                {
+                    existing.UploadId = uploadId;
+                    existing.StatementDate = summary.StatementDate;
+                    existing.PeriodStart = summary.PeriodStart;
+                    existing.PeriodEnd = summary.PeriodEnd;
+                    existing.PaymentDueDate = summary.PaymentDueDate;
+                    existing.TotalDue = summary.TotalDue;
+                    existing.MinimumDue = summary.MinimumDue;
+                    existing.CreditLimit = summary.CreditLimit;
+                    existing.AvailableCreditLimit = summary.AvailableCreditLimit;
+                    existing.RewardPointsBalance = summary.RewardPointsBalance;
+                    session.Update(existing);
+                }
+                else
+                {
+                    session.Save(summary);
+                }
+
+                // Auto-fill the account's card metadata, but only from the newest
+                // statement — an older statement uploaded later must not regress it.
+                bool isLatest = summary.StatementDate == null ||
+                    !session.Query<CardStatementSummary>().Any(s =>
+                        s.AccountId == accountId && s.StatementDate > summary.StatementDate);
+                if (isLatest)
+                {
+                    var account = session.Get<Account>((long)accountId);
+                    if (account != null)
+                    {
+                        if (summary.CreditLimit != null) account.CreditLimit = summary.CreditLimit;
+                        if (summary.StatementDate != null) account.StatementDay = summary.StatementDate.Value.Day;
+                        session.Update(account);
+                    }
+                }
+
+                tx.Commit();
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex);
+            }
         }
 
 

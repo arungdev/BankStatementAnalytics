@@ -259,6 +259,21 @@ static void RunPdfExtractHarness(string[] args)
         Console.WriteLine($"Unresolved merchant: {unresolved.Count} row(s)");
         foreach (var t in unresolved.Take(10))
             Console.WriteLine($"  {t.TransactionDate:dd/MM/yyyy}  {t.TransactionType}  {t.Amount,10:0.00}  {t.Description}");
+
+        // Credit card statements also carry a summary block — show what the
+        // extractor found so its regexes can be tuned alongside the table profile.
+        if (bank == BankStatementAnalytics.EnumClass.Bank.HDFCCreditCard)
+        {
+            var s = HdfcCcSummaryExtractor.Extract(reader, File.ReadAllBytes(pdfPath), password);
+            Console.WriteLine("── Statement summary ───────────────────────────────────────");
+            Console.WriteLine($"Statement date : {s.StatementDate:dd/MM/yyyy}");
+            Console.WriteLine($"Billing period : {s.PeriodStart:dd/MM/yyyy} - {s.PeriodEnd:dd/MM/yyyy}");
+            Console.WriteLine($"Total due      : {s.TotalDue:0.00}");
+            Console.WriteLine($"Minimum due    : {s.MinimumDue:0.00}");
+            Console.WriteLine($"Due date       : {s.PaymentDueDate:dd/MM/yyyy}");
+            Console.WriteLine($"Credit limit   : {s.CreditLimit:0.00} (available {s.AvailableCreditLimit:0.00})");
+            Console.WriteLine($"Reward points  : {s.RewardPointsBalance}");
+        }
     }
     catch (PdfExtractionException pex)
     {
