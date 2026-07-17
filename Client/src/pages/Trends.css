@@ -73,8 +73,9 @@
 .chart-legend     { display: flex; gap: 18px; font-size: 12px; color: var(--ink-2); font-weight: 500; }
 .chart-legend div { display: flex; align-items: center; gap: 7px; }
 .legend-dot       { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
-.legend-dot.spend  { background: var(--red); }
-.legend-dot.income { background: var(--green); }
+/* Swatches use the same tokens as the bars so the legend never drifts from the marks. */
+.legend-dot.spend  { background: var(--chart-spend); }
+.legend-dot.income { background: var(--chart-income); }
 
 /* ── Chart wrapper + split-canvas ────────────────────────────────────────── */
 .chart-wrapper { height: 420px; position: relative; }
@@ -84,15 +85,26 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
+  transition: opacity 0.15s ease;
+}
+/* Refetch in progress: hold the previous render at reduced opacity — no flash. */
+.split-chart-container.is-refetching {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .y-axis-panel {
-  flex: 0 0 56px;
+  flex: 0 0 64px;
+  /* min-width:0 + overflow:hidden — otherwise the flex item's default
+     min-width:auto lets chart.js's initial 300px canvas force the panel wide,
+     leaving a dead gap between the axis and the bars. */
+  min-width: 0;
+  overflow: hidden;
   height: 100%;
   position: relative;
   z-index: 2;
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border-soft);
 }
 
 .bars-scroll-panel {

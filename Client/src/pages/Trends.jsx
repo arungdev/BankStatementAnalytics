@@ -19,15 +19,14 @@ import { FilterGroup, FilterPill } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import EmptyState from '../components/ui/EmptyState';
 import Drawer from '../components/ui/Drawer';
-import useTheme from '../context/useTheme';
-import { getToken } from '../theme/chartTheme';
+import { useChartTheme } from '../theme/chartTheme';
 import { currencyFormatter, isAmountMasked } from '../utils/format';
 import './Trends.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 // chart.js paints on a canvas and can't consume CSS var()s, so chart colors
-// are resolved from tokens at render time. rgba variants drive the gradients.
+// are resolved from tokens at render time (useChartTheme).
 const hexToRgba = (hex, a) => {
   const h = (hex || '').replace('#', '');
   const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
@@ -37,28 +36,25 @@ const hexToRgba = (hex, a) => {
   return `rgba(${r},${g},${b},${a})`;
 };
 
-// ── Vertical fill gradient (top vivid → bottom soft), cached per canvas ─────
-const gradientCache = new WeakMap();
-const makeFill = (top, bottom) => (ctx) => {
-  const { ctx: g, chartArea } = ctx.chart;
-  if (!chartArea) return top;
-  let byKey = gradientCache.get(g);
-  if (!byKey) { byKey = {}; gradientCache.set(g, byKey); }
-  const key = `${top}|${bottom}|${Math.round(chartArea.top)}|${Math.round(chartArea.bottom)}`;
-  if (!byKey[key]) {
-    const grad = g.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-    grad.addColorStop(0, top);
-    grad.addColorStop(1, bottom);
-    byKey[key] = grad;
-  }
-  return byKey[key];
+// Round an axis max up to a clean tick step (1/2/2.5/5 × 10^n) so the y-axis
+// reads 10k/20k/30k instead of raw values like 28.9k.
+const niceScale = (rawMax) => {
+  if (!(rawMax > 0)) return { max: 100, step: 25 };
+  const headroom = rawMax * 1.08;
+  const target = headroom / 4; // aim for ~4 intervals
+  const pow = 10 ** Math.floor(Math.log10(target));
+  const mult = [1, 2, 2.5, 5, 10].find(c => c * pow >= target);
+  const step = mult * pow;
+  return { max: Math.ceil(headroom / step) * step, step };
 };
 
+// Compact tick labels — trailing zeros stripped ("2.5L", "3L", "10k").
+const trimZeros = (s) => s.replace(/\.?0+$/, '');
 const formatShort = (v) => {
   if (isAmountMasked()) return '••';
-  if (v >= 10000000) return (v / 10000000).toFixed(1) + 'Cr';
-  if (v >= 100000)   return (v / 100000).toFixed(2) + 'L';
-  if (v >= 1000)     return (v / 1000).toFixed(1) + 'k';
+  if (v >= 10000000) return trimZeros((v / 10000000).toFixed(2)) + 'Cr';
+  if (v >= 100000)   return trimZeros((v / 100000).toFixed(2)) + 'L';
+  if (v >= 1000)     return trimZeros((v / 1000).toFixed(1)) + 'k';
   return v;
 };
 
@@ -99,28 +95,11 @@ const Trends = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const { selectedAccountId } = useAccount();
-  const { theme } = useTheme();
   const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
 
-  // Resolved chart colors — recomputed whenever the theme flips.
-  const C = useMemo(() => {
-    const income = getToken('chart-income');
-    const spend  = getToken('chart-spend');
-    return {
-      green: income,
-      greenTop: hexToRgba(income, 0.95),
-      greenBottom: hexToRgba(income, 0.55),
-      greenHover: income,
-      red: spend,
-      redTop: hexToRgba(spend, 0.92),
-      redBottom: hexToRgba(spend, 0.52),
-      redHover: spend,
-      grid: getToken('chart-grid'),
-      tickColor: getToken('chart-tick'),
-      tooltipBg: '#1e293b',
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme]);
+  // Theme-resolved chart colors — shared token hook, recomputed on theme flip.
+  const T = useChartTheme();
+  const { theme } = T;
 
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: Infinity });
   const scrollRef   = useRef(null);
@@ -178,9 +157,10 @@ const Trends = () => {
       .finally(() => setLoading(false));
   }, [period, selectedAccountId, dateRange, accounts, isAllAccounts]);
 
+  // Land on the most recent buckets — that's what the reader came to check.
   useEffect(() => {
-    setVisibleRange({ start: 0, end: Math.min(VISIBLE_GROUPS, data.length) });
-    if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+    setVisibleRange({ start: Math.max(0, data.length - VISIBLE_GROUPS), end: data.length });
+    if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
   }, [data]);
 
   // ── Scroll → visible range ─────────────────────────────────────────────
@@ -195,12 +175,12 @@ const Trends = () => {
     }, 40);
   }, [data.length, barGroupWidth]);
 
-  // ── Dynamic Y-max ──────────────────────────────────────────────────────
-  const visibleYMax = useMemo(() => {
-    if (!data.length) return 100;
+  // ── Dynamic Y-scale — nice round max/step for the visible slice ─────────
+  const yScale = useMemo(() => {
+    if (!data.length) return niceScale(0);
     const slice = data.slice(visibleRange.start, visibleRange.end);
     const max   = slice.reduce((m, d) => Math.max(m, d.income, d.spend), 0);
-    return max > 0 ? max * 1.18 : 100;
+    return niceScale(max);
   }, [data, visibleRange]);
 
   // ── Summary ────────────────────────────────────────────────────────────
@@ -265,13 +245,13 @@ const Trends = () => {
     setDrillTransactions([]);
   };
 
-  // ── Shared Y scale factory ─────────────────────────────────────────────
+  // ── Shared Y scale factory — solid hairline grid, clean round ticks ─────
   const makeYScale = (showTicks) => ({
     beginAtZero: true,
-    max: visibleYMax,
-    grid: { color: C.grid, borderDash: [3, 5], drawTicks: false },
+    max: yScale.max,
+    grid: { color: T.grid, drawTicks: false },
     ticks: showTicks
-      ? { callback: formatShort, maxTicksLimit: 5, font: { size: 10.5, family: "'Inter'" }, color: C.tickColor, padding: 6 }
+      ? { callback: formatShort, stepSize: yScale.step, font: { size: 10.5, family: "'Inter'" }, color: T.axisTick, padding: 6 }
       : { display: false },
     border: { display: false },
   });
@@ -294,33 +274,35 @@ const Trends = () => {
   };
 
   // ── Main bars chart ────────────────────────────────────────────────────
+  // Thin solid bars: rounded data-end, square baseline, air between pairs.
+  const barStyle = {
+    borderRadius: { topLeft: 4, topRight: 4 },
+    borderSkipped: false,
+    maxBarThickness: 22,
+    categoryPercentage: 0.62,
+    barPercentage: 0.86,
+  };
+
   const mainData = useMemo(() => ({
     labels: data.map(d => d.label),
     datasets: [
       {
         label: 'Spends',
         data: data.map(d => d.spend),
-        backgroundColor: makeFill(C.redTop, C.redBottom),
-        hoverBackgroundColor: C.redHover,
-        borderRadius: { topLeft: 6, topRight: 6 },
-        borderSkipped: false,
-        maxBarThickness: 30,
-        categoryPercentage: 0.68,
-        barPercentage: 0.92,
+        backgroundColor: hexToRgba(T.spend, 0.9),
+        hoverBackgroundColor: T.spend,
+        ...barStyle,
       },
       {
         label: 'Income',
         data: data.map(d => d.income),
-        backgroundColor: makeFill(C.greenTop, C.greenBottom),
-        hoverBackgroundColor: C.greenHover,
-        borderRadius: { topLeft: 6, topRight: 6 },
-        borderSkipped: false,
-        maxBarThickness: 30,
-        categoryPercentage: 0.68,
-        barPercentage: 0.92,
+        backgroundColor: hexToRgba(T.income, 0.9),
+        hoverBackgroundColor: T.income,
+        ...barStyle,
       },
     ],
-  }), [data, C]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [data, T]);
 
   const mainOptions = useMemo(() => ({
     responsive: true,
@@ -335,13 +317,13 @@ const Trends = () => {
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: C.tooltipBg,
-        borderColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: T.tooltipBg,
+        borderColor: 'rgba(148,163,184,0.2)',
         borderWidth: 1,
         padding: 13,
         cornerRadius: 10,
-        titleColor: '#f1f5f9',
-        bodyColor: '#94a3b8',
+        titleColor: T.tooltipText,
+        bodyColor: hexToRgba(T.tooltipText, 0.75),
         titleFont: { size: 12, weight: '600', family: "'Inter'" },
         bodyFont: { size: 12, family: "'Inter'" },
         callbacks: {
@@ -360,16 +342,17 @@ const Trends = () => {
       y: makeYScale(false),
       x: {
         grid: { display: false },
-        ticks: { font: { size: 10.5, family: "'Inter'" }, color: C.tickColor, maxRotation: 0 },
+        ticks: { font: { size: 10.5, family: "'Inter'" }, color: T.axisTick, maxRotation: 0 },
         border: { display: false },
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [visibleYMax, handleBarClick, C]);
+  }), [yScale, handleBarClick, T]);
 
   // ── Render helpers ─────────────────────────────────────────────────────
   const renderChart = () => {
-    if (loading) {
+    // First load: spinner. Refetch: keep the previous bars, dimmed — no flash.
+    if (loading && !data.length) {
       return (
         <div className="chart-loader">
           <div className="loader-spinner" />
@@ -390,7 +373,7 @@ const Trends = () => {
     }
 
     return (
-      <div className="split-chart-container">
+      <div className={`split-chart-container${loading ? ' is-refetching' : ''}`}>
         <div className="y-axis-panel">
           <Bar key={theme} data={axisData} options={axisOptions} />
         </div>

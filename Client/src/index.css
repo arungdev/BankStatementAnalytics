@@ -157,8 +157,9 @@
   --chart-6: #ef4444;
   --chart-7: #ec4899;
   --chart-8: #ea580c;
-  --chart-income: #34d399;
-  --chart-spend: #f87171;
+  /* CVD-validated against --surface #1a1d27 (dataviz six-checks validator) */
+  --chart-income: #12a594;
+  --chart-spend: #e5484d;
   --chart-grid: #2a3040;
   --chart-tick: #9aa3b2;
 
