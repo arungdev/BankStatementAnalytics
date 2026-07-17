@@ -1,6 +1,7 @@
 using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services.Parser;
+using BankStatementAnalytics.Services.Pdf;
 using Common.Framework.Data;
 using Common.Framework.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,7 +12,7 @@ namespace BankStatementAnalytics.Services
     public class BankParserConfig
     {
         public Bank Bank { get; set; }
-        public string FileExt { get; set; }  // ".txt" or ".csv"
+        public string FileExt { get; set; }  // ".txt", ".csv" or ".pdf"
         public Type ParserType { get; set; }  // must implement IBankParser
     }
 
@@ -23,6 +24,11 @@ namespace BankStatementAnalytics.Services
             new() { Bank = Bank.HDFC,           FileExt = ".txt", ParserType = typeof(HdfcTransactionParser)   },
             new() { Bank = Bank.IOB,             FileExt = ".txt", ParserType = typeof(OpTransactionParser)     },
             new() { Bank = Bank.HDFCCreditCard,  FileExt = ".csv", ParserType = typeof(HdfcCreditCardParser)   },
+            // PDF parsers consume normalized text produced by PdfStatementReader,
+            // not the raw file bytes (see ExtractAsync).
+            new() { Bank = Bank.HDFC,           FileExt = ".pdf", ParserType = typeof(HdfcPdfParser)           },
+            new() { Bank = Bank.IOB,             FileExt = ".pdf", ParserType = typeof(IobPdfParser)            },
+            new() { Bank = Bank.HDFCCreditCard,  FileExt = ".pdf", ParserType = typeof(HdfcCreditCardPdfParser) },
         };
     }
 
@@ -30,11 +36,16 @@ namespace BankStatementAnalytics.Services
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly CounterPartyService _counterPartyService;
+        private readonly PdfStatementReader _pdfReader;
 
-        public TextService(IServiceProvider serviceProvider, CounterPartyService counterPartyService)
+        public TextService(
+            IServiceProvider serviceProvider,
+            CounterPartyService counterPartyService,
+            PdfStatementReader pdfReader)
         {
             _serviceProvider = serviceProvider;
             _counterPartyService = counterPartyService;
+            _pdfReader = pdfReader;
         }
 
         /// <summary>
@@ -42,11 +53,16 @@ namespace BankStatementAnalytics.Services
         /// transactions found in the file and how many of them were new (not already imported).
         /// </summary>
         public async Task<(int total, int newCount)> ExtractAsync(
-            string filePath, int accountId, Guid uploadId, StatementFileFormat format)
+            string filePath, int accountId, Guid uploadId, StatementFileFormat format,
+            string? password = null)
         {
-            var ext = format == StatementFileFormat.Csv ? ".csv" : ".txt";
+            var ext = format switch
+            {
+                StatementFileFormat.Csv => ".csv",
+                StatementFileFormat.Pdf => ".pdf",
+                _ => ".txt",
+            };
             var bank = GetBankName(accountId);
-            var text = await File.ReadAllTextAsync(filePath);
 
             var config = BankParserRegistry.Parsers
                 .FirstOrDefault(p => p.Bank == bank && p.FileExt == ext);
@@ -55,6 +71,17 @@ namespace BankStatementAnalytics.Services
                 throw new NotSupportedException(
                     $"CSV upload is not supported for bank: {bank}. " +
                     $"Registered CSV banks: {string.Join(", ", BankParserRegistry.Parsers.Where(p => p.FileExt == ".csv").Select(p => p.Bank))}");
+
+            // FallbackDetect sniffs raw-text markers, which are meaningless for
+            // PDFs — a PDF without a registered parser is simply unsupported.
+            if (config == null && format == StatementFileFormat.Pdf)
+                throw new NotSupportedException($"PDF upload is not supported for bank: {bank}.");
+
+            // PDFs are converted to normalized delimiter-separated rows first;
+            // text/CSV statements are parsed from the raw file content.
+            var text = format == StatementFileFormat.Pdf
+                ? _pdfReader.ExtractNormalizedText(await File.ReadAllBytesAsync(filePath), bank, password)
+                : await File.ReadAllTextAsync(filePath);
 
             IBankParser parser = config != null
                 ? (IBankParser)_serviceProvider.GetRequiredService(config.ParserType)
