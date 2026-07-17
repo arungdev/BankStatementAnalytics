@@ -12,7 +12,8 @@ const fmtDate = (d) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
 const dueLabel = (days) => {
-  if (days <= 0) return "Due today";
+  if (days < 0) return `Overdue by ${-days} day${days === -1 ? "" : "s"}`;
+  if (days === 0) return "Due today";
   if (days === 1) return "Due tomorrow";
   return `Due in ${days} days`;
 };
@@ -52,10 +53,14 @@ export default function NotificationBell({ onDockChange }) {
     onDockChange?.(open ? width : 0);
   }, [open, width, onDockChange]);
 
+  // Reminders come from two sources: recurring bills and unpaid credit-card
+  // statements (ids prefixed "cc-"). Both share the same item shape.
   const load = () =>
-    api.get("/bills/upcoming")
-      .then((res) => setItems(res.data || []))
-      .catch(() => setItems([]));
+    Promise.all([
+      api.get("/bills/upcoming").then((res) => res.data || []).catch(() => []),
+      api.get("/cards/upcoming").then((res) => res.data || []).catch(() => []),
+    ]).then(([bills, cards]) =>
+      setItems([...bills, ...cards].sort((a, b) => a.daysUntilDue - b.daysUntilDue)));
 
   useEffect(() => {
     load();
@@ -69,6 +74,12 @@ export default function NotificationBell({ onDockChange }) {
   const goToBills = () => {
     setOpen(false);
     navigate("/bills");
+  };
+
+  // Card-bill reminders live on the Overview page's credit card panel, not in Bills.
+  const goToItem = (b) => {
+    setOpen(false);
+    navigate(String(b.id).startsWith("cc-") ? "/" : "/bills");
   };
 
   const isRead = (b) => readSet.has(reminderKey(b));
@@ -189,9 +200,9 @@ export default function NotificationBell({ onDockChange }) {
                     }}
                   />
 
-                  {/* Clickable body → bills page */}
+                  {/* Clickable body → bills page (or Overview for card bills) */}
                   <button
-                    onClick={goToBills}
+                    onClick={() => goToItem(b)}
                     title="View bill"
                     style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
                   >
