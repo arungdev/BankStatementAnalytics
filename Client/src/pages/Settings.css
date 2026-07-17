@@ -217,6 +217,22 @@
   color: var(--text-muted);
 }
 
+.settings-row-lasttxn {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-lasttxn .txn-amount-debit {
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-row-lasttxn .txn-amount-credit {
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+
 .settings-row-balance {
   display: flex;
   flex-direction: column;

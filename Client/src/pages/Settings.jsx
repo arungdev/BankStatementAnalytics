@@ -6,7 +6,7 @@ import { useAuth } from "../context/useAuth";
 import useTheme from "../context/useTheme";
 import ProfileSettings from "../components/ProfileSettings";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
-import { currencyFormatterFull } from "../utils/format";
+import { currencyFormatterFull, formatDate } from "../utils/format";
 import "./Settings.css";
 
 export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreated, accounts = [], setAccounts }) {
@@ -450,6 +450,11 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                             <p className="settings-row-sub">
                               {acc.bankName} ending in {acc.accountNumber?.slice(-4) || '****'}
                             </p>
+                            {acc.lastTransaction && (
+                              <p className="settings-row-sub settings-row-lasttxn">
+                                Last txn: {formatDate(acc.lastTransaction.date)}
+                              </p>
+                            )}
                           </div>
                         </div>
 
