@@ -56,10 +56,31 @@ namespace BankStatementAnalytics.Controllers.Api
                     })
                     .FirstOrDefault();
 
-                decimal? balance = a.BankName == Bank.HDFCCreditCard
-                    // Credit card statements carry no running balance, so derive the amount owed.
-                    ? txns.Sum(t => (decimal?)(t.Debit - t.Credit))
-                    : lastTxn?.Balance;
+                decimal? balance;
+                if (a.BankName == Bank.HDFCCreditCard)
+                {
+                    // Credit card statements carry no running balance, so derive the amount
+                    // owed. Prefer anchoring on the latest parsed statement's billed total
+                    // plus activity since (same rule as CardApiController.GetSummary) — the
+                    // raw Σ(Debit−Credit) goes negative when history before the first
+                    // uploaded statement is missing.
+                    var latest = session.Query<CardStatementSummary>()
+                        .Where(s => s.AccountId == a.Id)
+                        .ToList()
+                        .OrderByDescending(s => s.StatementDate ?? DateTime.MinValue)
+                        .ThenByDescending(s => s.CreatedAt)
+                        .FirstOrDefault();
+
+                    balance = latest?.StatementDate != null && latest.TotalDue != null
+                        ? latest.TotalDue.Value + (txns
+                            .Where(t => t.TransactionDate > latest.StatementDate.Value)
+                            .Sum(t => (decimal?)(t.Debit - t.Credit)) ?? 0m)
+                        : txns.Sum(t => (decimal?)(t.Debit - t.Credit));
+                }
+                else
+                {
+                    balance = lastTxn?.Balance;
+                }
 
                 result.Add(new
                 {
@@ -70,6 +91,8 @@ namespace BankStatementAnalytics.Controllers.Api
                     a.BankName,
                     a.BranchCode,
                     a.MaskedAccountNumber,
+                    a.CreditLimit,
+                    a.StatementDay,
                     Balance = balance,
                     BalanceLabel = a.BankName == Bank.HDFCCreditCard ? "Outstanding" : "Balance",
                     LastTransaction = lastTxn == null ? null : new
@@ -399,6 +422,10 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var transactions = session.Query<BankTransaction>().Where(t => t.UploadId == id).ToList();
             foreach (var t in transactions) { await session.DeleteAsync(t); }
+
+            // A CC statement upload also produced a statement summary — revert it too.
+            var summaries = session.Query<CardStatementSummary>().Where(s => s.UploadId == id).ToList();
+            foreach (var s in summaries) { await session.DeleteAsync(s); }
 
             await sessionTx.CommitAsync();
 
