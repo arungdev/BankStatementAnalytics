@@ -122,11 +122,13 @@ namespace BankStatementAnalytics.Services
                 if (fd.MaturityDate is DateTime maturity)
                 {
                     fd.DaysToMaturity = (maturity.Date - DateTime.Today).Days;
-                    // Simple-interest projection over the placed→maturity span.
-                    if (m?.InterestRate is decimal rate && principal > 0)
+                    // Quarterly-compounded projection over the placed→maturity span
+                    // (Indian bank FD convention). Mirrored in Investments.jsx.
+                    if (m?.InterestRate is decimal rate && rate > 0 && principal > 0)
                     {
-                        var years = (decimal)(maturity - placedOn).TotalDays / 365m;
-                        fd.MaturityValue = Math.Round(principal * (1 + rate / 100m * years), 0);
+                        var years = (maturity - placedOn).TotalDays / 365d;
+                        if (years > 0)
+                            fd.MaturityValue = Math.Round(principal * (decimal)Math.Pow(1 + (double)rate / 400d, 4d * years), 0);
                     }
                 }
 
