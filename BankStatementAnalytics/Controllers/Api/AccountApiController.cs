@@ -152,10 +152,135 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest(new { message = "Account name is required." });
 
             account.AccountHolderName = name;
-            await DbHelper.SaveAsync(account);
+            await DbHelper.UpdateAsync(account);
 
             var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
             return Ok(dto);
+        }
+
+        // GET: api/accounts/browse-folders  — server-side folder browser backing the
+        // auto-import folder picker (a browser cannot read real filesystem paths).
+        // No path → list drives; otherwise list that folder's subfolders.
+        [HttpGet("browse-folders")]
+        public IActionResult BrowseFolders([FromQuery] string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                // Quick access first: the native Explorer dialog can't hand a web page
+                // a real path, so surface the folders people actually keep statements in.
+                var roots = new List<(string Name, string Path)>();
+                try
+                {
+                    foreach (var profile in Directory.EnumerateDirectories(@"C:\Users"))
+                    {
+                        var user = Path.GetFileName(profile);
+                        if (user is "Public" or "Default" or "Default User" or "All Users")
+                            continue;
+                        foreach (var sub in new[] { "Downloads", "Documents", "Desktop" })
+                        {
+                            var candidate = Path.Combine(profile, sub);
+                            if (Directory.Exists(candidate))
+                                roots.Add(($"{sub} ({user})", candidate));
+                        }
+                    }
+                }
+                catch { /* profile listing is best-effort */ }
+
+                roots.AddRange(DriveInfo.GetDrives()
+                    .Where(d => d.IsReady)
+                    .Select(d => (d.Name, d.Name)));
+
+                return Ok(new
+                {
+                    path = (string?)null,
+                    parent = (string?)null,
+                    folders = roots.Select(r => new { name = r.Name, path = r.Path })
+                });
+            }
+
+            string full;
+            try { full = Path.GetFullPath(path.Trim().Trim('"').Trim()); }
+            catch { return BadRequest(new { message = "Invalid path." }); }
+
+            if (!Directory.Exists(full))
+                return BadRequest(new { message = "Folder not found or not accessible." });
+
+            var folders = new List<(string Name, string Path)>();
+            try
+            {
+                foreach (var dir in Directory.EnumerateDirectories(full))
+                {
+                    try
+                    {
+                        var info = new DirectoryInfo(dir);
+                        if ((info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+                            continue;
+                        folders.Add((info.Name, info.FullName));
+                    }
+                    catch { /* skip unreadable entries */ }
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return BadRequest(new { message = "Folder not found or not accessible." });
+            }
+
+            return Ok(new
+            {
+                path = full,
+                parent = Directory.GetParent(full)?.FullName,
+                folders = folders
+                    .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(f => new { name = f.Name, path = f.Path })
+            });
+        }
+
+        // PUT: api/accounts/{id}/auto-import  — configure the watch folder the
+        // background importer sweeps for this account, plus the optional PDF password.
+        [HttpPut("{id}/auto-import")]
+        public async Task<IActionResult> UpdateAutoImport(int id, [FromBody] UpdateAutoImportRequest request,
+            [FromServices] WatchFolderImportService watcher)
+        {
+            var account = DbHelper.GetById<Account>((long)id);
+            if (!Owns(account))
+                return NotFound();
+
+            // Trim quotes so Explorer's "Copy as path" (which wraps in ") pastes cleanly.
+            var path = request?.WatchFolderPath?.Trim().Trim('"').Trim();
+            if (string.IsNullOrEmpty(path))
+            {
+                account.WatchFolderPath = null;
+            }
+            else
+            {
+                // Checked in the service process on purpose: also surfaces
+                // service-account permission problems at save time instead of
+                // silently in the background watcher.
+                if (!Directory.Exists(path))
+                    return BadRequest(new { message = "Folder not found or not accessible." });
+                account.WatchFolderPath = path;
+            }
+
+            // null = unchanged, empty string = clear, otherwise set.
+            if (request?.StatementPassword != null)
+                account.StatementPassword = request.StatementPassword.Length == 0 ? null : request.StatementPassword;
+
+            // null = unchanged; the pause switch keeps the folder configured.
+            if (request?.Enabled != null)
+                account.WatchEnabled = request.Enabled;
+
+            await DbHelper.UpdateAsync(account);
+
+            // Sweep right away so the first import doesn't wait out the interval.
+            if (!string.IsNullOrEmpty(account.WatchFolderPath) && account.WatchEnabled != false)
+                watcher.TriggerSweep();
+
+            return Ok(new
+            {
+                account.WatchFolderPath,
+                WatchEnabled = account.WatchEnabled != false,
+                HasStatementPassword = !string.IsNullOrEmpty(account.StatementPassword)
+            });
         }
 
         // DELETE: api/accounts/{id}  — removes the account and all of its parsed
@@ -235,6 +360,13 @@ namespace BankStatementAnalytics.Controllers.Api
         public class UpdateAccountRequest
         {
             public string? AccountHolderName { get; set; }
+        }
+
+        public class UpdateAutoImportRequest
+        {
+            public string? WatchFolderPath { get; set; }
+            public string? StatementPassword { get; set; }
+            public bool? Enabled { get; set; }
         }
     }
 }

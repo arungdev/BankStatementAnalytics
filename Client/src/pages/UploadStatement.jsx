@@ -50,6 +50,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
           accountId: u.accountId,
           time: new Date(u.uploadedAt).getTime(),
           transactionCount: u.transactionCount || 0,
+          autoImported: u.autoImported === true,
           response: u
         }));
         setUploads(loaded);
@@ -350,7 +351,10 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                   {filteredUploads.map((u) => (
                     <tr key={`${u.id || u.time}-${u.fileName}`}>
                       <td>
-                        <div style={{ fontWeight: 500, color: 'var(--gray-700)' }}>{u.fileName}</div>
+                        <div style={{ fontWeight: 500, color: 'var(--gray-700)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {u.fileName}
+                          {u.autoImported && <Badge variant="green">Auto</Badge>}
+                        </div>
                         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>
                           {accounts.find(a => String(a.id) === String(u.accountId))?.bankName || u.accountId}
                         </div>

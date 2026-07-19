@@ -28,6 +28,17 @@ namespace BankStatementAnalytics.Models
         // billing-cycle boundaries when no parsed statement summary exists.
         public virtual int? StatementDay { get; set; }
 
+        // Folder watched by the auto-import background service; null/empty = not configured.
+        public virtual string? WatchFolderPath { get; set; }
+
+        // Pause switch for the watcher. Nullable so SchemaUpdate can add the column;
+        // null == enabled (rows configured before the flag existed keep importing).
+        public virtual bool? WatchEnabled { get; set; }
+
+        // Password for protected statement PDFs picked up from the watch folder.
+        // Stored plaintext in the local DB — never echoed back through the API.
+        public virtual string? StatementPassword { get; set; }
+
         // Computed property that exposes a masked version of the account number
         public virtual string MaskedAccountNumber
         {

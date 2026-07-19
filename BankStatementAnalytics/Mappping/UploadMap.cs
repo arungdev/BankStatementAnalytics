@@ -26,6 +26,7 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.FileHash, m => { m.Length(64); m.Index("IX_Uploads_FileHash"); });
             Property(x => x.TotalCount);
             Property(x => x.NewCount);
+            Property(x => x.AutoImported);
         }
     }
 }

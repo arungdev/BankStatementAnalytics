@@ -19,13 +19,11 @@ namespace BankStatementAnalytics.Controllers.Api
     [Route("api/statements")]
     public class StatementApiController : TenantControllerBase
     {
-        private readonly TextService _textService;
-        private readonly PdfStatementReader _pdfReader;
+        private readonly StatementImportService _importer;
 
-        public StatementApiController(TextService textService, PdfStatementReader pdfReader)
+        public StatementApiController(StatementImportService importer)
         {
-            _textService = textService;
-            _pdfReader = pdfReader;
+            _importer = importer;
         }
 
         // GET: api/statements/accounts
@@ -93,6 +91,9 @@ namespace BankStatementAnalytics.Controllers.Api
                     a.MaskedAccountNumber,
                     a.CreditLimit,
                     a.StatementDay,
+                    a.WatchFolderPath,
+                    WatchEnabled = a.WatchEnabled != false,
+                    HasStatementPassword = !string.IsNullOrEmpty(a.StatementPassword),
                     Balance = balance,
                     BalanceLabel = a.BankName == Bank.HDFCCreditCard ? "Outstanding" : "Balance",
                     LastTransaction = lastTxn == null ? null : new
@@ -117,7 +118,8 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] DateTime? startDate = null,
      [FromQuery] DateTime? endDate = null,
      [FromQuery] bool uncategorizedOnly = false,
-     [FromQuery] string search = null)
+     [FromQuery] string search = null,
+     [FromQuery] Guid? uploadId = null)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
             if (!Owns(account))
@@ -129,6 +131,11 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var query = session.Query<BankTransaction>()
                 .Where(t => t.AccountId == accountId && t.BankType == bankType);
+
+            // Rows a specific upload added (duplicates keep their first upload's id,
+            // so this is exactly that upload's "new" transactions).
+            if (uploadId.HasValue)
+                query = query.Where(t => t.UploadId == uploadId.Value);
 
             // Month attribution uses COALESCE(EffectiveDate, TransactionDate) so merchants
             // flagged ShiftToNextMonth (e.g. month-end salary) appear under the next month.
@@ -246,6 +253,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     u.Path,
                     u.UploadedAt,
                     u.TransactionId,
+                    u.AutoImported,
                     TotalCount = total,
                     NewCount = u.NewCount,
                     TransactionCount = total   // back-compat alias
@@ -253,6 +261,40 @@ namespace BankStatementAnalytics.Controllers.Api
             });
 
             return Ok(result);
+        }
+
+        // POST: api/statements/auto-imports/sweep — run the watch-folder sweep now
+        // instead of waiting out the interval ("Import now" in Settings).
+        [HttpPost("auto-imports/sweep")]
+        public IActionResult TriggerSweep([FromServices] WatchFolderImportService watcher)
+        {
+            watcher.TriggerSweep();
+            return Ok(new { message = "Sweep started." });
+        }
+
+        // GET: api/statements/auto-imports — watch-folder import attempts, including
+        // failures (which leave no Upload row behind).
+        [HttpGet("auto-imports")]
+        public IActionResult GetAutoImports([FromQuery] int? accountId)
+        {
+            using var session = DbHelper.GetSession();
+
+            var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+
+            if (accountId.HasValue && !ownedAccountIds.Contains(accountId.Value))
+                return NotFound();
+
+            var query = session.Query<ImportHistory>();
+            if (accountId.HasValue)
+                query = query.Where(h => h.AccountId == accountId.Value);
+
+            var items = query.ToList()
+                .Where(h => ownedAccountIds.Contains(h.AccountId))
+                .OrderByDescending(h => h.CreatedAt)
+                .Take(100)
+                .Select(h => new { h.Id, h.AccountId, h.FileName, h.Status, h.Error, h.CreatedAt, h.UploadId });
+
+            return Ok(items);
         }
 
         // POST: api/statements/upload
@@ -266,11 +308,6 @@ namespace BankStatementAnalytics.Controllers.Api
             if (file == null || file.Length == 0)
                 return BadRequest("File is empty");
 
-            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (ext != ".txt" && ext != ".csv" && ext != ".pdf")
-                return BadRequest("Only TXT, CSV and PDF files are supported.");
-
-            // Read once so we can both hash (for duplicate detection) and persist the bytes.
             byte[] bytes;
             using (var ms = new MemoryStream())
             {
@@ -278,109 +315,17 @@ namespace BankStatementAnalytics.Controllers.Api
                 bytes = ms.ToArray();
             }
 
-            // Pre-flight PDFs BEFORE any DB write: a wrong password / scanned PDF
-            // must not leave an Upload row behind, or the corrected retry would
-            // trip the duplicate-hash check below and 409.
-            if (ext == ".pdf")
-            {
-                try
-                {
-                    _pdfReader.Validate(bytes, password);
-                }
-                catch (PdfExtractionException pex)
-                {
-                    return BadRequest(pex.Message);
-                }
-            }
+            var result = await _importer.ImportAsync(account, bytes, file.FileName, password, autoImported: false);
 
-            var fileHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+            // Friendly parse errors become explicit 400s (the global middleware
+            // would flatten them into generic 500s); unexpected failures rethrow
+            // inside ImportAsync for the middleware to log as a 500.
+            if (result.Outcome == ImportOutcome.Duplicate)
+                return Conflict(result.Error);
+            if (result.Outcome == ImportOutcome.InvalidFile)
+                return BadRequest(result.Error);
 
-            // Reject an exact re-upload of the same file for the same account.
-            using (var checkSession = DbHelper.GetSession())
-            {
-                bool alreadyUploaded = checkSession.Query<Models.Upload>()
-                    .Any(u => u.AccountId == accountId && u.FileHash == fileHash);
-                if (alreadyUploaded)
-                    return Conflict("This statement file has already been uploaded for this account.");
-            }
-
-            var accountFolder = UploadStorage.AccountFolderName(account);
-            var folder = Path.Combine(UploadStorage.Root, accountFolder);
-            Directory.CreateDirectory(folder);
-
-            var storedName = $"{accountFolder}/{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-            var path = Path.Combine(UploadStorage.Root, storedName);
-
-            await System.IO.File.WriteAllBytesAsync(path, bytes);
-
-            var uploadId = Guid.NewGuid();
-            var upload = new Models.Upload
-            {
-                Id = uploadId,
-                FileName = file.FileName,
-                StoredName = storedName,
-                AccountId = accountId,
-                Path = $"/Uploads/{storedName}",
-                UploadedAt = DateTime.UtcNow,
-                FileHash = fileHash
-            };
-
-            var tx = new Models.UploadTransaction
-            {
-                Id = Guid.NewGuid(),
-                UploadId = upload.Id,
-                Description = $"Uploaded statement {file.FileName}",
-                CreatedAt = DateTime.UtcNow
-            };
-            upload.TransactionId = tx.Id;
-
-            // Persist the upload + its transaction record in one round-trip instead of three.
-            using (var session = DbHelper.GetSession())
-            using (var saveTx = session.BeginTransaction())
-            {
-                await session.SaveAsync(upload);
-                await session.SaveAsync(tx);
-                await saveTx.CommitAsync();
-            }
-
-            var format = ext switch
-            {
-                ".csv" => StatementFileFormat.Csv,
-                ".pdf" => StatementFileFormat.Pdf,
-                _ => StatementFileFormat.Txt,
-            };
-
-            int total, newCount;
-            try
-            {
-                (total, newCount) = await _textService.ExtractAsync(
-                    path, accountId, uploadId, format, password);
-            }
-            catch (Exception ex)
-            {
-                // Extraction/import failed after the Upload row was written — roll
-                // back the stored file and DB rows so a corrected retry doesn't 409
-                // on the duplicate-hash check. Friendly parse errors become explicit
-                // 400s (the global middleware would flatten them into a generic 500);
-                // anything else rethrows for the middleware to log as a 500.
-                using (var session = DbHelper.GetSession())
-                using (var cleanupTx = session.BeginTransaction())
-                {
-                    await session.DeleteAsync(tx);
-                    await session.DeleteAsync(upload);
-                    await cleanupTx.CommitAsync();
-                }
-                UploadStorage.DeleteFile(storedName);
-
-                if (ex is PdfExtractionException or NotSupportedException)
-                    return BadRequest(ex.Message);
-                throw;
-            }
-
-            upload.TotalCount = total;
-            upload.NewCount = newCount;
-            await DbHelper.UpdateAsync(upload);
-
+            var upload = result.Upload!;
             return Ok(new
             {
                 upload.Id,
@@ -390,15 +335,15 @@ namespace BankStatementAnalytics.Controllers.Api
                 upload.Path,
                 upload.UploadedAt,
                 upload.TransactionId,
-                TotalCount = total,
-                NewCount = newCount,
-                TransactionCount = total   // back-compat alias
+                TotalCount = result.Total,
+                NewCount = result.NewCount,
+                TransactionCount = result.Total   // back-compat alias
             });
         }
 
         // DELETE: api/statements/upload/{id}
         [HttpDelete("upload/{id:guid}")]
-        public async Task<IActionResult> DeleteUpload(Guid id)
+        public async Task<IActionResult> DeleteUpload(Guid id, [FromServices] WatchFolderImportService watcher)
         {
             var upload = DbHelper.GetById<Models.Upload>(id);
             if (upload == null)
@@ -432,6 +377,12 @@ namespace BankStatementAnalytics.Controllers.Api
             UploadStorage.DeleteFile(upload.StoredName);
 
             await DbHelper.DeleteAsync(upload);
+
+            // The watcher remembers files it already processed; forget them so a
+            // reverted statement still sitting in the watch folder imports again
+            // on the next sweep (instead of only after a service restart).
+            if (upload.AccountId.HasValue)
+                watcher.ForgetAccount(upload.AccountId.Value);
 
             return Ok(new { message = "Reverted" });
         }

@@ -16,9 +16,9 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 900px;
+  width: 1040px;
   max-width: 95vw;
-  height: 640px;
+  height: 720px;
   max-height: 92vh;
   background: var(--surface);
   border: 1px solid var(--border-color);
@@ -127,6 +127,8 @@
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-6) var(--space-8) var(--space-4);
+  /* keep header actions clear of the absolutely-positioned close button */
+  padding-right: calc(var(--space-8) + 28px);
   border-bottom: 1px solid var(--border-color);
 }
 

@@ -88,11 +88,17 @@ builder.Services.AddControllersWithViews();
 // Services
 builder.Services.AddSingleton<PdfStatementReader>(); // stateless
 builder.Services.AddScoped<TextService>();
+builder.Services.AddScoped<StatementImportService>();
+// Watch-folder auto-import sweeps. Registered as a singleton first so controllers
+// can resolve the same instance and call TriggerSweep ("Import now").
+builder.Services.AddSingleton<WatchFolderImportService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchFolderImportService>());
 builder.Services.AddScoped<TransactionRepositoryFactory>();
 builder.Services.AddScoped<CounterPartyService>();
 builder.Services.AddScoped<RecurringBillService>();
 builder.Services.AddScoped<DepositService>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<ReportPdfService>();
 // ── Auto-register all parsers from registry ──────────────────────────────
 foreach (var config in BankParserRegistry.Parsers)
 {

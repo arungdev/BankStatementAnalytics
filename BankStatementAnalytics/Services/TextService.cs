@@ -104,17 +104,27 @@ namespace BankStatementAnalytics.Services
             // transaction) instead of a session per parsed row.
             _counterPartyService.ResolveOrCreateBatch(accountId, transactions);
 
-            int newCount;
+            int newCount = 0;
             using (var session = DbHelper.GetSession())
             {
-                var existingKeys = session.Query<BankTransaction>()
+                // Duplicates keep the UploadId of the upload that first imported them,
+                // so `UploadId == x` means "the rows upload x actually added" — that's
+                // what both revert and the "N new" drill-down rely on.
+                var existingUploadIds = new Dictionary<string, Guid?>();
+                var existingRows = session.Query<BankTransaction>()
                     .Where(t => t.AccountId == accountId)
-                    .Select(t => new { t.BankReference, t.BankType })
-                    .ToList()
-                    .Select(x => $"{x.BankReference}|{x.BankType}")
-                    .ToHashSet();
+                    .Select(t => new { t.BankReference, t.BankType, t.UploadId })
+                    .ToList();
+                foreach (var row in existingRows)
+                    existingUploadIds[$"{row.BankReference}|{row.BankType}"] = row.UploadId;
 
-                newCount = transactions.Count(t => !existingKeys.Contains($"{t.BankReference}|{t.BankType}"));
+                foreach (var tx in transactions)
+                {
+                    if (existingUploadIds.TryGetValue($"{tx.BankReference}|{tx.BankType}", out var originalUploadId))
+                        tx.UploadId = originalUploadId;
+                    else
+                        newCount++;
+                }
             }
 
             await DbHelper.SaveOrUpdateManyAsync(transactions);

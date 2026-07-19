@@ -34,3 +34,10 @@ export const revertStatement = (id) => {
 
 // Get all uploads
 export const getUploads = () => api.get("/statements/uploads");
+
+// Watch-folder auto-import attempts, including failures (which leave no upload row)
+export const getAutoImports = (accountId) =>
+  api.get("/statements/auto-imports", { params: accountId ? { accountId } : {} });
+
+// Run the watch-folder sweep now instead of waiting for the next interval
+export const triggerAutoImportSweep = () => api.post("/statements/auto-imports/sweep");
