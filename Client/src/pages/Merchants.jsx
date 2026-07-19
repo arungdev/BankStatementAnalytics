@@ -5,7 +5,7 @@ import {
 import { FiFilter } from "react-icons/fi";
 import api from "../api/client";
 import Button from "../components/ui/Button";
-import { currencyFormatter, isAmountMasked, MASKED_AMOUNT } from "../utils/format";
+import { currencyFormatter, isAmountMasked, MASKED_AMOUNT, maskName } from "../utils/format";
 import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
@@ -187,6 +187,108 @@ export default function Merchants() {
     setIsEditing(true);
   };
 
+  // Sentinel option values for the "+ Add new…" entries in the edit dropdowns.
+  const NEW_CATEGORY = '__new_category__';
+  const NEW_SUBCATEGORY = '__new_subcategory__';
+
+  const handleAddCategory = () => {
+    const name = window.prompt('New category name')?.trim();
+    if (!name) return;
+    const existing = categoriesList.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setEditForm(prev => ({ ...prev, category: existing.name, subCategory: '' }));
+      return;
+    }
+    api.post('/categories', { name })
+      .then(res => {
+        setCategoriesList(prev => [...prev, { id: res.data.id, name: res.data.name, subCategories: [] }]);
+        setEditForm(prev => ({ ...prev, category: res.data.name, subCategory: '' }));
+      })
+      .catch(err => {
+        console.error('Failed to create category', err);
+        alert('Failed to create category.');
+      });
+  };
+
+  const handleAddSubCategory = () => {
+    const category = categoriesList.find(c => c.name === editForm.category);
+    if (!category) return;
+    const name = window.prompt(`New sub-category under "${category.name}"`)?.trim();
+    if (!name) return;
+    const existing = category.subCategories?.find(s => s.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setEditForm(prev => ({ ...prev, subCategory: existing }));
+      return;
+    }
+    api.post(`/categories/${category.id}/subcategories`, { name })
+      .then(() => {
+        setCategoriesList(prev => prev.map(c =>
+          c.id === category.id ? { ...c, subCategories: [...(c.subCategories || []), name] } : c
+        ));
+        setEditForm(prev => ({ ...prev, subCategory: name }));
+      })
+      .catch(err => {
+        console.error('Failed to create sub-category', err);
+        alert('Failed to create sub-category.');
+      });
+  };
+
+  // Inline categorization from the list rows (same UX as the Transactions page).
+  // The select's value is subCategory when set, else category — picking a
+  // sub-category option resolves its parent category before saving.
+  const applyMerchantCategory = (merchant, selectedValue) => {
+    let category = selectedValue || '';
+    let subCategory = '';
+    if (selectedValue) {
+      for (const cat of categoriesList) {
+        if (cat.subCategories?.includes(selectedValue)) {
+          category = cat.name;
+          subCategory = selectedValue;
+          break;
+        }
+      }
+    }
+    const previous = { category: merchant.category, subCategory: merchant.subCategory };
+    const patch = (m) => ({ ...m, category, subCategory });
+    setData(prev => prev.map(m => m.id === merchant.id ? patch(m) : m));
+    if (merchantDetails?.id === merchant.id) setMerchantDetails(patch);
+
+    api.put(`/merchants/${merchant.id}`, {
+      category,
+      subCategory,
+      shiftToNextMonth: merchant.shiftToNextMonth || false,
+    }).catch(err => {
+      console.error("Failed to update category", err);
+      alert("Failed to update category. Please try again.");
+      const revert = (m) => ({ ...m, ...previous });
+      setData(prev => prev.map(m => m.id === merchant.id ? revert(m) : m));
+      if (merchantDetails?.id === merchant.id) setMerchantDetails(revert);
+    });
+  };
+
+  const handleRowCategoryChange = (merchant, value) => {
+    if (value !== NEW_CATEGORY) {
+      applyMerchantCategory(merchant, value);
+      return;
+    }
+    const name = window.prompt('New category name')?.trim();
+    if (!name) return;
+    const existing = categoriesList.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      applyMerchantCategory(merchant, existing.name);
+      return;
+    }
+    api.post('/categories', { name })
+      .then(res => {
+        setCategoriesList(prev => [...prev, { id: res.data.id, name: res.data.name, subCategories: [] }]);
+        applyMerchantCategory(merchant, res.data.name);
+      })
+      .catch(err => {
+        console.error('Failed to create category', err);
+        alert('Failed to create category.');
+      });
+  };
+
   const handleSaveClick = () => {
     api.put(`/merchants/${merchantDetails.id}`, editForm)
       .then(() => {
@@ -325,6 +427,14 @@ export default function Merchants() {
           color: ${T.text}; outline: none; transition: border-color 0.15s, box-shadow 0.15s;
         }
         .mrc-search:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
+        .mrc-cat-select {
+          width: 100%; max-width: 100%;
+          padding: 5px 8px; font-size: 12px; font-weight: 600;
+          border: 1px solid ${T.border}; border-radius: 8px;
+          background: ${T.surface}; font-family: inherit;
+          outline: none; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .mrc-cat-select:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
         @media (max-width: 720px) {
           .mrc-row, .mrc-head { grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 88px 20px; }
           .mrc-col-cat, .mrc-col-meta { display: none; }
@@ -422,7 +532,7 @@ export default function Merchants() {
             />
           ) : (
             filteredData.map(merchant => {
-              const display = merchant.friendlyName || merchant.name || "-";
+              const display = maskName(merchant.friendlyName || merchant.name) || "-";
               const hasOriginal = merchant.friendlyName && merchant.name !== merchant.friendlyName;
               const upiCount = merchant.upiIds?.length || 0;
               const aliasCount = merchant.aliases?.length || 0;
@@ -456,13 +566,35 @@ export default function Merchants() {
                         fontSize: '12px', color: T.faint, marginTop: '1px',
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>
-                        {hasOriginal ? merchant.name : (upiCount > 0 ? merchant.upiIds[0] : 'No UPI on record')}
+                        {hasOriginal ? maskName(merchant.name) : (upiCount > 0 ? maskName(merchant.upiIds[0]) : 'No UPI on record')}
                       </div>
                     </div>
                   </div>
 
-                  <div className="mrc-col-cat">
-                    {merchant.category ? (
+                  <div className="mrc-col-cat" onClick={(e) => e.stopPropagation()}>
+                    {isAdmin ? (
+                      <select
+                        value={merchant.subCategory || merchant.category || ''}
+                        onChange={(e) => handleRowCategoryChange(merchant, e.target.value)}
+                        className="mrc-cat-select"
+                        style={{ color: merchant.category ? T.text : T.faint }}
+                      >
+                        <option value="">Uncategorized</option>
+                        {categoriesList.map(cat =>
+                          cat.subCategories?.length > 0 ? (
+                            <optgroup key={cat.id} label={cat.name}>
+                              <option value={cat.name}>{cat.name} (general)</option>
+                              {cat.subCategories.map(sub => (
+                                <option key={sub} value={sub}>{sub}</option>
+                              ))}
+                            </optgroup>
+                          ) : (
+                            <option key={cat.id} value={cat.name}>{cat.name}</option>
+                          )
+                        )}
+                        <option value={NEW_CATEGORY}>＋ Add new category…</option>
+                      </select>
+                    ) : merchant.category ? (
                       <span style={{
                         display: 'inline-block', maxWidth: '100%',
                         fontSize: '12px', fontWeight: 600, color: catFg,
@@ -539,14 +671,14 @@ export default function Merchants() {
           <div>
             {/* Identity header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '24px' }}>
-              <Avatar name={merchantDetails.friendlyName || merchantDetails.name} size={52} />
+              <Avatar name={maskName(merchantDetails.friendlyName || merchantDetails.name)} size={52} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <h3 style={{ margin: '0 0 2px 0', fontSize: '19px', color: T.text, letterSpacing: '-0.02em' }}>
-                  {merchantDetails.friendlyName || merchantDetails.name}
+                  {maskName(merchantDetails.friendlyName || merchantDetails.name)}
                 </h3>
                 <p style={{ margin: 0, color: T.muted, fontSize: '13px' }}>
                   {merchantDetails.friendlyName && merchantDetails.name !== merchantDetails.friendlyName
-                    ? merchantDetails.name
+                    ? maskName(merchantDetails.name)
                     : 'Original name matches'}
                 </p>
               </div>
@@ -566,7 +698,10 @@ export default function Merchants() {
                 {isEditing ? (
                   <select
                     value={editForm.category}
-                    onChange={(e) => setEditForm({ ...editForm, category: e.target.value, subCategory: '' })}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_CATEGORY) { handleAddCategory(); return; }
+                      setEditForm({ ...editForm, category: e.target.value, subCategory: '' });
+                    }}
                     className="field-select"
                     style={{ marginTop: '2px' }}
                   >
@@ -574,6 +709,7 @@ export default function Merchants() {
                     {categoriesList.map(cat => (
                       <option key={cat.id} value={cat.name}>{cat.name}</option>
                     ))}
+                    <option value={NEW_CATEGORY}>＋ Add new category…</option>
                   </select>
                 ) : (merchantDetails.category || <span style={{ color: T.faint }}>—</span>)}
               </Field>
@@ -581,15 +717,19 @@ export default function Merchants() {
                 {isEditing ? (
                   <select
                     value={editForm.subCategory}
-                    onChange={(e) => setEditForm({ ...editForm, subCategory: e.target.value })}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_SUBCATEGORY) { handleAddSubCategory(); return; }
+                      setEditForm({ ...editForm, subCategory: e.target.value });
+                    }}
                     className="field-select"
                     style={{ marginTop: '2px' }}
-                    disabled={!editForm.category || (categoriesList.find(c => c.name === editForm.category)?.subCategories?.length || 0) === 0}
+                    disabled={!categoriesList.some(c => c.name === editForm.category)}
                   >
                     <option value="">-- None --</option>
                     {categoriesList.find(c => c.name === editForm.category)?.subCategories?.map(sub => (
                       <option key={sub} value={sub}>{sub}</option>
                     ))}
+                    <option value={NEW_SUBCATEGORY}>＋ Add new sub-category…</option>
                   </select>
                 ) : (merchantDetails.subCategory || <span style={{ color: T.faint }}>—</span>)}
               </Field>
