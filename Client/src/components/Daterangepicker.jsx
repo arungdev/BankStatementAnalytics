@@ -5,22 +5,41 @@ import './ui/ui.css';
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-export const PRESETS = [
-  { label: 'All Time',      value: 'ALL' },
-  { label: 'Today',         value: 'TODAY' },
-  { label: 'Yesterday',     value: 'YESTERDAY' },
-  { label: 'Last 7 Days',   value: 'LAST_7' },
-  { label: 'Last 30 Days',  value: 'LAST_30' },
-  { label: 'Last 60 Days',  value: 'LAST_60' },
-  { label: 'Last 90 Days',  value: 'LAST_90' },
-  { label: 'Last 120 Days', value: 'LAST_120' },
-  { label: 'Last 180 Days', value: 'LAST_180' },
-  { label: 'This Week',     value: 'THIS_WEEK' },
-  { label: 'Last Week',     value: 'LAST_WEEK' },
-  { label: 'This Month',    value: 'THIS_MONTH' },
-  { label: 'Last Month',    value: 'LAST_MONTH' },
-  { label: 'Custom Range',  value: 'CUSTOM' },
+export const PRESET_GROUPS = [
+  {
+    title: 'Quick',
+    items: [
+      { label: 'All Time',  value: 'ALL' },
+      { label: 'Today',     value: 'TODAY' },
+      { label: 'Yesterday', value: 'YESTERDAY' },
+    ],
+  },
+  {
+    title: 'Rolling',
+    items: [
+      { label: 'Last 7 Days',  value: 'LAST_7' },
+      { label: 'Last 30 Days', value: 'LAST_30' },
+      { label: 'Last 60 Days', value: 'LAST_60' },
+    ],
+  },
+  {
+    title: 'Calendar',
+    items: [
+      { label: 'This Week',  value: 'THIS_WEEK' },
+      { label: 'Last Week',  value: 'LAST_WEEK' },
+      { label: 'This Month', value: 'THIS_MONTH' },
+      { label: 'Last Month', value: 'LAST_MONTH' },
+    ],
+  },
+  {
+    title: null,
+    items: [
+      { label: 'Custom Range', value: 'CUSTOM' },
+    ],
+  },
 ];
+
+export const PRESETS = PRESET_GROUPS.flatMap(g => g.items);
 
 /* ─── Date Helpers ──────────────────────────────────────────────────────── */
 const startOfDay = (d) => { const n = new Date(d); n.setHours(0,0,0,0); return n; };
@@ -39,9 +58,6 @@ export function resolvePreset(value) {
     case 'LAST_7':     return { start: addDays(today, -6), end: endOfDay(now) };
     case 'LAST_30':    return { start: addDays(today, -29), end: endOfDay(now) };
     case 'LAST_60':    return { start: addDays(today, -59), end: endOfDay(now) };
-    case 'LAST_90':    return { start: addDays(today, -89), end: endOfDay(now) };
-    case 'LAST_120':   return { start: addDays(today, -119), end: endOfDay(now) };
-    case 'LAST_180':   return { start: addDays(today, -179), end: endOfDay(now) };
     case 'THIS_WEEK':  { const s = new Date(today); s.setDate(today.getDate() - today.getDay()); return { start: s, end: endOfDay(now) }; }
     case 'LAST_WEEK':  { const s = new Date(today); s.setDate(today.getDate() - today.getDay() - 7); const e = new Date(s); e.setDate(s.getDate() + 6); return { start: s, end: endOfDay(e) }; }
     case 'THIS_MONTH': { const s = new Date(now.getFullYear(), now.getMonth(), 1); return { start: s, end: endOfDay(now) }; }
@@ -375,28 +391,34 @@ export default function DateRangePicker({
             <div style={{
               width: dims.sidebarWidth, borderRight: '1px solid var(--border-subtle)',
               padding: compact ? '8px 6px' : '12px 8px', display: 'flex', flexDirection: 'column', gap: 1,
-              maxHeight: compact ? 320 : 'none', overflowY: compact ? 'auto' : 'visible',
+              maxHeight: compact ? 400 : 'none', overflowY: compact ? 'auto' : 'visible',
             }}>
-              <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: dims.sideTitlePad }}>DATE RANGE</div>
-              {PRESETS.map(p => (
-                <button
-                  key={p.value}
-                  className={`drp-preset${preset === p.value ? ' active' : ''}`}
-                  onClick={() => applyPreset(p.value)}
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left',
-                    padding: dims.presetPad, border: 'none', borderRadius: 5,
-                    cursor: 'pointer', fontSize: dims.presetFont,
-                    background: preset === p.value ? 'var(--primary)' : 'transparent',
-                    color: preset === p.value ? '#fff' : 'var(--gray-700)',
-                    fontWeight: preset === p.value ? 700 : 400,
-                    transition: 'background 0.12s',
-                    fontFamily: 'inherit',
-                    lineHeight: 1.3,
-                  }}
-                >
-                  {p.label}
-                </button>
+              {PRESET_GROUPS.map((group, gi) => (
+                <div key={group.title ?? gi} style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: gi === 0 ? 0 : 6 }}>
+                  {group.title && (
+                    <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: dims.sideTitlePad }}>{group.title}</div>
+                  )}
+                  {group.items.map(p => (
+                    <button
+                      key={p.value}
+                      className={`drp-preset${preset === p.value ? ' active' : ''}`}
+                      onClick={() => applyPreset(p.value)}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left',
+                        padding: dims.presetPad, border: 'none', borderRadius: 5,
+                        cursor: 'pointer', fontSize: dims.presetFont,
+                        background: preset === p.value ? 'var(--primary)' : 'transparent',
+                        color: preset === p.value ? '#fff' : 'var(--gray-700)',
+                        fontWeight: preset === p.value ? 700 : 400,
+                        transition: 'background 0.12s',
+                        fontFamily: 'inherit',
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
               ))}
 
               {/* Last N days custom input */}
