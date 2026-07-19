@@ -16,10 +16,12 @@ namespace BankStatementAnalytics.Controllers.Api
     public class ReportsApiController : TenantControllerBase
     {
         private readonly ReportService _reports;
+        private readonly ReportPdfService _pdf;
 
-        public ReportsApiController(ReportService reports)
+        public ReportsApiController(ReportService reports, ReportPdfService pdf)
         {
             _reports = reports;
+            _pdf = pdf;
         }
 
         // GET: api/reports?type=month&year=2026&month=7&accountIds=1,2
@@ -49,6 +51,54 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var report = await _reports.BuildAsync(CurrentUserId, ids, yearly, year, month);
             return Ok(report);
+        }
+
+        // GET: api/reports/pdf?type=month&year=2026&month=7&accountIds=1,2
+        // Same parameters as GET api/reports, but renders the report as a downloadable PDF.
+        [HttpGet("pdf")]
+        public async Task<IActionResult> GetReportPdf(
+            [FromQuery] string type,
+            [FromQuery] int year,
+            [FromQuery] int month = 0,
+            [FromQuery] string accountIds = null)
+        {
+            var yearly = string.Equals(type, "year", StringComparison.OrdinalIgnoreCase);
+            if (!yearly && !string.Equals(type, "month", StringComparison.OrdinalIgnoreCase))
+                return BadRequest("type must be 'month' or 'year'.");
+            if (year < 1970 || year > 2100)
+                return BadRequest("year is out of range.");
+            if (!yearly && (month < 1 || month > 12))
+                return BadRequest("month must be between 1 and 12.");
+            if (string.IsNullOrWhiteSpace(accountIds))
+                return BadRequest("accountIds is required.");
+
+            var ownedIds = await AccountAccess.OwnedIdSetAsync(CurrentUserId);
+            var ids = AccountAccess.FilterOwned(accountIds, ownedIds);
+
+            if (!ids.Any())
+                return BadRequest("No valid accountIds provided.");
+
+            var report = await _reports.BuildAsync(CurrentUserId, ids, yearly, year, month);
+
+            // Scope line under the PDF title — a single account shows "HDFC ****1234",
+            // anything wider mirrors the page's "All accounts" label.
+            string scopeLabel;
+            if (ids.Count == 1)
+            {
+                using var session = DbHelper.GetSession();
+                var account = await session.GetAsync<Account>(ids[0]);
+                scopeLabel = account != null
+                    ? $"{account.BankName} {account.MaskedAccountNumber}".Trim()
+                    : "1 account";
+            }
+            else
+            {
+                scopeLabel = ids.Count == ownedIds.Count ? "All accounts" : $"{ids.Count} accounts";
+            }
+
+            var bytes = _pdf.Render(report, scopeLabel);
+            var fileName = $"{report.Label} {(yearly ? "Annual" : "Monthly")} Report.pdf";
+            return File(bytes, "application/pdf", fileName);
         }
 
         // GET: api/reports/periods — every calendar month and year from the user's earliest

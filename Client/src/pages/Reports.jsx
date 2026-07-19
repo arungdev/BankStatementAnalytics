@@ -12,7 +12,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { FiDownload } from 'react-icons/fi';
 import useTheme from '../context/useTheme';
 import { getToken } from '../theme/chartTheme';
-import { currencyFormatter as fmt } from '../utils/format';
+import { currencyFormatter as fmt, maskName } from '../utils/format';
 import './Reports.css';
 
 /* ─── Design tokens — mapped to the global CSS variable system. DOM inline
@@ -124,6 +124,7 @@ export default function Reports() {
 
   const [report, setReport]   = useState(null);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   // "All accounts" → every owned account id; otherwise the single selected id.
   const accountIdsParam = useMemo(() => {
@@ -137,8 +138,9 @@ export default function Reports() {
     return acc ? `${acc.bankName} ${acc.maskedAccountNumber ?? ''}`.trim() : '';
   }, [selectedAccountId, accounts]);
 
-  const fetchReport = useCallback(() => {
-    if (!accountIdsParam || !period) return;
+  // Shared by the JSON fetch and the PDF download; null while the filters are incomplete.
+  const buildParams = useCallback(() => {
+    if (!accountIdsParam || !period) return null;
     const p = new URLSearchParams();
     p.append('type', type);
     p.append('accountIds', accountIdsParam);
@@ -146,16 +148,22 @@ export default function Reports() {
       p.append('year', period);
     } else {
       const [y, m] = period.split('-');
-      if (!y || !m) return;
+      if (!y || !m) return null;
       p.append('year', y);
       p.append('month', m);
     }
+    return p;
+  }, [accountIdsParam, type, period]);
+
+  const fetchReport = useCallback(() => {
+    const p = buildParams();
+    if (!p) return;
     setLoading(true);
     api.get(`/reports?${p.toString()}`)
       .then(res => setReport(res.data))
       .catch(err => console.error('Failed to fetch report', err))
       .finally(() => setLoading(false));
-  }, [accountIdsParam, type, period]);
+  }, [buildParams]);
 
   useEffect(() => { fetchReport(); }, [fetchReport]);
 
@@ -180,7 +188,7 @@ export default function Reports() {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       marginBottom: '18px', gap: '12px',
     },
-    statsRow: { display: 'flex', gap: '16px', marginBottom: '20px' },
+    statsRow: { display: 'flex', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' },
     grid: {
       display: 'grid', gridTemplateColumns: '3fr 2fr',
       gap: '20px', marginBottom: '20px', alignItems: 'start',
@@ -217,7 +225,28 @@ export default function Reports() {
     }),
   };
 
-  const downloadPdf = () => window.print();
+  // Server-rendered PDF (GET api/reports/pdf) fetched as a blob so the session
+  // cookie applies, then handed to the browser as a normal file download.
+  const downloadPdf = async () => {
+    const p = buildParams();
+    if (!p) return;
+    setDownloading(true);
+    try {
+      const res = await api.get(`/reports/pdf?${p.toString()}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${report?.label ?? 'Report'} ${type === 'year' ? 'Annual' : 'Monthly'} Report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download PDF', err);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="report-page" style={s.page}>
@@ -233,11 +262,11 @@ export default function Reports() {
         <button
           className="btn primary"
           onClick={downloadPdf}
-          disabled={!report || loading}
+          disabled={!report || loading || downloading}
           style={{ display: 'flex', alignItems: 'center', gap: '7px' }}
-          title="Opens the print dialog — choose 'Save as PDF'"
+          title="Download this report as a PDF file"
         >
-          <FiDownload size={15} /> Download PDF
+          <FiDownload size={15} /> {downloading ? 'Preparing…' : 'Download PDF'}
         </button>
       </div>
 
@@ -377,7 +406,7 @@ export default function Reports() {
                         flex: 1, fontSize: '13px', fontWeight: 600, color: T.text,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>
-                        {m.name}
+                        {maskName(m.name)}
                       </span>
                       <span style={{ fontSize: '11px', color: T.muted }}>{m.count}×</span>
                       <span style={{ fontSize: '13px', fontWeight: 700, color: T.text }}>{fmt.format(m.total)}</span>
