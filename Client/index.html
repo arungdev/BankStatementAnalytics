@@ -19,9 +19,41 @@
           document.documentElement.dataset.theme = 'dark';
       } catch (e) { /* ignore */ }
     </script>
+    <style>
+      /* Boot splash — shown before React mounts and reused by AuthGate while
+         auth status loads, so refresh paints a themed screen instead of a
+         white flash. Kept inline because index.css is bundle-injected. */
+      .boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #edeff4;
+      }
+      [data-theme="dark"] .boot-splash { background: #0f1117; }
+      .boot-splash .boot-spinner {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 3px solid rgba(79, 70, 229, 0.18);
+        border-top-color: #4f46e5;
+        opacity: 0;
+        /* Delay the spinner slightly so fast loads never flash it. */
+        animation: boot-fade 0.2s ease-out 0.15s forwards, boot-spin 0.9s linear infinite;
+      }
+      [data-theme="dark"] .boot-splash .boot-spinner {
+        border-color: rgba(99, 102, 241, 0.25);
+        border-top-color: #6366f1;
+      }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @keyframes boot-fade { to { opacity: 1; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-splash"><div class="boot-spinner"></div></div>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

@@ -44,7 +44,9 @@ export default function App() {
 function AuthGate() {
   const { loading, isAuthenticated, needsSetup } = useAuth();
 
-  if (loading) return null;
+  // Same markup/classes as the pre-mount splash in index.html (styled there),
+  // so the hand-off from static HTML to React is seamless.
+  if (loading) return <div className="boot-splash"><div className="boot-spinner" /></div>;
 
   return (
     <Routes>
@@ -206,7 +208,7 @@ function Layout() {
             : undefined;
 
   return (
-    <div className="app">
+    <div className="app app-fade">
       <Sidebar />
 
       <main className="main">
@@ -265,7 +267,7 @@ function Layout() {
           accounts={accounts}
           setAccounts={setAccounts}
         />
-        <section className="content" style={{ marginRight: remindersDock, transition: "margin-right 0.2s ease" }}>
+        <section key={location.pathname} className="content route-fade" style={{ marginRight: remindersDock, transition: "margin-right 0.2s ease" }}>
           <Outlet context={{
             accounts,
             openSettings: () => setIsSettings(true),
