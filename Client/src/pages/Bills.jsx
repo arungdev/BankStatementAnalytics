@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { FiCheck, FiX, FiTrash2, FiEdit2, FiCalendar, FiPlus } from "react-icons/fi";
 import api from "../api/client";
-import { currencyFormatter } from "../utils/format";
+import { getCardReminders } from "../api/cards";
+import { currencyFormatter, maskName } from "../utils/format";
 import { usePrivacy } from "../context/usePrivacy";
 import EmptyState from "../components/ui/EmptyState";
 import Badge from "../components/ui/Badge";
@@ -15,10 +17,15 @@ const fmtDate = (d) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
 const dueLabel = (days) => {
-  if (days <= 0) return "Due today";
+  if (days < 0) return `Overdue by ${-days} day${days === -1 ? "" : "s"}`;
+  if (days === 0) return "Due today";
   if (days === 1) return "Due tomorrow";
   return `Due in ${days} days`;
 };
+
+// Unpaid credit-card statements (ids prefixed "cc-") share the recurring-bill
+// item shape but aren't editable and have no bill transactions to open.
+const isCardBill = (b) => String(b.id).startsWith("cc-");
 
 export default function Bills() {
   // Subscribe to the mask flag so toggling "hide amounts" re-renders this page.
@@ -26,7 +33,9 @@ export default function Bills() {
   // Router's cached outlet element bails out of re-rendering and the
   // currencyFormatter amounts stay stale until the next unrelated render.
   usePrivacy();
+  const navigate = useNavigate();
   const [bills, setBills] = useState([]);
+  const [cardBills, setCardBills] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("due");
@@ -41,10 +50,12 @@ export default function Bills() {
     return Promise.all([
       api.get("/bills").then((r) => r.data || []),
       api.get("/bills/suggestions").then((r) => r.data || []),
+      getCardReminders().then((r) => r.data || []).catch(() => []),
     ])
-      .then(([b, s]) => {
+      .then(([b, s, c]) => {
         setBills(b);
         setSuggestions(s);
+        setCardBills(c);
       })
       .catch((err) => console.error("Failed to load bills", err))
       .finally(() => setLoading(false));
@@ -153,7 +164,9 @@ export default function Bills() {
     );
   }
 
-  const dueSoon = bills.filter((b) => !b.paidThisCycle && b.daysUntilDue <= 7);
+  // Card bills come pre-filtered by the server (unpaid, due within 7 days or overdue).
+  const dueSoon = [...cardBills, ...bills.filter((b) => !b.paidThisCycle && b.daysUntilDue <= 7)]
+    .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
 
   // ── Summary metrics for the hero strip ──
   const monthlyTotal = bills.reduce((sum, b) => sum + (b.expectedAmount || 0), 0);
@@ -224,7 +237,7 @@ export default function Bills() {
           <StatCard
             label="Next bill"
             value={nextUnpaid ? currencyFormatter.format(nextUnpaid.expectedAmount) : "—"}
-            sub={nextUnpaid ? `${nextUnpaid.name} · ${fmtDate(nextUnpaid.nextDueDate)}` : "nothing scheduled"}
+            sub={nextUnpaid ? `${maskName(nextUnpaid.name)} · ${fmtDate(nextUnpaid.nextDueDate)}` : "nothing scheduled"}
           />
         </div>
       )}
@@ -253,14 +266,14 @@ export default function Bills() {
               return (
                 <div
                   key={b.id}
-                  onClick={() => openBill(b)}
-                  title="View transactions"
+                  onClick={() => (isCardBill(b) ? navigate("/") : openBill(b))}
+                  title={isCardBill(b) ? "View card summary" : "View transactions"}
                   style={{ ...cardBase, borderLeft: `4px solid ${urgent ? "var(--danger)" : "var(--warning)"}` }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
-                    <Avatar name={b.name} />
+                    <Avatar name={maskName(b.name)} />
                     <div style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-main)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {b.name}
+                      {maskName(b.name)}
                     </div>
                   </div>
                   <div className="tnum" style={{ fontSize: "24px", fontWeight: 800, color: "var(--text-main)", letterSpacing: "-0.5px" }}>
@@ -314,9 +327,9 @@ export default function Bills() {
               {bills.map((b) => (
                 <div key={b.id} className="bill-row" onClick={() => openBill(b)} title="View transactions">
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
-                    <Avatar name={b.name} />
+                    <Avatar name={maskName(b.name)} />
                     <div style={{ fontWeight: 700, color: "var(--text-main)", fontSize: "14px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {b.name}
+                      {maskName(b.name)}
                     </div>
                   </div>
                   <div className="bill-col-day" style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "13px" }}>
@@ -378,10 +391,10 @@ export default function Bills() {
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
-                    <Avatar name={s.name} />
+                    <Avatar name={maskName(s.name)} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-main)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {s.name}
+                        {maskName(s.name)}
                       </div>
                       <div className="tnum" style={{ fontSize: "18px", fontWeight: 800, color: "var(--text-main)", marginTop: "2px", letterSpacing: "-0.5px" }}>
                         {currencyFormatter.format(s.expectedAmount)}
@@ -457,12 +470,12 @@ export default function Bills() {
               display: "flex", flexDirection: "column", alignItems: "center", gap: "10px",
               padding: "8px 0 22px", borderBottom: "1px solid var(--border-color)", marginBottom: "24px",
             }}>
-              <Avatar name={selectedBill.name} size={52} />
+              <Avatar name={maskName(selectedBill.name)} size={52} />
               <div className="tnum" style={{ fontSize: "34px", fontWeight: 800, letterSpacing: "-0.5px", color: "var(--danger)" }}>
                 {currencyFormatter.format(selectedBill.expectedAmount)}
               </div>
               <div style={{ color: "var(--text-muted)", fontSize: "15px", fontWeight: 600, textAlign: "center" }}>
-                {selectedBill.name}
+                {maskName(selectedBill.name)}
               </div>
               <div style={{ color: "var(--text-faint)", fontSize: "13px", textAlign: "center" }}>
                 {selectedKind === "suggestion"
@@ -490,13 +503,13 @@ export default function Bills() {
                         borderBottom: idx < billTxns.length - 1 ? "1px solid var(--border-subtle)" : "none",
                       }}
                     >
-                      <Avatar name={tx.description || selectedBill.name} size={36} />
+                      <Avatar name={maskName(tx.description || selectedBill.name)} size={36} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 700, color: "var(--text-main)", fontSize: "13px" }}>
                           {new Date(tx.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                         </div>
                         <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {tx.description || tx.mode || "Transfer"}
+                          {maskName(tx.description) || tx.mode || "Transfer"}
                         </div>
                       </div>
                       <div className="tnum" style={{ fontWeight: 800, fontSize: "14px", color: "var(--danger)", whiteSpace: "nowrap" }}>
