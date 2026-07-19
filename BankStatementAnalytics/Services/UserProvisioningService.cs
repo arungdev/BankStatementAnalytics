@@ -2,6 +2,7 @@ using BankStatementAnalytics.Models;
 using Common.Framework.Data;
 using Common.Framework.Logging;
 using Common.Framework.Tenancy;
+using NHibernate.Linq;
 
 namespace BankStatementAnalytics.Services
 {
@@ -28,6 +29,72 @@ namespace BankStatementAnalytics.Services
         public static bool BackfillOwnerlessDataTo(long userId) =>
             TenantData.BackfillOwnerlessTo(userId,
                 typeof(Account), typeof(Merchant), typeof(Category), typeof(Tag));
+
+        /// <summary>
+        /// Permanently removes everything a user owns - accounts and their transactions,
+        /// uploads (rows and stored files), card statement summaries, merchants, categories,
+        /// budgets, deposits, recurring bills, and tags. Called when an Admin deletes the
+        /// user's login. Deletion order respects FKs: transaction rows go before the
+        /// merchants/uploads they reference; SubCategories/UPI ids cascade from their parents.
+        /// </summary>
+        public static void PurgeUserData(long userId)
+        {
+            var storedFileNames = new List<string>();
+
+            using (var session = DbHelper.GetSession())
+            using (var tx = session.BeginTransaction())
+            {
+                var accountIds = session.Query<Account>()
+                    .Where(a => a.OwnerUserId == userId)
+                    .Select(a => a.Id)
+                    .ToList();
+
+                if (accountIds.Count > 0)
+                {
+                    session.CreateQuery("delete from BankTransaction where AccountId in (:ids)")
+                        .SetParameterList("ids", accountIds).ExecuteUpdate();
+                    session.CreateQuery("delete from CardStatementSummary where AccountId in (:ids)")
+                        .SetParameterList("ids", accountIds).ExecuteUpdate();
+
+                    var intAccountIds = accountIds.Select(id => (int?)id).ToList();
+                    var uploads = session.Query<Upload>()
+                        .Where(u => u.AccountId != null && intAccountIds.Contains(u.AccountId))
+                        .ToList();
+                    if (uploads.Count > 0)
+                    {
+                        var uploadIds = uploads.Select(u => u.Id).ToList();
+                        session.CreateQuery("delete from UploadTransaction where UploadId in (:ids)")
+                            .SetParameterList("ids", uploadIds).ExecuteUpdate();
+                        foreach (var upload in uploads)
+                        {
+                            storedFileNames.Add(upload.StoredName);
+                            session.Delete(upload);
+                        }
+                    }
+                }
+
+                // Entity deletes so the mapped cascades fire (UpiIds/Aliases, SubCategories).
+                foreach (var merchant in session.Query<Merchant>().Where(m => m.OwnerUserId == userId))
+                    session.Delete(merchant);
+                foreach (var category in session.Query<Category>().Where(c => c.OwnerUserId == userId))
+                    session.Delete(category);
+
+                foreach (var entity in new[] { nameof(Budget), nameof(Deposit), nameof(RecurringBill), nameof(Tag), nameof(Account) })
+                    session.CreateQuery($"delete from {entity} where OwnerUserId = :id")
+                        .SetParameter("id", userId).ExecuteUpdate();
+
+                tx.Commit();
+            }
+
+            // Best-effort file cleanup after the DB commit; a leftover file is harmless.
+            foreach (var storedName in storedFileNames)
+            {
+                try { UploadStorage.DeleteFile(storedName); }
+                catch (Exception ex) { Log.Exception(ex); }
+            }
+
+            Log.Info($"Purged all data owned by user {userId}.");
+        }
 
         private static void SeedDefaultTags(long userId)
         {

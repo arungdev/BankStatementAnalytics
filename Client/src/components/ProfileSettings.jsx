@@ -106,7 +106,7 @@ function UserManagementCard() {
     e.preventDefault();
     setError(null);
     try {
-      await api.post('/auth/users', { username: newUsername, password: newPassword, role: 'Admin' });
+      await api.post('/auth/users', { username: newUsername, password: newPassword, role: 'User' });
       setNewUsername('');
       setNewPassword('');
       fetchUsers();
@@ -115,10 +115,28 @@ function UserManagementCard() {
     }
   };
 
-  const disableUser = async (id) => {
+  const run = async (action) => {
+    setError(null);
+    try {
+      await action();
+      fetchUsers();
+    } catch (err) {
+      setError(err.response?.data || 'Could not update the user.');
+    }
+  };
+
+  const disableUser = (id) => {
     if (!window.confirm('Disable this user? They will no longer be able to log in.')) return;
-    await api.post(`/auth/users/${id}/disable`);
-    fetchUsers();
+    run(() => api.post(`/auth/users/${id}/disable`));
+  };
+
+  const enableUser = (id) => {
+    run(() => api.post(`/auth/users/${id}/enable`));
+  };
+
+  const deleteUser = (id, username) => {
+    if (!window.confirm(`Delete "${username}" and ALL their data (accounts, transactions, uploads, budgets)? This cannot be undone.`)) return;
+    run(() => api.delete(`/auth/users/${id}`));
   };
 
   return (
@@ -135,8 +153,13 @@ function UserManagementCard() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              {u.isActive && (
-                <button className="btn danger small" onClick={() => disableUser(u.id)}>Disable</button>
+              {u.role !== 'Admin' && (
+                <>
+                  {u.isActive
+                    ? <button className="btn small" onClick={() => disableUser(u.id)}>Disable</button>
+                    : <button className="btn small" onClick={() => enableUser(u.id)}>Enable</button>}
+                  <button className="btn danger small" onClick={() => deleteUser(u.id, u.username)}>Delete</button>
+                </>
               )}
             </div>
           </div>
