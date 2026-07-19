@@ -20,7 +20,7 @@ import StatCard from '../components/StatCard';
 import EmptyState from '../components/ui/EmptyState';
 import Drawer from '../components/ui/Drawer';
 import { useChartTheme } from '../theme/chartTheme';
-import { currencyFormatter, isAmountMasked } from '../utils/format';
+import { currencyFormatter, isAmountMasked, isNameMasked, maskName } from '../utils/format';
 import './Trends.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -490,7 +490,7 @@ const Trends = () => {
                     const merchant = t.Merchant       ?? t.merchant;
                     const isCredit = credit > 0;
                     const amount   = isCredit ? credit : debit;
-                    const name     = merchant && merchant !== '-' ? merchant : (desc || '—');
+                    const name     = maskName(merchant && merchant !== '-' ? merchant : (desc || '—'));
                     const initials = name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
                     const hue      = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
                     return (
@@ -503,7 +503,7 @@ const Trends = () => {
                         </div>
                         <div className="drill-card-main">
                           <div className="drill-card-merchant" title={name}>{name}</div>
-                          {desc && desc !== name && (
+                          {desc && desc !== name && !isNameMasked() && (
                             <div className="drill-card-desc" title={desc}>{desc}</div>
                           )}
                           <div className="drill-card-date">

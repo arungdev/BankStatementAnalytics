@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiBell, FiCalendar, FiCheck, FiRotateCcw } from "react-icons/fi";
 import api from "../api/client";
-import { currencyFormatter } from "../utils/format";
+import { currencyFormatter, maskName } from "../utils/format";
 import Drawer from "./ui/Drawer";
 import EmptyState from "./ui/EmptyState";
 
@@ -207,7 +207,7 @@ export default function NotificationBell({ onDockChange }) {
                     style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
                   >
                     <div style={{ fontWeight: read ? 500 : 700, fontSize: "14px", color: "var(--text-main)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {b.name}
+                      {maskName(b.name)}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", marginTop: "4px", color: b.daysUntilDue <= 2 && !read ? "var(--danger)" : "var(--warning)", fontWeight: 600 }}>
                       <FiCalendar size={12} /> {dueLabel(b.daysUntilDue)} · {fmtDate(b.nextDueDate)}
