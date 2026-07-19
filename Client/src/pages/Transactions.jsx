@@ -5,9 +5,9 @@ import usePersistedState from "../hooks/usePersistedState";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { useAuth } from "../context/useAuth";
-import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch } from "react-icons/fi";
+import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
-import { getUploads, revertStatement } from "../api/statements";
+import { getUploads, getAutoImports, revertStatement } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
 import DateRangePicker from "../components/Daterangepicker";
 import { FilterGroup } from "../components/PageHeader";
@@ -18,7 +18,7 @@ import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
 import Modal from "../components/ui/Modal";
-import { currencyFormatter } from "../utils/format";
+import { currencyFormatter, maskName } from "../utils/format";
 
 /* ─── Design tokens — mapped to the global CSS variable system so both the
  * inline styles and the injected <style> block below pick up light/dark. */
@@ -104,6 +104,8 @@ export default function Transactions() {
   const [selectedTx, setSelectedTx] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(450);
   const [tags, setTags] = useState([]);
+  const [tagEditRowId, setTagEditRowId] = useState(null);   // row whose inline "+ tag" input is open
+  const [noteEditRowId, setNoteEditRowId] = useState(null); // row whose inline note input is open
 
   // Upload modal + a bump to force the transaction list to re-fetch after an upload
   const [showUpload, setShowUpload] = useState(false);
@@ -111,21 +113,41 @@ export default function Transactions() {
 
   // Upload-history RHS drawer
   const [uploads, setUploads] = useState([]);
+  const [importFails, setImportFails] = useState([]);
   const [showUploadHistory, setShowUploadHistory] = useState(false);
   const [loadingUploads, setLoadingUploads] = useState(false);
+
+  // "N new" drill-down: restrict the list to the transactions a given upload added.
+  // Tagged with its account so it silently stops applying if the account changes.
+  const [uploadFilter, setUploadFilter] = useState(null); // { id, fileName, accountId } | null
+  const activeUploadFilter =
+    uploadFilter && String(uploadFilter.accountId) === String(effectiveAccountId)
+      ? uploadFilter
+      : null;
+
+  const showNewTransactions = (upload) => {
+    setShowUploadHistory(false);
+    setSelectedTx(null);
+    setUploadFilter({ id: upload.id, fileName: upload.fileName, accountId: effectiveAccountId });
+    setCurrentPage(1);
+  };
 
   const openUploadHistory = () => {
     setSelectedTx(null);            // only one RHS panel at a time
     setShowUploadHistory(true);
     setLoadingUploads(true);
-    getUploads()
-      .then(res => {
-        const forAccount = (res.data || [])
-          .filter(u => String(u.accountId) === String(effectiveAccountId))
-          .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
-        setUploads(forAccount);
-      })
-      .catch(() => setUploads([]))
+    Promise.all([
+      getUploads().then(res => (res.data || [])
+        .filter(u => String(u.accountId) === String(effectiveAccountId))
+        .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
+      ).catch(() => []),
+      // Failed auto-imports leave no upload row — fetched separately so they
+      // still show up in the history alongside successful uploads.
+      getAutoImports().then(res => (res.data || [])
+        .filter(h => h.status === 'Failed' && String(h.accountId) === String(effectiveAccountId))
+      ).catch(() => []),
+    ])
+      .then(([ups, fails]) => { setUploads(ups); setImportFails(fails); })
       .finally(() => setLoadingUploads(false));
   };
 
@@ -135,6 +157,7 @@ export default function Transactions() {
     try {
       await revertStatement(upload.id);
       setUploads(prev => prev.filter(u => u.id !== upload.id));
+      setUploadFilter(f => (f && f.id === upload.id ? null : f));
       setRefreshKey(k => k + 1);
     } catch {
       alert("Could not revert this upload. Please try again.");
@@ -174,8 +197,14 @@ export default function Transactions() {
 
     const params = new URLSearchParams({ page: currentPage, pageSize: itemsPerPage });
 
-    if (startDate) params.append('startDate', toLocalDate(startDate));
-    if (endDate)   params.append('endDate',   toLocalDate(endDate));
+    // While drilling into an upload's new transactions, ignore the date range —
+    // the imported rows may fall outside the currently selected period.
+    if (activeUploadFilter) {
+      params.append('uploadId', activeUploadFilter.id);
+    } else {
+      if (startDate) params.append('startDate', toLocalDate(startDate));
+      if (endDate)   params.append('endDate',   toLocalDate(endDate));
+    }
     if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
     if (search) params.append('search', search);
 
@@ -233,7 +262,7 @@ export default function Transactions() {
         setLoading(false);
         setHasLoaded(true);
       });
-  }, [effectiveAccountId, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search]);
+  }, [effectiveAccountId, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search, uploadFilter]);
 
   if (loading && !hasLoaded) {
     return (
@@ -312,57 +341,68 @@ export default function Transactions() {
     });
   };
 
-  const handleTagChange = (updatedTags) => {
-    const previousTags = selectedTx.tags;
+  const updateTags = (t, updatedTags) => {
+    const previousTags = t.tags;
 
-    setSelectedTx(prev => ({ ...prev, tags: updatedTags }));
+    setSelectedTx(prev => prev && prev.id === t.id ? { ...prev, tags: updatedTags } : prev);
     setTx(prev => prev.map(item =>
-      item.id === selectedTx.id ? { ...item, tags: updatedTags } : item
+      item.id === t.id ? { ...item, tags: updatedTags } : item
     ));
 
     api.patch(`/transactions/tags`, {
       AccountId: effectiveAccountId,
-      BankReference: selectedTx.id,
-      BankType: selectedTx.bankType,
+      BankReference: t.id,
+      BankType: t.bankType,
       Tags: updatedTags
     }).catch(err => {
       console.error("Failed to update tags", err);
       alert("Failed to update tags. Please try again.");
-      setSelectedTx(prev => ({ ...prev, tags: previousTags }));
+      setSelectedTx(prev => prev && prev.id === t.id ? { ...prev, tags: previousTags } : prev);
       setTx(prev => prev.map(item =>
-        item.id === selectedTx.id ? { ...item, tags: previousTags } : item
+        item.id === t.id ? { ...item, tags: previousTags } : item
       ));
     });
+  };
+
+  const handleTagChange = (updatedTags) => updateTags(selectedTx, updatedTags);
+
+  const addRowTag = (t, value) => {
+    const newTag = (value || '').trim().toLowerCase();
+    if (!newTag) return;
+    const current = t.tags || [];
+    if (!current.includes(newTag)) updateTags(t, [...current, newTag]);
   };
 
   const handleRemoveTag = (tagToRemove) => {
     handleTagChange((selectedTx.tags || []).filter(t => t !== tagToRemove));
   };
 
-  const handleNoteChange = (newNote) => {
+  const updateNote = (t, newNote) => {
     const trimmed = (newNote ?? '').trim();
-    const previousNote = selectedTx.note;
+    const previousNote = t.note;
     if (trimmed === (previousNote || '')) return; // nothing changed
 
-    setSelectedTx(prev => ({ ...prev, note: trimmed }));
+    setSelectedTx(prev => prev && prev.id === t.id ? { ...prev, note: trimmed } : prev);
     setTx(prev => prev.map(item =>
-      item.id === selectedTx.id ? { ...item, note: trimmed } : item
+      item.id === t.id ? { ...item, note: trimmed } : item
     ));
 
     api.patch(`/transactions/note`, {
       AccountId: effectiveAccountId,
-      BankReference: selectedTx.id,
-      BankType: selectedTx.bankType,
+      BankReference: t.id,
+      BankType: t.bankType,
       Note: trimmed
     }).catch(err => {
       console.error("Failed to update note", err);
       alert("Failed to update note. Please try again.");
-      setSelectedTx(prev => ({ ...prev, note: previousNote }));
+      setSelectedTx(prev => prev && prev.id === t.id ? { ...prev, note: previousNote } : prev);
       setTx(prev => prev.map(item =>
-        item.id === selectedTx.id ? { ...item, note: previousNote } : item
+        item.id === t.id ? { ...item, note: previousNote } : item
       ));
     });
   };
+
+  const handleNoteChange = (newNote) => updateNote(selectedTx, newNote);
 
   const handleExportCSV = () => {
     const { start: startDate, end: endDate } = dateRange;
@@ -466,6 +506,34 @@ export default function Transactions() {
           background: ${T.blueDim}; color: ${T.blue};
           padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
         }
+        .tx-tag-x { cursor: pointer; opacity: 0.55; font-weight: 700; line-height: 1; }
+        .tx-tag-x:hover { opacity: 1; }
+        .tx-tag-add {
+          display: inline-flex; align-items: center;
+          border: 1px dashed ${T.border}; color: ${T.faint};
+          padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
+          cursor: pointer; white-space: nowrap; opacity: 0;
+          transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+        }
+        .tx-row:hover .tx-tag-add, .tx-tag-add.open { opacity: 1; }
+        .tx-tag-add:hover { color: ${T.indigo}; border-color: ${T.indigo}; background: ${T.indigoDim}; }
+        .tx-tag-input {
+          width: 96px; padding: 1px 8px; font-size: 11px; font-weight: 600;
+          border: 1px solid ${T.indigo}; border-radius: 999px; outline: none;
+          background: ${T.surface}; color: ${T.text}; font-family: inherit;
+        }
+        .tx-note {
+          font-size: 11px; font-style: italic; color: ${T.muted};
+          max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          cursor: pointer;
+        }
+        .tx-note:hover { color: ${T.indigo}; }
+        .tx-note-input {
+          flex: 1 1 120px; min-width: 100px; max-width: 240px;
+          padding: 1px 8px; font-size: 11px;
+          border: 1px solid ${T.indigo}; border-radius: 999px; outline: none;
+          background: ${T.surface}; color: ${T.text}; font-family: inherit;
+        }
         .tx-search {
           width: 100%; padding: 8px 14px 8px 36px;
           border: 1px solid ${T.border}; border-radius: 10px;
@@ -512,6 +580,25 @@ export default function Transactions() {
           <FiFilter size={14} /> Uncategorized
         </Button>
 
+        {activeUploadFilter && (
+          <Badge
+            variant="green"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '280px' }}
+            title={`Showing transactions added by ${activeUploadFilter.fileName}`}
+          >
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              New in {activeUploadFilter.fileName}
+            </span>
+            <span
+              onClick={() => { setUploadFilter(null); setCurrentPage(1); }}
+              style={{ cursor: 'pointer', fontWeight: 700, flexShrink: 0 }}
+              title="Clear upload filter"
+            >
+              ×
+            </span>
+          </Badge>
+        )}
+
         <Badge variant="blue">
           {totalTransactions} {uncategorizedOnly ? 'Uncategorized' : 'Total'} Transactions
         </Badge>
@@ -528,6 +615,12 @@ export default function Transactions() {
           <span style={{ textAlign: 'right' }}>Amount</span>
         </div>
 
+        <datalist id="tx-row-tags-list">
+          {tags.map(tag => (
+            <option key={tag.id} value={tag.name} />
+          ))}
+        </datalist>
+
         <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
           {tx.length === 0 ? (
             <EmptyState icon="🧾" title="No transactions" message="No transactions found for the selected filters." />
@@ -536,7 +629,7 @@ export default function Transactions() {
               const isCredit = t.credit > 0;
               const d = new Date(t.transactionDate);
               const catValue = t.subCategory || t.category || '';
-              const tags = t.tags || [];
+              const rowTags = t.tags || [];
               return (
                 <div
                   key={t.id || index}
@@ -553,22 +646,73 @@ export default function Transactions() {
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                    <Avatar name={t.merchant || '?'} />
+                    <Avatar name={maskName(t.merchant) || '?'} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{
                         fontSize: '14px', fontWeight: 700, color: T.text,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>
-                        {t.merchant || '—'}
+                        {maskName(t.merchant) || '—'}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', minWidth: 0 }}>
                         <span style={{ fontSize: '12px', color: T.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {t.mode || 'Transfer'}
                         </span>
-                        {tags.slice(0, 2).map(tag => (
-                          <span key={tag} className="tx-tag">#{tag}</span>
+                        {rowTags.slice(0, 2).map(tag => (
+                          <span key={tag} className="tx-tag">
+                            #{tag}
+                            <span
+                              className="tx-tag-x"
+                              title="Remove tag"
+                              onClick={(e) => { e.stopPropagation(); updateTags(t, rowTags.filter(x => x !== tag)); }}
+                            >×</span>
+                          </span>
                         ))}
-                        {tags.length > 2 && <span style={{ fontSize: '11px', color: T.faint }}>+{tags.length - 2}</span>}
+                        {rowTags.length > 2 && <span style={{ fontSize: '11px', color: T.faint }}>+{rowTags.length - 2}</span>}
+                        {tagEditRowId === t.id ? (
+                          <input
+                            className="tx-tag-input"
+                            list="tx-row-tags-list"
+                            autoFocus
+                            placeholder="tag…"
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => { addRowTag(t, e.target.value); setTagEditRowId(null); }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { addRowTag(t, e.target.value); setTagEditRowId(null); }
+                              else if (e.key === 'Escape') setTagEditRowId(null);
+                            }}
+                          />
+                        ) : (
+                          <span
+                            className="tx-tag-add"
+                            onClick={(e) => { e.stopPropagation(); setNoteEditRowId(null); setTagEditRowId(t.id); }}
+                          >+ tag</span>
+                        )}
+                        {noteEditRowId === t.id ? (
+                          <input
+                            className="tx-note-input"
+                            autoFocus
+                            defaultValue={t.note || ''}
+                            placeholder="note…"
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => { updateNote(t, e.target.value); setNoteEditRowId(null); }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') { updateNote(t, e.target.value); setNoteEditRowId(null); }
+                              else if (e.key === 'Escape') setNoteEditRowId(null);
+                            }}
+                          />
+                        ) : t.note ? (
+                          <span
+                            className="tx-note"
+                            title={t.note}
+                            onClick={(e) => { e.stopPropagation(); setTagEditRowId(null); setNoteEditRowId(t.id); }}
+                          >✎ {t.note}</span>
+                        ) : (
+                          <span
+                            className="tx-tag-add"
+                            onClick={(e) => { e.stopPropagation(); setTagEditRowId(null); setNoteEditRowId(t.id); }}
+                          >+ note</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -622,12 +766,12 @@ export default function Transactions() {
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px',
               padding: '8px 0 22px', borderBottom: `1px solid ${T.border}`, marginBottom: '24px',
             }}>
-              <Avatar name={selectedTx.merchant || '?'} size={52} />
+              <Avatar name={maskName(selectedTx.merchant) || '?'} size={52} />
               <div className="tnum" style={{ fontSize: '34px', fontWeight: 800, letterSpacing: '-0.5px', color: selectedTx.credit ? T.green : T.red }}>
                 {selectedTx.credit ? '+' : '−'}{currencyFormatter.format(Math.max(selectedTx.credit, selectedTx.debit))}
               </div>
               <div style={{ color: T.muted, fontSize: '15px', fontWeight: 600, textAlign: 'center' }}>
-                {selectedTx.merchant}
+                {maskName(selectedTx.merchant)}
               </div>
             </div>
 
@@ -650,7 +794,7 @@ export default function Transactions() {
               </div>
               <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Description</div>
-                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{selectedTx.description || '-'}</div>
+                <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{maskName(selectedTx.description) || '-'}</div>
               </div>
               <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
@@ -746,28 +890,61 @@ export default function Transactions() {
       >
         {loadingUploads ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '40px' }}>Loading...</div>
-        ) : uploads.length === 0 ? (
+        ) : uploads.length === 0 && importFails.length === 0 ? (
           <EmptyState message="No statements have been uploaded for this account yet." />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {uploads.map(u => (
-              <div key={u.id} className="card" style={{ padding: '14px' }}>
+            {[
+              ...uploads.map(u => ({ key: `u-${u.id}`, time: new Date(u.uploadedAt).getTime(), upload: u })),
+              ...importFails.map(f => ({ key: `f-${f.id}`, time: new Date(f.createdAt).getTime(), fail: f })),
+            ].sort((a, b) => b.time - a.time).map(item => item.upload ? (
+              <div key={item.key} className="card" style={{ padding: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                   <FiFileText size={22} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{u.fileName}</div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{item.upload.fileName}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {new Date(u.uploadedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {new Date(item.upload.uploadedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                      <Badge variant="blue">{u.totalCount ?? u.transactionCount ?? 0} total</Badge>
-                      <Badge variant="green">{u.newCount ?? 0} new</Badge>
+                      <Badge variant="blue">{item.upload.totalCount ?? item.upload.transactionCount ?? 0} total</Badge>
+                      {(item.upload.newCount ?? 0) > 0 ? (
+                        <Badge
+                          variant="green"
+                          onClick={() => showNewTransactions(item.upload)}
+                          style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                          title="Show the transactions this upload added"
+                        >
+                          {item.upload.newCount} new
+                        </Badge>
+                      ) : (
+                        <Badge variant="green">0 new</Badge>
+                      )}
+                      {item.upload.autoImported && <Badge variant="purple">Auto</Badge>}
                       {isAdmin && (
-                        <button className="btn danger small" onClick={() => handleRevert(u)}>
+                        <button className="btn danger small" onClick={() => handleRevert(item.upload)}>
                           <FiRotateCcw size={12} /> Revert
                         </button>
                       )}
                     </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div key={item.key} className="card" style={{ padding: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <FiAlertCircle size={22} color="var(--danger, #dc2626)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{item.fail.fileName}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                      {new Date(item.fail.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                      <Badge variant="red">Auto-import failed</Badge>
+                    </div>
+                    {item.fail.error && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{item.fail.error}</div>
+                    )}
                   </div>
                 </div>
               </div>
