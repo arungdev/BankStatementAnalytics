@@ -11,7 +11,7 @@ import CreditCardPanel from '../components/CreditCardPanel';
 import EmptyState from '../components/ui/EmptyState';
 import useTheme from '../context/useTheme';
 import { getToken } from '../theme/chartTheme';
-import { currencyFormatter as fmt, formatDate } from '../utils/format';
+import { currencyFormatter as fmt, formatDate, maskName } from '../utils/format';
 
 /* ─── Design tokens — mapped to the global CSS variable system ───────────── */
 const T = {
@@ -56,6 +56,15 @@ const s = {
     letterSpacing: '-0.1px',
   },
 };
+
+// Deterministic avatar color per merchant name, so the list scans by color+initials.
+const hueOf = name => {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return h;
+};
+const initialsOf = name =>
+  name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
 const fmtK = v => v >= 100000
   ? `₹${(v / 100000).toFixed(1)}L`
@@ -138,7 +147,13 @@ export default function Overview() {
 
   return (
     <div style={s.page}>
-      <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
+      <style>{`
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        .ov-row { transition: background .15s ease; }
+        .ov-row:hover { background: var(--gray-50); }
+        .ov-viewall { transition: color .15s ease; }
+        .ov-viewall:hover { color: var(--primary-hover); text-decoration: underline; }
+      `}</style>
 
       {/* ── Stat cards ── */}
       <div style={s.statsRow}>
@@ -251,7 +266,7 @@ export default function Overview() {
                           fontSize: '13px', fontWeight: 600, color: T.text,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
-                          {m.name}
+                          {maskName(m.name)}
                         </span>
                         <span className="tnum" style={{ fontSize: '13px', fontWeight: 700, color: T.red, flexShrink: 0 }}>
                           {fmt.format(m.amount)}
@@ -272,7 +287,19 @@ export default function Overview() {
 
           {/* ── Recent transactions ── */}
           <div style={s.card}>
-            <p style={s.cardTitle}>Recent Activity</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <p style={{ ...s.cardTitle, margin: 0 }}>Recent Activity</p>
+              <button
+                className="ov-viewall"
+                onClick={() => navigate('/transactions')}
+                style={{
+                  border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+                  fontSize: '12px', fontWeight: 600, color: T.indigo,
+                }}
+              >
+                View all →
+              </button>
+            </div>
             {loading ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {[...Array(5)].map((_, i) => <Skeleton key={i} h={20} />)}
@@ -280,40 +307,64 @@ export default function Overview() {
             ) : recent.length === 0 ? (
               <EmptyState icon="📭" title="No recent transactions" subtitle="Nothing to show yet." compact />
             ) : (
-              <div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 {recent.map((tx, i) => {
                   const income = tx.amount >= 0;
+                  const name = maskName(tx.name) || '—';
+                  const hue = hueOf(name);
+                  const dark = theme === 'dark';
+                  const avatarBg = income
+                    ? 'var(--success-light)'
+                    : dark ? `hsl(${hue} 70% 60% / 0.18)` : `hsl(${hue} 70% 45% / 0.10)`;
+                  const avatarFg = income
+                    ? T.green
+                    : dark ? `hsl(${hue} 75% 72%)` : `hsl(${hue} 55% 38%)`;
                   return (
                     <div
                       key={tx.id ?? i}
+                      className="ov-row"
+                      onClick={() => navigate('/transactions')}
+                      title="View in Transactions"
                       style={{
                         display: 'flex', alignItems: 'center', gap: '12px',
-                        padding: '12px 0',
-                        borderBottom: i < recent.length - 1 ? `1px solid ${T.borderSub}` : 'none',
+                        padding: '9px 10px', margin: '0 -10px',
+                        borderRadius: '10px', cursor: 'pointer',
                       }}
                     >
                       <div style={{
-                        width: '38px', height: '38px', borderRadius: '10px',
-                        background: income ? 'var(--success-light)' : T.indigoDim,
+                        width: '38px', height: '38px', borderRadius: '12px',
+                        background: avatarBg, color: avatarFg,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0, fontSize: '16px',
+                        flexShrink: 0, fontSize: '12px', fontWeight: 700, letterSpacing: '0.3px',
                       }}>
-                        {income ? '💰' : '💳'}
+                        {income ? '↓' : initialsOf(name)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{
                           margin: 0, fontSize: '13px', fontWeight: 600, color: T.text,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
-                          {tx.name || '—'}
+                          {name}
                         </p>
-                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: T.muted }}>
-                          {tx.date ? formatDate(tx.date) : '—'}{tx.mode ? ` · ${tx.mode}` : ''}
+                        <p style={{
+                          margin: '3px 0 0', fontSize: '11px', color: T.muted,
+                          display: 'flex', alignItems: 'center', gap: '6px',
+                        }}>
+                          <span>{tx.date ? formatDate(tx.date) : '—'}</span>
+                          {tx.mode && (
+                            <span style={{
+                              fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.5px',
+                              padding: '1.5px 7px', borderRadius: '999px',
+                              background: 'var(--gray-100)', color: T.muted,
+                            }}>
+                              {tx.mode}
+                            </span>
+                          )}
                         </p>
                       </div>
                       <p className="tnum" style={{
                         margin: 0, fontSize: '13px', fontWeight: 700, flexShrink: 0,
-                        color: income ? T.green : T.red,
+                        color: income ? T.green : T.text,
                       }}>
                         {income ? '+' : '−'}{fmt.format(Math.abs(tx.amount))}
                       </p>
