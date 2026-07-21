@@ -28,6 +28,11 @@ namespace BankStatementAnalytics.Models
         // billing-cycle boundaries when no parsed statement summary exists.
         public virtual int? StatementDay { get; set; }
 
+        // Credit cards issued against another card's limit (HDFC add-on/second
+        // cards) point at that primary card here; utilization is then computed on
+        // the combined outstanding of the group against the shared limit.
+        public virtual long? SharedLimitAccountId { get; set; }
+
         // Folder watched by the auto-import background service; null/empty = not configured.
         public virtual string? WatchFolderPath { get; set; }
 

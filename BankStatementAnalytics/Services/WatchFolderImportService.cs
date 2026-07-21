@@ -44,11 +44,22 @@ namespace BankStatementAnalytics.Services
             _scopeFactory = scopeFactory;
         }
 
-        /// <summary>Ask the loop to run its next sweep immediately instead of waiting out the interval.</summary>
-        public void TriggerSweep()
+        // Completed when the sweep that starts after registration finishes — lets
+        // "Import now" hold its HTTP response until results are actually in the DB.
+        private TaskCompletionSource? _sweepDone;
+
+        /// <summary>
+        /// Ask the loop to run its next sweep immediately instead of waiting out the
+        /// interval. The returned task completes when that sweep has finished.
+        /// </summary>
+        public Task TriggerSweepAsync()
         {
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var existing = Interlocked.CompareExchange(ref _sweepDone, tcs, null);
+            if (existing != null) tcs = existing;
             try { _wake.Release(); }
             catch (SemaphoreFullException) { /* a sweep is already queued */ }
+            return tcs.Task;
         }
 
         /// <summary>
@@ -71,6 +82,9 @@ namespace BankStatementAnalytics.Services
 
             while (!stoppingToken.IsCancellationRequested)
             {
+                // Claim waiters up front: anyone registering mid-sweep re-releases
+                // _wake, so their sweep runs (and completes them) right after this one.
+                var waiter = Interlocked.Exchange(ref _sweepDone, null);
                 try
                 {
                     await SweepAsync(stoppingToken);
@@ -83,6 +97,10 @@ namespace BankStatementAnalytics.Services
                 {
                     // One bad sweep must never kill the loop.
                     Log.Exception(ex);
+                }
+                finally
+                {
+                    waiter?.TrySetResult();
                 }
 
                 // Waits out the interval, but returns early when TriggerSweep releases the semaphore.

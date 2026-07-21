@@ -65,11 +65,6 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
     );
   }
 
-  const label = (acc) =>
-    `${acc.accountHolderName || acc.bankName}` +
-    `${acc.bankName && acc.accountHolderName ? ` · ${acc.bankName}` : ''}` +
-    ` (${last4(acc)})`;
-
   const pick = (v) => {
     onChange(v === ALL_ACCOUNTS ? ALL_ACCOUNTS : Number(v));
     setOpen(false);
@@ -80,11 +75,49 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
   const isAll = value === ALL_ACCOUNTS;
   const showAllPlaceholder = isAll && !includeAll;
   const selected = accounts.find((a) => a.id === value);
-  const display = showAllPlaceholder
-    ? 'Select an account…'
-    : isAll
-      ? 'All accounts'
-      : selected ? label(selected) : 'No accounts';
+
+  // Trigger content — a real account renders like a compact dropdown option
+  // (bank monogram avatar + holder name + masked last-4) so nothing gets
+  // truncated mid-number; the aggregate/placeholder states stay text-only.
+  let trigger;
+  if (showAllPlaceholder) {
+    trigger = (
+      <>
+        <FiCreditCard size={14} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+        <span className="filter-chip-prefix">Account</span>
+        <span>Select an account…</span>
+      </>
+    );
+  } else if (isAll) {
+    trigger = (
+      <>
+        <span className="filter-chip-avatar" style={{ width: 22, height: 22 }}>
+          <FiLayers size={12} />
+        </span>
+        <span>All accounts</span>
+      </>
+    );
+  } else if (selected) {
+    trigger = (
+      <>
+        <span className="filter-chip-avatar" style={{ width: 22, height: 22 }}>
+          {monogram(selected.bankName)}
+        </span>
+        <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {selected.accountHolderName || selected.bankName}
+        </span>
+        <span className="filter-chip-prefix" style={{ flexShrink: 0 }}>•••• {last4(selected)}</span>
+      </>
+    );
+  } else {
+    trigger = (
+      <>
+        <FiCreditCard size={14} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+        <span className="filter-chip-prefix">Account</span>
+        <span>No accounts</span>
+      </>
+    );
+  }
 
   return (
     <FilterGroup style={{ position: 'relative', zIndex: 'var(--z-dropdown)' }}>
@@ -96,11 +129,7 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
           aria-haspopup="listbox"
           aria-expanded={open}
         >
-          <FiCreditCard size={14} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-          <span className="filter-chip-prefix">Account</span>
-          <span style={{ maxWidth: 210, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {display}
-          </span>
+          {trigger}
           <FiChevronDown size={13} className="filter-chip-caret" />
         </button>
 

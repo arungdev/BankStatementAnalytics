@@ -32,16 +32,41 @@ namespace BankStatementAnalytics.Controllers.Api
             var summary = LatestSummary(session, accountId);
             var txns = LoadCardTransactions(session, accountId, account.BankName);
 
-            // With a parsed statement, anchor the outstanding on its billed total plus
-            // everything since — the raw Σ(Debit−Credit) goes negative whenever history
-            // before the first uploaded statement is missing (payments for unseen dues).
-            var outstanding = summary?.StatementDate != null && summary.TotalDue != null
-                ? summary.TotalDue.Value + txns
-                    .Where(t => t.TransactionDate > summary.StatementDate.Value)
-                    .Sum(t => t.Debit - t.Credit)
-                : txns.Sum(t => t.Debit - t.Credit);
+            var outstanding = OutstandingFor(txns, summary);
             var creditLimit = summary?.CreditLimit ?? account.CreditLimit;
             var today = DateTime.Today;
+
+            // HDFC add-on/second cards draw on one shared limit: utilization and
+            // available credit must count every card in the group, not just this one.
+            var group = SharedLimitGroup(session, account);
+            var groupOutstanding = outstanding;
+            List<object>? sharedCards = null;
+            if (group.Count > 1)
+            {
+                sharedCards = new List<object>();
+                foreach (var member in group)
+                {
+                    decimal memberOutstanding;
+                    if (member.Id == account.Id)
+                    {
+                        memberOutstanding = outstanding;
+                    }
+                    else
+                    {
+                        var mSummary = LatestSummary(session, (int)member.Id);
+                        memberOutstanding = OutstandingFor(
+                            LoadCardTransactions(session, (int)member.Id, member.BankName), mSummary);
+                        groupOutstanding += memberOutstanding;
+                        creditLimit ??= mSummary?.CreditLimit ?? member.CreditLimit;
+                    }
+                    sharedCards.Add(new
+                    {
+                        AccountId = member.Id,
+                        member.MaskedAccountNumber,
+                        Outstanding = memberOutstanding,
+                    });
+                }
+            }
 
             // Paid = the user's own money arrived (TRANSFER credit) after the
             // statement was generated, covering at least the minimum due.
@@ -78,11 +103,20 @@ namespace BankStatementAnalytics.Controllers.Api
                 },
                 Outstanding = outstanding,
                 CreditLimit = creditLimit,
-                AvailableCredit = summary?.AvailableCreditLimit
-                    ?? (creditLimit != null ? Math.Max(0, creditLimit.Value - outstanding) : (decimal?)null),
+                // For a shared group the statement's available-limit snapshot only
+                // covers one card, so compute it from the combined outstanding.
+                AvailableCredit = sharedCards != null
+                    ? (creditLimit != null ? Math.Max(0, creditLimit.Value - groupOutstanding) : (decimal?)null)
+                    : summary?.AvailableCreditLimit
+                        ?? (creditLimit != null ? Math.Max(0, creditLimit.Value - outstanding) : (decimal?)null),
                 Utilization = creditLimit > 0
-                    ? Math.Round(Math.Max(0, outstanding) / creditLimit.Value, 4)
+                    ? Math.Round(Math.Max(0, groupOutstanding) / creditLimit.Value, 4)
                     : (decimal?)null,
+                SharedLimit = sharedCards == null ? null : new
+                {
+                    Outstanding = groupOutstanding,
+                    Cards = sharedCards,
+                },
                 StatementDay = statementDay,
                 CurrentCycle = new
                 {
@@ -151,6 +185,9 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             public decimal? CreditLimit { get; set; }
             public int? StatementDay { get; set; }
+            // Another credit card of the same user whose limit this card shares
+            // (HDFC add-on/second card); null = the card has its own limit.
+            public long? SharedLimitAccountId { get; set; }
         }
 
         [HttpPut("{accountId}/settings")]
@@ -165,11 +202,40 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request.CreditLimit is < 0)
                 return BadRequest("Credit limit cannot be negative.");
 
+            if (request.SharedLimitAccountId != null)
+            {
+                if (request.SharedLimitAccountId == account.Id)
+                    return BadRequest("A card cannot share its own limit.");
+
+                var target = DbHelper.GetById<Account>(request.SharedLimitAccountId.Value);
+                if (!Owns(target) || target.BankName != Bank.HDFCCreditCard)
+                    return BadRequest("The linked card must be one of your credit card accounts.");
+
+                // Groups stay one level deep: linking to a card that itself shares
+                // another card's limit joins that card's group instead.
+                if (target.SharedLimitAccountId != null)
+                {
+                    if (target.SharedLimitAccountId == account.Id)
+                        return BadRequest("That card already shares this card's limit.");
+                    request.SharedLimitAccountId = target.SharedLimitAccountId;
+                }
+            }
+
+            // Re-pointing a card that others share with would orphan their links.
+            using (var session = DbHelper.GetSession())
+            {
+                var hasDependents = session.Query<Account>()
+                    .Any(a => a.SharedLimitAccountId == account.Id);
+                if (hasDependents && request.SharedLimitAccountId != null)
+                    return BadRequest("Other cards share this card's limit — unlink them first.");
+            }
+
             account.CreditLimit = request.CreditLimit;
             account.StatementDay = request.StatementDay;
+            account.SharedLimitAccountId = request.SharedLimitAccountId;
             await DbHelper.UpdateAsync(account);
 
-            return Ok(new { account.Id, account.CreditLimit, account.StatementDay });
+            return Ok(new { account.Id, account.CreditLimit, account.StatementDay, account.SharedLimitAccountId });
         }
 
         // GET: api/cards/upcoming?withinDays=7 — unpaid card bills due within the
@@ -252,6 +318,32 @@ namespace BankStatementAnalytics.Controllers.Api
                     Credit = t.Credit,
                     Mode = t.Mode,
                 })
+                .ToList();
+        }
+
+        /// <summary>
+        /// Anchor the outstanding on the latest statement's billed total plus
+        /// everything since — the raw Σ(Debit−Credit) goes negative whenever
+        /// history before the first uploaded statement is missing.
+        /// </summary>
+        private static decimal OutstandingFor(List<CardTxn> txns, CardStatementSummary? summary) =>
+            summary?.StatementDate != null && summary.TotalDue != null
+                ? summary.TotalDue.Value + txns
+                    .Where(t => t.TransactionDate > summary.StatementDate.Value)
+                    .Sum(t => t.Debit - t.Credit)
+                : txns.Sum(t => t.Debit - t.Credit);
+
+        /// <summary>
+        /// Every card drawing on the same limit as <paramref name="account"/> —
+        /// the primary card plus all cards linked to it via SharedLimitAccountId.
+        /// A card with no links returns just itself.
+        /// </summary>
+        private List<Account> SharedLimitGroup(NHibernate.ISession session, Account account)
+        {
+            var rootId = account.SharedLimitAccountId ?? account.Id;
+            return session.Query<Account>()
+                .Where(a => a.OwnerUserId == CurrentUserId && a.BankName == Bank.HDFCCreditCard
+                         && (a.Id == rootId || a.SharedLimitAccountId == rootId))
                 .ToList();
         }
 

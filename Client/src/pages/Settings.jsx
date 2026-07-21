@@ -9,6 +9,7 @@ import { useAccount } from "../context/useAccount";
 import { useAuth } from "../context/useAuth";
 import { usePrivacy } from "../context/usePrivacy";
 import useTheme from "../context/useTheme";
+import { FONT_SIZE_OPTIONS } from "../context/ThemeContext";
 import ProfileSettings from "../components/ProfileSettings";
 import Badge from "../components/ui/Badge";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
@@ -18,7 +19,7 @@ import "./Settings.css";
 export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreated, accounts = [], setAccounts }) {
   const { selectedAccountId, setSelectedAccountId } = useAccount();
   const { isAdmin } = useAuth();
-  const { preference, setPreference } = useTheme();
+  const { preference, setPreference, fontSize, setFontSize } = useTheme();
   const { maskAmounts, maskNamesEnabled, setMaskNamesEnabled } = usePrivacy();
   const [activeTab, setActiveTab] = useState('accounts');
   const [categories, setCategories] = useState([]);
@@ -42,6 +43,7 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
   const cardDraft = (acc) => cardDrafts[acc.id] ?? {
     creditLimit: acc.creditLimit ?? "",
     statementDay: acc.statementDay ?? "",
+    sharedLimitAccountId: acc.sharedLimitAccountId ?? "",
   };
   const setCardDraft = (id, patch) =>
     setCardDrafts(prev => ({ ...prev, [id]: { ...(prev[id] ?? {}), ...patch } }));
@@ -51,6 +53,7 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
     const body = {
       creditLimit: d.creditLimit === "" ? null : Number(d.creditLimit),
       statementDay: d.statementDay === "" ? null : Number(d.statementDay),
+      sharedLimitAccountId: d.sharedLimitAccountId === "" ? null : Number(d.sharedLimitAccountId),
     };
     if (body.statementDay != null && (body.statementDay < 1 || body.statementDay > 31)) {
       alert("Statement day must be between 1 and 31.");
@@ -61,13 +64,17 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
       return;
     }
     try {
-      await updateCardSettings(acc.id, body);
+      // The API normalizes the link (e.g. joins the target's existing group),
+      // so reflect what it saved rather than what was sent.
+      const res = await updateCardSettings(acc.id, body);
       setAccounts(accounts.map(a =>
-        a.id === acc.id ? { ...a, creditLimit: body.creditLimit, statementDay: body.statementDay } : a));
+        a.id === acc.id
+          ? { ...a, creditLimit: res.data.creditLimit, statementDay: res.data.statementDay, sharedLimitAccountId: res.data.sharedLimitAccountId }
+          : a));
       setCardDrafts(prev => { const next = { ...prev }; delete next[acc.id]; return next; });
     } catch (err) {
       console.error("Failed to update card settings", err);
-      alert("Failed to update card settings. Please try again.");
+      alert(err.response?.data || "Failed to update card settings. Please try again.");
     }
   };
 
@@ -126,16 +133,18 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
   // Per-account show/hide for the statement-password input.
   const [showPw, setShowPw] = useState({});
 
-  // Transient "Checking…" feedback after Import now; the sweep itself runs server-side.
+  // "Checking…" feedback while Import now runs; the request resolves only once
+  // the server-side sweep has finished, so other pages refetch up-to-date data.
   const [sweeping, setSweeping] = useState({});
   const handleImportNow = async (acc) => {
+    setSweeping(prev => ({ ...prev, [acc.id]: true }));
     try {
       await triggerAutoImportSweep();
-      setSweeping(prev => ({ ...prev, [acc.id]: true }));
-      setTimeout(() => setSweeping(prev => { const next = { ...prev }; delete next[acc.id]; return next; }), 6000);
     } catch (err) {
       console.error("Failed to trigger import sweep", err);
       alert("Could not start the import. Please try again.");
+    } finally {
+      setSweeping(prev => { const next = { ...prev }; delete next[acc.id]; return next; });
     }
   };
 
@@ -444,20 +453,51 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
 
             {/* ── Appearance ── */}
             {activeTab === 'appearance' && (
-              <div className="theme-options" role="radiogroup" aria-label="Theme">
-                {THEME_OPTIONS.map(opt => (
-                  <button
-                    key={opt.id}
-                    role="radio"
-                    aria-checked={preference === opt.id}
-                    className={`theme-option${preference === opt.id ? ' active' : ''}`}
-                    onClick={() => setPreference(opt.id)}
-                  >
-                    <span className="theme-option-icon">{opt.icon}</span>
-                    <span className="theme-option-label">{opt.label}</span>
-                    <span className="theme-option-sub">{opt.sub}</span>
-                  </button>
-                ))}
+              <div className="settings-list">
+                <div className="appearance-section">
+                  <h3 className="appearance-section-title">Theme</h3>
+                  <div className="theme-options" role="radiogroup" aria-label="Theme">
+                    {THEME_OPTIONS.map(opt => (
+                      <button
+                        key={opt.id}
+                        role="radio"
+                        aria-checked={preference === opt.id}
+                        className={`theme-option${preference === opt.id ? ' active' : ''}`}
+                        onClick={() => setPreference(opt.id)}
+                      >
+                        <span className="theme-option-icon">{opt.icon}</span>
+                        <span className="theme-option-label">{opt.label}</span>
+                        <span className="theme-option-sub">{opt.sub}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="appearance-section">
+                  <h3 className="appearance-section-title">Text size</h3>
+                  <p className="settings-row-sub" style={{ marginBottom: '12px' }}>
+                    Scales all text across the app. Applies instantly and is remembered on this device.
+                  </p>
+                  <div className="text-size-options" role="radiogroup" aria-label="Text size">
+                    {FONT_SIZE_OPTIONS.map(opt => (
+                      <button
+                        key={opt.id}
+                        role="radio"
+                        aria-checked={fontSize === opt.id}
+                        className={`text-size-option${fontSize === opt.id ? ' active' : ''}`}
+                        onClick={() => setFontSize(opt.id)}
+                      >
+                        <span
+                          className="text-size-option-preview"
+                          style={{ fontSize: `${opt.scale}em` }}
+                        >
+                          Aa
+                        </span>
+                        <span className="text-size-option-label">{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -664,6 +704,28 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                               style={{ width: '120px' }}
                             />
                           </label>
+                          {/* HDFC add-on/second cards draw on the primary card's limit;
+                              linking them makes utilization count both cards together. */}
+                          {accounts.some(a => a.bankName === 'HDFCCreditCard' && a.id !== acc.id) && (
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                              Shares limit with
+                              <select
+                                value={cardDraft(acc).sharedLimitAccountId}
+                                onChange={(e) => setCardDraft(acc.id, { sharedLimitAccountId: e.target.value })}
+                                className="field-input"
+                                style={{ width: '180px' }}
+                              >
+                                <option value="">None (own limit)</option>
+                                {accounts
+                                  .filter(a => a.bankName === 'HDFCCreditCard' && a.id !== acc.id)
+                                  .map(a => (
+                                    <option key={a.id} value={a.id}>
+                                      •••• {a.accountNumber?.slice(-4) || a.id}
+                                    </option>
+                                  ))}
+                              </select>
+                            </label>
+                          )}
                           {cardDrafts[acc.id] && (
                             <button className="btn primary small" onClick={() => handleSaveCardSettings(acc)}>
                               Save card settings

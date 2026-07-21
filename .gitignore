@@ -15,3 +15,6 @@ Client/node_modules/
 /server.err.log
 # Real bank statements used for tuning PDF extraction - never commit (contain account numbers)
 /samples/
+# Private shared library - kept locally to rebuild the vendored lib/Common.Framework.dll,
+# but never published (referenced as a prebuilt DLL instead of source). See README.
+/Common.Framework/

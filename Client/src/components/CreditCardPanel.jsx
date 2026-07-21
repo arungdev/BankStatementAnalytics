@@ -96,6 +96,7 @@ export default function CreditCardPanel({ accountId, onOpenSettings }) {
   if (!summary || summary.accountId !== accountId) return null;
 
   const st = summary.statement;
+  const shared = summary.sharedLimit; // present only when cards are linked to one limit
   const utilization = summary.utilization;
   const status = utilizationStatus(utilization);
   const badge = dueBadge(st);
@@ -172,7 +173,17 @@ export default function CreditCardPanel({ accountId, onOpenSettings }) {
               }} />
             </div>
             <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
-              {fmt.format(summary.outstanding)} outstanding of {fmt.format(summary.creditLimit)} limit
+              {shared ? (
+                <>
+                  {fmt.format(shared.outstanding)} outstanding of {fmt.format(summary.creditLimit)} shared limit
+                  {' · '}
+                  {shared.cards
+                    .map(c => `•••• ${c.maskedAccountNumber?.slice(-4)} ${fmt.format(c.outstanding)}`)
+                    .join(' + ')}
+                </>
+              ) : (
+                <>{fmt.format(summary.outstanding)} outstanding of {fmt.format(summary.creditLimit)} limit</>
+              )}
             </p>
           </>
         ) : (

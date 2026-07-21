@@ -28,6 +28,7 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.BranchCode);
             Property(x => x.CreditLimit);
             Property(x => x.StatementDay);
+            Property(x => x.SharedLimitAccountId);
             Property(x => x.WatchFolderPath, m => m.Length(1000));
             Property(x => x.WatchEnabled);
             Property(x => x.StatementPassword, m => m.Length(200));

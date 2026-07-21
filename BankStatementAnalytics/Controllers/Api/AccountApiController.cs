@@ -271,9 +271,10 @@ namespace BankStatementAnalytics.Controllers.Api
 
             await DbHelper.UpdateAsync(account);
 
-            // Sweep right away so the first import doesn't wait out the interval.
+            // Sweep right away so the first import doesn't wait out the interval;
+            // no need to hold this response until it finishes.
             if (!string.IsNullOrEmpty(account.WatchFolderPath) && account.WatchEnabled != false)
-                watcher.TriggerSweep();
+                _ = watcher.TriggerSweepAsync();
 
             return Ok(new
             {

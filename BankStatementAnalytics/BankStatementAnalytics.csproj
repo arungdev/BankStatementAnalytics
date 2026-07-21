@@ -31,10 +31,20 @@
     <PackageReference Include="PdfPig" Version="0.1.11" />
     <!-- Lets the published exe run as a Windows service (no-op when launched interactively). -->
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
+    <!-- Transitive dependency of Common.Framework's logging layer. When Common.Framework was a
+         source ProjectReference this flowed in automatically; against the vendored DLL below it
+         must be declared explicitly or log4net.dll is missing at runtime. -->
+    <PackageReference Include="log4net" Version="3.3.1" />
   </ItemGroup>
 
+	<!-- Common.Framework is a PRIVATE dependency (see README). Instead of a source ProjectReference
+	     to the git submodule, we reference a vendored, prebuilt DLL committed under lib/ so this repo
+	     compiles without access to the private source. Rebuild + recopy lib/Common.Framework.dll when
+	     the framework changes. -->
 	<ItemGroup>
-		<ProjectReference Include="..\Common.Framework\Common.Framework.csproj" />
+		<Reference Include="Common.Framework">
+			<HintPath>lib\Common.Framework.dll</HintPath>
+		</Reference>
 	</ItemGroup>
 	<ItemGroup>
     <Folder Include="Views\Shared\" />
@@ -71,8 +81,13 @@
 		</Content>
 	</ItemGroup>
 -->
-  <!-- Automatically build the React client and output to wwwroot only in Release (production) mode -->
-  <Target Name="BuildReactClient" BeforeTargets="Build" Condition="'$(Configuration)' == 'Release'">
+  <!-- Automatically build the React client and output to wwwroot only in Release (production) mode.
+       Must run BEFORE static-web-assets discovery (ResolveProjectStaticWebAssets), not just before
+       Build: Vite empties wwwroot and re-emits hashed filenames on every build, so if discovery runs
+       first it caches the OLD hashes in obj\, and the publish copy step then chases files that no
+       longer exist ("MSB3030 ... could not be copied because it was not found"). Ordering the client
+       build ahead of discovery guarantees the manifest is built from the freshly-emitted hashes. -->
+  <Target Name="BuildReactClient" BeforeTargets="Build;ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release'">
     <Message Importance="high" Text="Installing npm dependencies and building React client..." />
     <Exec Command="npm install" WorkingDirectory="..\Client" />
     <Exec Command="npm run build" WorkingDirectory="..\Client" />
@@ -82,7 +97,7 @@
        the build output so local dev (dotnet build/run) can use Database:Embedded=true too, not
        just an installed copy. Skipped once already present, so a clean build pays the ~150MB
        copy cost once, not on every incremental build. -->
-  <Target Name="CopyPgsqlBundle" AfterTargets="Build" Condition="!Exists('$(OutDir)pgsql\bin\postgres.exe')">
+  <Target Name="CopyPgsqlBundle" AfterTargets="Build" Condition="!Exists('$(OutDir)pgsql\bin\postgres.exe') And Exists('$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle')">
     <Message Importance="high" Text="Copying embedded PostgreSQL bundle to output (one-time, ~150MB)..." />
     <Exec Command="robocopy &quot;$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle&quot; &quot;$(OutDir)pgsql&quot; /E /NFL /NDL /NJH /NJS /NC /NS" IgnoreExitCode="true">
       <Output TaskParameter="ExitCode" PropertyName="RobocopyExitCode" />

@@ -41,3 +41,7 @@ export const getAutoImports = (accountId) =>
 
 // Run the watch-folder sweep now instead of waiting for the next interval
 export const triggerAutoImportSweep = () => api.post("/statements/auto-imports/sweep");
+
+// Retry a specific failed auto-import (by its history id), optionally with a PDF password
+export const retryAutoImport = (historyId, password) =>
+  api.post(`/statements/auto-imports/${historyId}/retry`, { password });

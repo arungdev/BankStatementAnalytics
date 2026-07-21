@@ -7,7 +7,7 @@ import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { useAuth } from "../context/useAuth";
 import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
-import { getUploads, getAutoImports, revertStatement } from "../api/statements";
+import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
 import DateRangePicker from "../components/Daterangepicker";
 import { FilterGroup } from "../components/PageHeader";
@@ -77,6 +77,8 @@ export default function Transactions() {
 
   // Categories from API
   const [categories, setCategories] = useState([]);
+  // Most-used category values (names), ranked by usage — drives the "Frequently used" group.
+  const [frequentCategories, setFrequentCategories] = useState([]);
 
   // Pagination state (itemsPerPage persists across reloads; page resets to 1)
   const [currentPage, setCurrentPage] = useState(1);
@@ -117,6 +119,30 @@ export default function Transactions() {
   const [showUploadHistory, setShowUploadHistory] = useState(false);
   const [loadingUploads, setLoadingUploads] = useState(false);
 
+  // "Try again" on a failed auto-import: a per-row PDF-password draft and busy flag.
+  const [retryPw, setRetryPw] = useState({});
+  const [retrying, setRetrying] = useState({});
+
+  const handleRetryImport = async (fail) => {
+    setRetrying(prev => ({ ...prev, [fail.id]: true }));
+    try {
+      await retryAutoImport(fail.id, retryPw[fail.id] || '');
+      // Imported (or already present): drop the failed row and refresh the list.
+      setImportFails(prev => prev.filter(f => f.id !== fail.id));
+      setRetryPw(prev => { const next = { ...prev }; delete next[fail.id]; return next; });
+      setRefreshKey(k => k + 1);
+      getUploads()
+        .then(res => setUploads((res.data || [])
+          .filter(u => String(u.accountId) === String(effectiveAccountId))
+          .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))))
+        .catch(() => {});
+    } catch (err) {
+      alert(err.response?.data?.message || "Retry failed. Please check the password and try again.");
+    } finally {
+      setRetrying(prev => { const next = { ...prev }; delete next[fail.id]; return next; });
+    }
+  };
+
   // "N new" drill-down: restrict the list to the transactions a given upload added.
   // Tagged with its account so it silently stops applying if the account changes.
   const [uploadFilter, setUploadFilter] = useState(null); // { id, fileName, accountId } | null
@@ -149,6 +175,10 @@ export default function Transactions() {
     ])
       .then(([ups, fails]) => { setUploads(ups); setImportFails(fails); })
       .finally(() => setLoadingUploads(false));
+
+    // Background auto-imports don't announce themselves to this page — refetch
+    // the list alongside the drawer so both reflect the same state.
+    setRefreshKey(k => k + 1);
   };
 
   const handleRevert = async (upload) => {
@@ -164,10 +194,33 @@ export default function Transactions() {
     }
   };
 
+  // Refetch on tab focus (throttled) so transactions the watcher imported while
+  // the user was away — e.g. right after dropping a file in the folder — appear
+  // without a manual reload.
+  useEffect(() => {
+    let last = Date.now();
+    const onFocus = () => {
+      if (Date.now() - last > 15000) {
+        last = Date.now();
+        setRefreshKey(k => k + 1);
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  const loadFrequentCategories = () => {
+    api.get('/categories/usage')
+      .then(res => setFrequentCategories((res.data || []).map(x => x.name)))
+      .catch(err => console.error("Failed to load category usage", err));
+  };
+
   useEffect(() => {
     api.get('/categories')
       .then(res => setCategories(res.data || []))
       .catch(err => console.error("Failed to load categories", err));
+
+    loadFrequentCategories();
 
     api.get('/tags')
       .then(res => setTags(res.data || []))
@@ -325,6 +378,9 @@ export default function Transactions() {
       BankType: t.bankType,
       Category: resolvedCategory,
       SubCategory: resolvedSubCategory
+    }).then(() => {
+      // Keep the "Frequently used" group in step with the change just made.
+      loadFrequentCategories();
     }).catch(err => {
       console.error("Failed to update category", err);
       alert("Failed to update category. Please try again.");
@@ -453,6 +509,13 @@ export default function Transactions() {
   const renderCategoryOptions = () => (
     <>
       <option value="">Uncategorized</option>
+      {frequentCategories.length > 0 && (
+        <optgroup label="Frequently used">
+          {frequentCategories.map(name => (
+            <option key={`freq-${name}`} value={name}>{name}</option>
+          ))}
+        </optgroup>
+      )}
       {categories.map(cat =>
         cat.subCategories?.length > 0 ? (
           <optgroup key={cat.id} label={cat.name}>
@@ -944,6 +1007,26 @@ export default function Transactions() {
                     </div>
                     {item.fail.error && (
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{item.fail.error}</div>
+                    )}
+                    {isAdmin && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                        <input
+                          type="password"
+                          placeholder="PDF password"
+                          value={retryPw[item.fail.id] || ''}
+                          onChange={(e) => setRetryPw(prev => ({ ...prev, [item.fail.id]: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleRetryImport(item.fail); }}
+                          className="field-input"
+                          style={{ width: '150px' }}
+                        />
+                        <button
+                          className="btn primary small"
+                          disabled={!!retrying[item.fail.id]}
+                          onClick={() => handleRetryImport(item.fail)}
+                        >
+                          <FiRotateCcw size={12} /> {retrying[item.fail.id] ? 'Retrying…' : 'Try again'}
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

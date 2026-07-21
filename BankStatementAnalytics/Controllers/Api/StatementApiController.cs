@@ -91,6 +91,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     a.MaskedAccountNumber,
                     a.CreditLimit,
                     a.StatementDay,
+                    a.SharedLimitAccountId,
                     a.WatchFolderPath,
                     WatchEnabled = a.WatchEnabled != false,
                     HasStatementPassword = !string.IsNullOrEmpty(a.StatementPassword),
@@ -264,12 +265,69 @@ namespace BankStatementAnalytics.Controllers.Api
         }
 
         // POST: api/statements/auto-imports/sweep — run the watch-folder sweep now
-        // instead of waiting out the interval ("Import now" in Settings).
+        // instead of waiting out the interval ("Import now" in Settings). Responds
+        // after the sweep finishes so the client can refetch and see the results,
+        // capped so an unreachable folder can't hang the request indefinitely.
         [HttpPost("auto-imports/sweep")]
-        public IActionResult TriggerSweep([FromServices] WatchFolderImportService watcher)
+        public async Task<IActionResult> TriggerSweep([FromServices] WatchFolderImportService watcher)
         {
-            watcher.TriggerSweep();
-            return Ok(new { message = "Sweep started." });
+            var sweep = watcher.TriggerSweepAsync();
+            var completed = await Task.WhenAny(sweep, Task.Delay(TimeSpan.FromSeconds(90))) == sweep;
+            return Ok(new { completed });
+        }
+
+        // POST: api/statements/auto-imports/{historyId}/retry — re-attempt one
+        // failed auto-import after supplying the PDF password ("Try again" in the
+        // history). Re-imports that specific file directly and, on success, clears
+        // its failed-history row; also saves the password for future statements.
+        [HttpPost("auto-imports/{historyId:guid}/retry")]
+        public async Task<IActionResult> RetryAutoImport(Guid historyId,
+            [FromBody] RetryAutoImportRequest request)
+        {
+            var history = DbHelper.GetById<ImportHistory>(historyId);
+            if (history == null)
+                return NotFound();
+
+            var account = DbHelper.GetById<Account>((long)history.AccountId);
+            if (!Owns(account))
+                return NotFound();
+
+            if (string.IsNullOrEmpty(history.SourcePath) || !System.IO.File.Exists(history.SourcePath))
+                return BadRequest(new { message = "The file is no longer in the watch folder." });
+
+            var password = string.IsNullOrEmpty(request?.Password) ? account.StatementPassword : request!.Password;
+
+            // Remember the password so future statements from this folder import automatically.
+            if (!string.IsNullOrEmpty(request?.Password))
+            {
+                account.StatementPassword = request.Password;
+                await DbHelper.UpdateAsync(account);
+            }
+
+            byte[] bytes;
+            try { bytes = await System.IO.File.ReadAllBytesAsync(history.SourcePath); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return BadRequest(new { message = "Could not read the file. It may be open or still downloading." });
+            }
+
+            var result = await _importer.ImportAsync(
+                account, bytes, history.FileName, password, autoImported: true);
+
+            switch (result.Outcome)
+            {
+                case ImportOutcome.Success:
+                case ImportOutcome.Duplicate:
+                    // Cleared: the failed row shouldn't linger once the file is in.
+                    await DbHelper.DeleteAsync(history);
+                    return Ok(new { result.Total, result.NewCount, duplicate = result.Outcome == ImportOutcome.Duplicate });
+                default:
+                    // Still failing (e.g. wrong password) — refresh the message/time in place.
+                    history.Error = result.Error;
+                    history.CreatedAt = DateTime.UtcNow;
+                    await DbHelper.UpdateAsync(history);
+                    return BadRequest(new { message = result.Error ?? "Import failed." });
+            }
         }
 
         // GET: api/statements/auto-imports — watch-folder import attempts, including
@@ -385,6 +443,11 @@ namespace BankStatementAnalytics.Controllers.Api
                 watcher.ForgetAccount(upload.AccountId.Value);
 
             return Ok(new { message = "Reverted" });
+        }
+
+        public class RetryAutoImportRequest
+        {
+            public string? Password { get; set; }
         }
     }
 }

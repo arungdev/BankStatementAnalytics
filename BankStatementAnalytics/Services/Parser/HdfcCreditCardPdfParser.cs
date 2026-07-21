@@ -45,6 +45,7 @@ namespace BankStatementAnalytics.Services.Parser
                 }
             }
 
+            HdfcCreditCardParser.AssignGeneratedReferences(transactions);
             return transactions;
         }
 
@@ -119,8 +120,10 @@ namespace BankStatementAnalytics.Services.Parser
             if (!string.IsNullOrWhiteSpace(counterPartyName))
                 tx.PendingCounterPartyName = counterPartyName;
 
+            // Rows without a real UPI reference get a generated one in the
+            // AssignGeneratedReferences post-pass (needs whole-statement order).
             tx.BankReference = string.IsNullOrWhiteSpace(tx.UpiReference)
-                ? HdfcCreditCardParser.GenerateReference(tx)
+                ? string.Empty
                 : $"HDFCCC{tx.UpiReference}";
 
             return tx;
