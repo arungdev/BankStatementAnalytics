@@ -9,7 +9,7 @@ import {
 import { FilterGroup, FilterPill, FilterDropdownChip } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import EmptyState from '../components/ui/EmptyState';
-import { FiDownload } from 'react-icons/fi';
+import { FiDownload, FiCalendar } from 'react-icons/fi';
 import useTheme from '../context/useTheme';
 import { getToken } from '../theme/chartTheme';
 import { currencyFormatter as fmt, maskName } from '../utils/format';
@@ -56,9 +56,16 @@ export function ReportsFilters({ reportType, setReportType, reportPeriod, setRep
       .catch(() => setPeriods({ months: [], years: [] }));
   }, []);
 
+  // Months render under a per-year header with month-only rows; the trigger
+  // still shows the full "June 2026" label. Years stay a flat list.
   const options = reportType === 'year'
     ? (periods.years || []).map(y => ({ value: String(y), label: String(y) }))
-    : (periods.months || []).map(m => ({ value: `${m.year}-${m.month}`, label: m.label }));
+    : (periods.months || []).map(m => ({
+        value: `${m.year}-${m.month}`,
+        label: m.label,
+        menuLabel: new Date(m.year, m.month - 1, 1).toLocaleString('en-US', { month: 'long' }),
+        group: String(m.year),
+      }));
 
   // Keep the selection valid for the active type (e.g. after toggling Month ↔ Year).
   useEffect(() => {
@@ -78,15 +85,15 @@ export function ReportsFilters({ reportType, setReportType, reportPeriod, setRep
         </FilterPill>
       </FilterGroup>
 
-      <FilterGroup>
-        <FilterSelectChip
+      <FilterGroup style={{ position: 'relative', zIndex: 'var(--z-dropdown)' }}>
+        <FilterDropdownChip
           prefix="Period"
+          icon={<FiCalendar size={13} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />}
           value={reportPeriod}
-          onChange={e => setReportPeriod(e.target.value)}
-        >
-          {options.length === 0 && <option value="">No data</option>}
-          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </FilterSelectChip>
+          options={options}
+          onSelect={setReportPeriod}
+          placeholder="No data"
+        />
       </FilterGroup>
     </>
   );

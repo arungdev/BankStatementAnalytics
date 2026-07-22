@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { FiSettings, FiChevronDown } from 'react-icons/fi';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { FiSettings, FiChevronDown, FiCheck } from 'react-icons/fi';
 import './ui/ui.css';
 
 /**
@@ -249,31 +249,101 @@ export function FilterChip({ active, onChange, dot, children }) {
   );
 }
 
-/** Chip-styled native <select> — muted prefix label inside the chip + custom
-    caret, so it visually matches AccountFilter / DateRangePicker triggers. */
-export function FilterSelectChip({ prefix, value, onChange, disabled, children, style }) {
+/** Chip-styled custom dropdown — replaces a native <select> so the open menu
+    matches AccountFilter / DateRangePicker (surface, radius, check on active)
+    instead of the browser's stock popup.
+
+    options: [{ value, label, menuLabel?, group? }]
+      label     — shown in the trigger when selected (e.g. "June 2026")
+      menuLabel — optional shorter text for the menu row (e.g. "June")
+      group     — optional section header; consecutive options sharing a group
+                  render under one uppercase header (e.g. the year) */
+export function FilterDropdownChip({
+  prefix,
+  icon,
+  value,
+  options = [],
+  onSelect,
+  placeholder = 'No data',
+  disabled,
+  menuWidth = 190,
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const activeRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Keep the current selection visible when the menu opens.
+  useEffect(() => {
+    if (open) activeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [open]);
+
+  // Roving focus: ↑/↓ move through the option buttons from the trigger or menu.
+  const onKeyNav = (e) => {
+    if (!open || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+    e.preventDefault();
+    const items = [...(ref.current?.querySelectorAll('.filter-chip-option') ?? [])];
+    if (items.length === 0) return;
+    const idx = items.indexOf(document.activeElement);
+    const next = e.key === 'ArrowDown'
+      ? (idx < 0 ? 0 : Math.min(idx + 1, items.length - 1))
+      : (idx < 0 ? items.length - 1 : Math.max(idx - 1, 0));
+    items[next].focus();
+  };
+
+  const selected = options.find(o => o.value === value);
+
   return (
-    <label className="filter-chip" style={{ paddingRight: '10px', ...style }}>
-      {prefix && <span className="filter-chip-prefix">{prefix}</span>}
-      <select
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
-        style={{
-          appearance: 'none',
-          WebkitAppearance: 'none',
-          border: 'none',
-          background: 'transparent',
-          font: 'inherit',
-          color: 'inherit',
-          cursor: 'pointer',
-          outline: 'none',
-          maxWidth: '220px',
-        }}
+    <div ref={ref} style={{ position: 'relative' }} onKeyDown={onKeyNav}>
+      <button
+        className={`filter-chip${open ? ' open' : ''}`}
+        onClick={() => setOpen(o => !o)}
+        disabled={disabled || options.length === 0}
+        aria-haspopup="listbox"
+        aria-expanded={open}
       >
-        {children}
-      </select>
-      <FiChevronDown size={13} className="filter-chip-caret" style={{ pointerEvents: 'none' }} />
-    </label>
+        {icon}
+        {prefix && <span className="filter-chip-prefix">{prefix}</span>}
+        <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {selected?.label ?? placeholder}
+        </span>
+        <FiChevronDown size={13} className="filter-chip-caret" />
+      </button>
+
+      {open && (
+        <div className="filter-chip-menu" role="listbox" style={{ minWidth: menuWidth }}>
+          {options.map((o, i) => {
+            const active = o.value === value;
+            const showHeader = o.group && o.group !== options[i - 1]?.group;
+            return (
+              <Fragment key={o.value}>
+                {showHeader && <div className="filter-chip-group">{o.group}</div>}
+                <button
+                  ref={active ? activeRef : undefined}
+                  className={`filter-chip-option${active ? ' active' : ''}`}
+                  onClick={() => { onSelect(o.value); setOpen(false); }}
+                  role="option"
+                  aria-selected={active}
+                >
+                  <span style={{ flex: 1 }}>{o.menuLabel ?? o.label}</span>
+                  {active && <FiCheck size={14} style={{ flexShrink: 0 }} />}
+                </button>
+              </Fragment>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
