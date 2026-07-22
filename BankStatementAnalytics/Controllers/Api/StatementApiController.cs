@@ -295,14 +295,9 @@ namespace BankStatementAnalytics.Controllers.Api
             if (string.IsNullOrEmpty(history.SourcePath) || !System.IO.File.Exists(history.SourcePath))
                 return BadRequest(new { message = "The file is no longer in the watch folder." });
 
+            // One-time password to open THIS file only — never persisted to the
+            // account. Falls back to the account's saved password when none is given.
             var password = string.IsNullOrEmpty(request?.Password) ? account.StatementPassword : request!.Password;
-
-            // Remember the password so future statements from this folder import automatically.
-            if (!string.IsNullOrEmpty(request?.Password))
-            {
-                account.StatementPassword = request.Password;
-                await DbHelper.UpdateAsync(account);
-            }
 
             byte[] bytes;
             try { bytes = await System.IO.File.ReadAllBytesAsync(history.SourcePath); }
