@@ -18,6 +18,7 @@ import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
 import Modal from "../components/ui/Modal";
+import CategoryPicker from "../components/CategoryPicker";
 import { currencyFormatter, maskName } from "../utils/format";
 
 /* ─── Design tokens — mapped to the global CSS variable system so both the
@@ -161,6 +162,17 @@ export default function Transactions() {
   const openUploadHistory = () => {
     setSelectedTx(null);            // only one RHS panel at a time
     setShowUploadHistory(true);
+
+    // Background auto-imports don't announce themselves to this page — refetch
+    // the list alongside the drawer so both reflect the same state.
+    setRefreshKey(k => k + 1);
+  };
+
+  // Load the drawer's uploads whenever it's open — and re-load when the account
+  // changes underneath it, so it never keeps showing another account's history.
+  useEffect(() => {
+    if (!showUploadHistory) return;
+    if (!effectiveAccountId) { setUploads([]); setImportFails([]); return; }
     setLoadingUploads(true);
     Promise.all([
       getUploads().then(res => (res.data || [])
@@ -175,11 +187,7 @@ export default function Transactions() {
     ])
       .then(([ups, fails]) => { setUploads(ups); setImportFails(fails); })
       .finally(() => setLoadingUploads(false));
-
-    // Background auto-imports don't announce themselves to this page — refetch
-    // the list alongside the drawer so both reflect the same state.
-    setRefreshKey(k => k + 1);
-  };
+  }, [showUploadHistory, effectiveAccountId]);
 
   const handleRevert = async (upload) => {
     if (!upload?.id) return;
@@ -236,6 +244,16 @@ export default function Transactions() {
     setCurrentPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange.start, dateRange.end]);
+
+  // The open detail drawer holds a transaction from the previous account — that
+  // row won't exist under the newly selected account, so close it (and any open
+  // inline tag/note editors) instead of leaving stale info showing.
+  useEffect(() => {
+    setSelectedTx(null);
+    setTagEditRowId(null);
+    setNoteEditRowId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveAccountId]);
 
   useEffect(() => {
     if (!effectiveAccountId) {
@@ -397,6 +415,24 @@ export default function Transactions() {
     });
   };
 
+  // Inline "Create category" from the picker: persist the new top-level
+  // category, add it to the local list, then assign it to the transaction.
+  const handleCreateCategory = (t, name) => {
+    api.post('/categories', { name })
+      .then(res => {
+        const created = res.data;
+        setCategories(prev => [
+          ...prev,
+          { id: created.id, name: created.name, subCategories: created.subCategories || [] },
+        ]);
+        handleCategoryChange(t, created.name);
+      })
+      .catch(err => {
+        console.error("Failed to create category", err);
+        alert("Failed to create category.");
+      });
+  };
+
   const updateTags = (t, updatedTags) => {
     const previousTags = t.tags;
 
@@ -506,30 +542,6 @@ export default function Transactions() {
       });
   };
 
-  const renderCategoryOptions = () => (
-    <>
-      <option value="">Uncategorized</option>
-      {frequentCategories.length > 0 && (
-        <optgroup label="Frequently used">
-          {frequentCategories.map(name => (
-            <option key={`freq-${name}`} value={name}>{name}</option>
-          ))}
-        </optgroup>
-      )}
-      {categories.map(cat =>
-        cat.subCategories?.length > 0 ? (
-          <optgroup key={cat.id} label={cat.name}>
-            {cat.subCategories.map(sub => (
-              <option key={sub} value={sub}>{sub}</option>
-            ))}
-          </optgroup>
-        ) : (
-          <option key={cat.id} value={cat.name}>{cat.name}</option>
-        )
-      )}
-    </>
-  );
-
   return (
     <div style={{ marginRight: (selectedTx || showUploadHistory) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
       <style>{`
@@ -556,14 +568,6 @@ export default function Transactions() {
           border-bottom: 1px solid ${T.border};
           background: ${T.bg};
         }
-        .tx-cat-select {
-          width: 100%; max-width: 100%;
-          padding: 5px 8px; font-size: 12px; font-weight: 600;
-          border: 1px solid ${T.border}; border-radius: 8px;
-          background: ${T.surface}; font-family: inherit;
-          outline: none; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
-        }
-        .tx-cat-select:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
         .tx-tag {
           display: inline-flex; align-items: center; gap: 4px;
           background: ${T.blueDim}; color: ${T.blue};
@@ -781,14 +785,14 @@ export default function Transactions() {
                   </div>
 
                   <div className="tx-col-cat" onClick={(e) => e.stopPropagation()}>
-                    <select
+                    <CategoryPicker
                       value={catValue}
-                      onChange={(e) => handleCategoryChange(t, e.target.value)}
-                      className="tx-cat-select"
-                      style={{ color: t.category ? T.text : T.faint }}
-                    >
-                      {renderCategoryOptions()}
-                    </select>
+                      categories={categories}
+                      frequentCategories={frequentCategories}
+                      onChange={(val) => handleCategoryChange(t, val)}
+                      onCreate={isAdmin ? (name) => handleCreateCategory(t, name) : undefined}
+                      size="sm"
+                    />
                   </div>
 
                   <div className="tnum" style={{ textAlign: 'right', fontSize: '15px', fontWeight: 800, color: isCredit ? T.green : T.red, letterSpacing: '-0.3px' }}>
@@ -862,15 +866,15 @@ export default function Transactions() {
               <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
                 <div style={{ marginTop: '8px' }}>
-                  <select
+                  <CategoryPicker
                     value={selectedTx.subCategory || selectedTx.category || ''}
-                    onChange={(e) => handleCategoryChange(selectedTx, e.target.value)}
-                    className="field-select"
+                    categories={categories}
+                    frequentCategories={frequentCategories}
+                    onChange={(val) => handleCategoryChange(selectedTx, val)}
+                    onCreate={isAdmin ? (name) => handleCreateCategory(selectedTx, name) : undefined}
                     disabled={!isAdmin}
-                    style={{ color: selectedTx.category ? 'var(--gray-700)' : 'var(--gray-400)' }}
-                  >
-                    {renderCategoryOptions()}
-                  </select>
+                    size="md"
+                  />
                 </div>
               </div>
 

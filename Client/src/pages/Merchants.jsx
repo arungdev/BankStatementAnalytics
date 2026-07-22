@@ -10,6 +10,7 @@ import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
 import Modal from "../components/ui/Modal";
+import CategoryPicker from "../components/CategoryPicker";
 import { avatarColors } from "../utils/avatar";
 import { useAuth } from "../context/useAuth";
 import { useAccount } from "../context/useAccount";
@@ -81,12 +82,20 @@ export default function Merchants() {
   const [editForm, setEditForm] = useState({ category: '', subCategory: '', shiftToNextMonth: false });
   const [sidebarWidth, setSidebarWidth] = useState(460);
   const [categoriesList, setCategoriesList] = useState([]);
+  // Most-used category values (names), ranked by usage — drives the CategoryPicker
+  // "Frequently used" group, same as the Transactions page.
+  const [frequentCategories, setFrequentCategories] = useState([]);
   const [txFilterName, setTxFilterName] = useState('ALL');
 
   // Merge state
   const [selectedIds, setSelectedIds] = useState([]);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [primaryMergeId, setPrimaryMergeId] = useState("");
+
+  // Auto-suggested merges (duplicate detection)
+  const [showSuggestModal, setShowSuggestModal] = useState(false);
+  const [suggestPrimary, setSuggestPrimary] = useState({});
+  const [mergingKey, setMergingKey] = useState(null);
 
   // Account scoping: "All accounts" (or no selection yet) sends no params, which the
   // API treats as unfiltered — identical to the pre-filter behavior.
@@ -101,6 +110,9 @@ export default function Merchants() {
     api.get("/categories")
       .then(res => setCategoriesList(res.data || []))
       .catch(err => console.error("Failed to load categories", err));
+    api.get("/categories/usage")
+      .then(res => setFrequentCategories((res.data || []).map(x => x.name)))
+      .catch(() => setFrequentCategories([]));
   }, []);
 
   const handleRowClick = (id) => {
@@ -124,9 +136,11 @@ export default function Merchants() {
     fetchMerchants()
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
-    // Merge selection is scope-dependent; an open drawer refetches under the new scope.
+    // Merge selection and any open drawer are scoped to the previous account —
+    // the selected merchant id won't belong to the newly chosen account, so
+    // reset both rather than refetching a merchant from the old scope.
     setSelectedIds([]);
-    if (selectedMerchantId) handleRowClick(selectedMerchantId);
+    closeSidebar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountQuery]);
 
@@ -266,13 +280,9 @@ export default function Merchants() {
     });
   };
 
-  const handleRowCategoryChange = (merchant, value) => {
-    if (value !== NEW_CATEGORY) {
-      applyMerchantCategory(merchant, value);
-      return;
-    }
-    const name = window.prompt('New category name')?.trim();
-    if (!name) return;
+  // Inline "Create category" from the row picker: reuse an existing match if
+  // one exists, otherwise persist the new top-level category, then assign it.
+  const handleCreateRowCategory = (merchant, name) => {
     const existing = categoriesList.find(c => c.name.toLowerCase() === name.toLowerCase());
     if (existing) {
       applyMerchantCategory(merchant, existing.name);
@@ -336,6 +346,73 @@ export default function Merchants() {
       });
     return { totalSpent, count, avg, first, last, monthly };
   }, [merchantDetails]);
+
+  // ── Auto-suggested merges: group merchants whose names normalize to the same
+  // key (case/whitespace/punctuation-insensitive). Also folds a merchant into a
+  // group when its name matches another merchant's alias or friendly name.
+  const mergeSuggestions = useMemo(() => {
+    const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const groups = new Map();
+    data.forEach(m => {
+      // A merchant can be reachable by its raw name or its friendly name —
+      // group on whichever keys it exposes so renamed rows still cluster.
+      const keys = new Set([norm(m.name), norm(m.friendlyName)].filter(Boolean));
+      keys.forEach(key => {
+        if (!groups.has(key)) groups.set(key, new Set());
+        groups.get(key).add(m);
+      });
+    });
+    return [...groups.entries()]
+      .filter(([, set]) => set.size > 1)
+      .map(([key, set]) => {
+        // Default primary: prefer a categorized merchant, then most transactions.
+        const members = [...set].sort((a, b) =>
+          (b.category ? 1 : 0) - (a.category ? 1 : 0) ||
+          (b.transactionCount ?? 0) - (a.transactionCount ?? 0) ||
+          a.id - b.id);
+        return { key, members, defaultPrimaryId: members[0].id };
+      })
+      .sort((a, b) => b.members.length - a.members.length);
+  }, [data]);
+
+  const mergeSuggestionGroup = (group) => {
+    const primaryId = suggestPrimary[group.key] ?? group.defaultPrimaryId;
+    const secondaryIds = group.members.map(m => m.id).filter(id => id !== primaryId);
+    setMergingKey(group.key);
+    return api.post('/merchants/merge', { primaryId, secondaryIds })
+      .then(() => fetchMerchants())
+      .catch(err => {
+        console.error(err);
+        alert('Failed to merge merchants.');
+      })
+      .finally(() => setMergingKey(null));
+  };
+
+  const mergeAllSuggestions = async () => {
+    setMergingKey('__all__');
+    try {
+      // A merchant can sit in two groups (matched by name in one, friendly name
+      // in another); once merged away it must not anchor or join a later group.
+      const consumed = new Set();
+      for (const group of mergeSuggestions) {
+        const remaining = group.members.filter(m => !consumed.has(m.id));
+        if (remaining.length < 2) continue;
+        const chosen = suggestPrimary[group.key] ?? group.defaultPrimaryId;
+        const primaryId = consumed.has(chosen) ? remaining[0].id : chosen;
+        const secondaryIds = remaining.map(m => m.id).filter(id => id !== primaryId);
+        await api.post('/merchants/merge', { primaryId, secondaryIds });
+        secondaryIds.forEach(id => consumed.add(id));
+      }
+      await fetchMerchants();
+      setShowSuggestModal(false);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to merge some groups.');
+      await fetchMerchants();
+    } finally {
+      setMergingKey(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -496,6 +573,16 @@ export default function Merchants() {
         >
           <FiFilter size={14} /> Uncategorized
         </Button>
+        {isAdmin && mergeSuggestions.length > 0 && (
+          <Button
+            variant="secondary"
+            onClick={() => { setSuggestPrimary({}); setShowSuggestModal(true); }}
+            title="Merchants that look like duplicates of each other"
+            style={{ fontSize: 'var(--text-sm)' }}
+          >
+            ✨ {mergeSuggestions.length} suggested merge{mergeSuggestions.length > 1 ? 's' : ''}
+          </Button>
+        )}
       </div>
 
       {/* ── List ── */}
@@ -573,27 +660,14 @@ export default function Merchants() {
 
                   <div className="mrc-col-cat" onClick={(e) => e.stopPropagation()}>
                     {isAdmin ? (
-                      <select
+                      <CategoryPicker
                         value={merchant.subCategory || merchant.category || ''}
-                        onChange={(e) => handleRowCategoryChange(merchant, e.target.value)}
-                        className="mrc-cat-select"
-                        style={{ color: merchant.category ? T.text : T.faint }}
-                      >
-                        <option value="">Uncategorized</option>
-                        {categoriesList.map(cat =>
-                          cat.subCategories?.length > 0 ? (
-                            <optgroup key={cat.id} label={cat.name}>
-                              <option value={cat.name}>{cat.name} (general)</option>
-                              {cat.subCategories.map(sub => (
-                                <option key={sub} value={sub}>{sub}</option>
-                              ))}
-                            </optgroup>
-                          ) : (
-                            <option key={cat.id} value={cat.name}>{cat.name}</option>
-                          )
-                        )}
-                        <option value={NEW_CATEGORY}>＋ Add new category…</option>
-                      </select>
+                        categories={categoriesList}
+                        frequentCategories={frequentCategories}
+                        onChange={(val) => applyMerchantCategory(merchant, val)}
+                        onCreate={(name) => handleCreateRowCategory(merchant, name)}
+                        size="sm"
+                      />
                     ) : merchant.category ? (
                       <span style={{
                         display: 'inline-block', maxWidth: '100%',
@@ -654,6 +728,92 @@ export default function Merchants() {
             return <option key={id} value={id}>{merchant?.friendlyName || merchant?.name}</option>;
           })}
         </select>
+      </Modal>
+
+      {/* Suggested merges modal — duplicate groups with one-click merge */}
+      <Modal
+        open={showSuggestModal}
+        onClose={() => setShowSuggestModal(false)}
+        title="Suggested merges"
+        width={560}
+        footer={
+          <>
+            <button className="btn" onClick={() => setShowSuggestModal(false)}>Close</button>
+            {mergeSuggestions.length > 1 && (
+              <button
+                className="btn primary"
+                disabled={mergingKey !== null}
+                onClick={mergeAllSuggestions}
+              >
+                {mergingKey === '__all__' ? 'Merging…' : `Merge all (${mergeSuggestions.length} groups)`}
+              </button>
+            )}
+          </>
+        }
+      >
+        {mergeSuggestions.length === 0 ? (
+          <p style={{ color: T.muted, fontSize: '13px', margin: 0 }}>
+            No duplicate merchants detected. 🎉
+          </p>
+        ) : (
+          <>
+            <p style={{ color: T.muted, fontSize: '13px', margin: '0 0 16px' }}>
+              These merchants have matching names and look like duplicates. Pick which one
+              to keep in each group — the rest fold into it as aliases (you can unmerge later).
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '55vh', overflowY: 'auto', paddingRight: '4px' }}>
+              {mergeSuggestions.map(group => {
+                const primaryId = suggestPrimary[group.key] ?? group.defaultPrimaryId;
+                return (
+                  <div key={group.key} style={{ border: `1px solid ${T.border}`, borderRadius: '12px', overflow: 'hidden', flexShrink: 0 }}>
+                    {group.members.map((m, idx) => (
+                      <label
+                        key={m.id}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '10px',
+                          padding: '10px 14px', cursor: 'pointer',
+                          borderTop: idx > 0 ? `1px solid ${T.borderSub}` : 'none',
+                          background: m.id === primaryId ? T.indigoDim : 'transparent',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name={`suggest-${group.key}`}
+                          checked={m.id === primaryId}
+                          onChange={() => setSuggestPrimary(prev => ({ ...prev, [group.key]: m.id }))}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <Avatar name={maskName(m.friendlyName || m.name)} size={28} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {maskName(m.friendlyName || m.name)}
+                            {m.id === primaryId && (
+                              <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 700, color: T.indigo, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                keep
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '11px', color: T.faint, marginTop: '1px' }}>
+                            {m.category || 'Uncategorized'} · {(m.transactionCount ?? 0).toLocaleString('en-IN')} txn{(m.transactionCount ?? 0) === 1 ? '' : 's'}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 12px', borderTop: `1px solid ${T.borderSub}`, background: T.bg }}>
+                      <button
+                        className="btn small primary"
+                        disabled={mergingKey !== null}
+                        onClick={() => mergeSuggestionGroup(group)}
+                      >
+                        {mergingKey === group.key ? 'Merging…' : `Merge ${group.members.length} into one`}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </Modal>
 
       {/* RHS detail drawer — non-modal so the list & sidebar stay interactive */}
