@@ -94,6 +94,49 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(months);
         }
 
+        // GET: api/budgets/suggestions — a suggested monthly limit per category, derived from the
+        // user's average spend over the last six complete months (falls back to the current
+        // partial month when that's all the history there is).
+        [HttpGet("suggestions")]
+        public async Task<IActionResult> GetSuggestions()
+        {
+            using var session = DbHelper.GetSession();
+
+            var ownedIds = AccountAccess.OwnedIds(session, CurrentUserId);
+            if (ownedIds.Count == 0)
+                return Ok(Array.Empty<object>());
+
+            var (currentStart, currentEnd) = MonthRange(0);
+
+            // A partial month would skew the average low, so prefer complete months.
+            var rows = await SpendRowsAsync(session, ownedIds, currentStart.AddMonths(-6), currentStart);
+            if (rows.Count == 0)
+                rows = await SpendRowsAsync(session, ownedIds, currentStart, currentEnd);
+            if (rows.Count == 0)
+                return Ok(Array.Empty<object>());
+
+            var monthCount = rows.Select(r => new { r.Date.Year, r.Date.Month }).Distinct().Count();
+
+            var suggestions = rows
+                .GroupBy(r => r.CategoryOverride ?? r.MerchantCategory ?? "Uncategorized")
+                .Select(g =>
+                {
+                    var avg = g.Sum(r => r.Debit) / monthCount;
+                    return new
+                    {
+                        category = g.Key,
+                        months = monthCount,
+                        avgMonthly = Math.Round(avg),
+                        suggested = RoundUpToNice(avg)
+                    };
+                })
+                .Where(s => s.suggested > 0)
+                .OrderBy(s => s.category, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return Ok(suggestions);
+        }
+
         // POST: api/budgets — create a budget for a category (one per category per user).
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] BudgetDto req)
@@ -178,6 +221,43 @@ namespace BankStatementAnalytics.Controllers.Api
             var start = thisMonth.AddMonths(-offset);
             var end = start.AddMonths(1);
             return (start, end);
+        }
+
+        // Round a raw average up to a figure that reads like a limit someone would set.
+        private static decimal RoundUpToNice(decimal value)
+        {
+            if (value <= 0) return 0;
+            if (value < 100) return Math.Ceiling(value / 10) * 10;
+            if (value < 1000) return Math.Ceiling(value / 50) * 50;
+            return Math.Ceiling(value / 100) * 100;
+        }
+
+        private sealed class SpendRow
+        {
+            public decimal Debit { get; set; }
+            public DateTime Date { get; set; }
+            public string? CategoryOverride { get; set; }
+            public string? MerchantCategory { get; set; }
+        }
+
+        // Budget-relevant debit rows (same filters as SpendForMonthAsync) within [from, to).
+        private static async Task<List<SpendRow>> SpendRowsAsync(
+            NHibernate.ISession session, IReadOnlyCollection<long> ownedIds, DateTime from, DateTime to)
+        {
+            return await session.Query<BankTransaction>()
+                .Where(t => ownedIds.Contains(t.AccountId)
+                         && t.Debit > 0
+                         && (t.Mode == null || t.Mode != "TRANSFER")
+                         && (t.EffectiveDate ?? t.TransactionDate) >= from
+                         && (t.EffectiveDate ?? t.TransactionDate) < to)
+                .Select(t => new SpendRow
+                {
+                    Debit = t.Debit,
+                    Date = t.EffectiveDate ?? t.TransactionDate,
+                    CategoryOverride = t.CategoryOverride,
+                    MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
+                })
+                .ToListAsync();
         }
 
         // Spend per resolved category across all of the user's accounts within [monthStart, monthEnd).
