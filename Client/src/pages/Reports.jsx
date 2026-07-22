@@ -6,7 +6,7 @@ import api from '../api/client';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { FilterGroup, FilterPill, FilterSelectChip } from '../components/PageHeader';
+import { FilterGroup, FilterPill, FilterDropdownChip } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import EmptyState from '../components/ui/EmptyState';
 import { FiDownload } from 'react-icons/fi';
@@ -408,7 +408,6 @@ export default function Reports() {
                       }}>
                         {maskName(m.name)}
                       </span>
-                      <span style={{ fontSize: '11px', color: T.muted }}>{m.count}×</span>
                       <span style={{ fontSize: '13px', fontWeight: 700, color: T.text }}>{fmt.format(m.total)}</span>
                     </div>
                   ))
