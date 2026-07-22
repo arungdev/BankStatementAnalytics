@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import api from "./api/client";
 import { useAccount } from "./context/useAccount";
@@ -69,6 +69,7 @@ function AuthGate() {
         <Route path="/budgets" element={<Budgets />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>
   );
@@ -85,10 +86,12 @@ const PAGE_META = {
   '/budgets': { title: 'Budgets', subtitle: 'Monthly limits by category' },
   '/investments': { title: 'Investments', subtitle: 'Recurring & fixed deposits' },
   '/reports': { title: 'Reports', subtitle: 'Monthly & yearly summary' },
+  '/settings': { title: 'Settings', subtitle: 'Accounts, categories, and preferences' },
 };
 
 function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { selectedAccountId, setSelectedAccountId } = useAccount();
   // Consuming the privacy flag here re-renders Layout (and, via the fresh
   // outlet context object, every page that reads useOutletContext) on toggle.
@@ -102,7 +105,8 @@ function Layout() {
 
   const [accounts, setAccounts] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [isSettingsOpen, setIsSettings] = useState(false);
+  // Settings is a routed page (/settings) rather than a modal.
+  const goSettings = () => navigate('/settings');
   // Width occupied by the docked Reminders drawer (0 when closed) so the
   // page content shifts beside it, like the per-page RHS detail drawers.
   const [remindersDock, setRemindersDock] = useState(0);
@@ -220,7 +224,7 @@ function Layout() {
             <PrivacyToggle masked={maskAmounts} onToggle={() => setMaskAmounts(m => !m)} />
             <NotificationBell onDockChange={setRemindersDock} />
           </>}
-          onSettings={() => setIsSettings(true)}
+          onSettings={goSettings}
         />
 
         <Modal
@@ -259,18 +263,13 @@ function Layout() {
           />
         </Modal>
 
-        <Settings
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettings(false)}
-          onAddAccount={() => setShowCreate(true)}
-          onAccountCreated={fetchAccounts}
-          accounts={accounts}
-          setAccounts={setAccounts}
-        />
         <section key={location.pathname} className="content route-fade" style={{ marginRight: remindersDock, transition: "margin-right 0.2s ease" }}>
           <Outlet context={{
             accounts,
-            openSettings: () => setIsSettings(true),
+            setAccounts,
+            openAddAccount: () => setShowCreate(true),
+            onAccountCreated: fetchAccounts,
+            openSettings: goSettings,
             insightRange,
             insightGroupBy,
             trendsPeriod,

@@ -5,7 +5,7 @@ import {
   FiChevronDown, FiChevronRight,
   FiTrendingUp, FiPieChart, FiLogOut,
   FiChevronsLeft, FiChevronsRight, FiBell, FiHome, FiTarget,
-  FiDollarSign, FiSun, FiMoon, FiMonitor, FiFileText,
+  FiDollarSign, FiSun, FiMoon, FiMonitor, FiFileText, FiSettings,
 } from 'react-icons/fi';
 import { useAuth } from '../context/useAuth';
 import useTheme from '../context/useTheme';
@@ -195,6 +195,10 @@ const Sidebar = () => {
               {username} · {role}
             </p>
           )}
+          <NavLink to="/settings" className="nav-item-header" title="Settings">
+            <FiSettings size={16} />
+            {isOpen && <span>Settings</span>}
+          </NavLink>
           <button
             className="nav-item-header"
             style={{ width: '100%', border: 'none', background: 'none', cursor: 'pointer' }}

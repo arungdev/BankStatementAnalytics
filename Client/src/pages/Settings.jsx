@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
-import { FiSettings, FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud } from "react-icons/fi";
+import { useOutletContext, useSearchParams } from "react-router-dom";
+import { FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud } from "react-icons/fi";
 import api from "../api/client";
 import { updateCardSettings } from "../api/cards";
 import { updateAutoImport, browseFolders } from "../api/accounts";
@@ -16,12 +16,21 @@ import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from
 import { currencyFormatterFull, formatDate } from "../utils/format";
 import "./Settings.css";
 
-export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreated, accounts = [], setAccounts }) {
+export default function Settings() {
+  const {
+    accounts = [],
+    setAccounts,
+    openAddAccount,
+    onAccountCreated,
+  } = useOutletContext() ?? {};
+  const [searchParams, setSearchParams] = useSearchParams();
   const { selectedAccountId, setSelectedAccountId } = useAccount();
   const { isAdmin } = useAuth();
   const { preference, setPreference, fontSize, setFontSize } = useTheme();
   const { maskAmounts, maskNamesEnabled, setMaskNamesEnabled } = usePrivacy();
-  const [activeTab, setActiveTab] = useState('accounts');
+  const activeTab = searchParams.get('tab') || 'accounts';
+  const setActiveTab = (tab) =>
+    setSearchParams(tab === 'accounts' ? {} : { tab }, { replace: true });
   const [categories, setCategories] = useState([]);
 
   // Category states
@@ -239,30 +248,8 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
   };
 
   useEffect(() => {
-    if (isOpen) {
-      fetchCategories();
-    }
-  }, [isOpen]);
-
-  // Lock background scroll while modal is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+    fetchCategories();
+  }, []);
 
   const handleAddCategory = async () => {
     const name = newCatName.trim();
@@ -364,8 +351,6 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
     }
   };
 
-  if (!isOpen) return null;
-
   const TABS = [
     { id: 'accounts', label: 'Accounts', icon: <FiCreditCard size={17} /> },
     { id: 'categories', label: 'Categories', icon: <FiTag size={17} /> },
@@ -390,63 +375,43 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
     { id: 'dark', label: 'Dark', sub: 'Dim surfaces, light text', icon: <FiMoon size={20} /> },
   ];
 
-  // Portal to <body>: the modal is mounted inside .app, whose fade-in opacity
-  // animation (fill-mode: both) keeps a stacking context alive — without the
-  // portal, body-portaled drawers (z-drawer) paint above this modal despite
-  // its higher z-index.
-  return createPortal(
-    <>
-      <div className="settings-backdrop" onClick={onClose} />
+  return (
+    <div className="settings-page">
+      {/* Tabs + section header stay pinned together; only the body scrolls. */}
+      <div className="settings-topbar">
+        <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={`settings-tab${activeTab === tab.id ? ' active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </nav>
 
-      <div className="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
-        {/* Sidebar */}
-        <aside className="settings-sidebar">
-          <div className="settings-brand">
-            <FiSettings size={20} />
-            Settings
+        <header className="settings-header">
+          <div className="settings-header-text">
+            <h1 className="settings-title">{HEADERS[activeTab].title}</h1>
+            <p className="settings-subtitle">{HEADERS[activeTab].subtitle}</p>
           </div>
-          <nav className="settings-nav">
-            {TABS.map(tab => (
-              <button
-                key={tab.id}
-                className={`settings-nav-item${activeTab === tab.id ? ' active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
+          {activeTab === 'accounts' && isAdmin && (
+            <button
+              className="btn primary small"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              onClick={() => openAddAccount?.()}
+            >
+              <FiPlus size={15} /> Add Account
+            </button>
+          )}
+        </header>
+      </div>
 
-        {/* Main panel */}
-        <div className="settings-main">
-          <button
-            className="modal-close settings-close"
-            onClick={onClose}
-            title="Close"
-            aria-label="Close settings"
-          >
-            <FiX size={16} />
-          </button>
-
-          <header className="settings-header">
-            <div className="settings-header-text">
-              <h1 className="settings-title">{HEADERS[activeTab].title}</h1>
-              <p className="settings-subtitle">{HEADERS[activeTab].subtitle}</p>
-            </div>
-            {activeTab === 'accounts' && isAdmin && (
-              <button
-                className="btn primary small"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                onClick={() => setTimeout(() => { if (onAddAccount) onAddAccount(); }, 150)}
-              >
-                <FiPlus size={15} /> Add Account
-              </button>
-            )}
-          </header>
-
-          <div className="settings-body">
+      <div className="settings-body">
 
             {/* ── Profile ── */}
             {activeTab === 'profile' && <ProfileSettings />}
@@ -678,58 +643,59 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                       {/* Credit-card-only metadata: usually auto-filled from the PDF
                           statement; editable here as the manual fallback. */}
                       {acc.bankName === 'HDFCCreditCard' && isAdmin && (
-                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' }}>
-                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
-                            Credit limit (₹)
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="e.g. 100000"
-                              value={cardDraft(acc).creditLimit}
-                              onChange={(e) => setCardDraft(acc.id, { creditLimit: e.target.value })}
-                              className="field-input"
-                              style={{ width: '140px' }}
-                            />
-                          </label>
-                          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
-                            Statement day (1–31)
-                            <input
-                              type="number"
-                              min="1"
-                              max="31"
-                              placeholder="e.g. 23"
-                              value={cardDraft(acc).statementDay}
-                              onChange={(e) => setCardDraft(acc.id, { statementDay: e.target.value })}
-                              className="field-input"
-                              style={{ width: '120px' }}
-                            />
-                          </label>
-                          {/* HDFC add-on/second cards draw on the primary card's limit;
-                              linking them makes utilization count both cards together. */}
-                          {accounts.some(a => a.bankName === 'HDFCCreditCard' && a.id !== acc.id) && (
-                            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
-                              Shares limit with
-                              <select
-                                value={cardDraft(acc).sharedLimitAccountId}
-                                onChange={(e) => setCardDraft(acc.id, { sharedLimitAccountId: e.target.value })}
+                        <div className="settings-panel">
+                          <div className="settings-field-grid">
+                            <label className="settings-field sm">
+                              <span className="settings-field-label">Credit limit (₹)</span>
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="e.g. 100000"
+                                value={cardDraft(acc).creditLimit}
+                                onChange={(e) => setCardDraft(acc.id, { creditLimit: e.target.value })}
                                 className="field-input"
-                                style={{ width: '180px' }}
-                              >
-                                <option value="">None (own limit)</option>
-                                {accounts
-                                  .filter(a => a.bankName === 'HDFCCreditCard' && a.id !== acc.id)
-                                  .map(a => (
-                                    <option key={a.id} value={a.id}>
-                                      •••• {a.accountNumber?.slice(-4) || a.id}
-                                    </option>
-                                  ))}
-                              </select>
+                              />
                             </label>
-                          )}
+                            <label className="settings-field sm">
+                              <span className="settings-field-label">Statement day (1–31)</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="31"
+                                placeholder="e.g. 23"
+                                value={cardDraft(acc).statementDay}
+                                onChange={(e) => setCardDraft(acc.id, { statementDay: e.target.value })}
+                                className="field-input"
+                              />
+                            </label>
+                            {/* HDFC add-on/second cards draw on the primary card's limit;
+                                linking them makes utilization count both cards together. */}
+                            {accounts.some(a => a.bankName === 'HDFCCreditCard' && a.id !== acc.id) && (
+                              <label className="settings-field lg">
+                                <span className="settings-field-label">Shares limit with</span>
+                                <select
+                                  value={cardDraft(acc).sharedLimitAccountId}
+                                  onChange={(e) => setCardDraft(acc.id, { sharedLimitAccountId: e.target.value })}
+                                  className="field-input"
+                                >
+                                  <option value="">None (own limit)</option>
+                                  {accounts
+                                    .filter(a => a.bankName === 'HDFCCreditCard' && a.id !== acc.id)
+                                    .map(a => (
+                                      <option key={a.id} value={a.id}>
+                                        •••• {a.accountNumber?.slice(-4) || a.id}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                            )}
+                          </div>
                           {cardDrafts[acc.id] && (
-                            <button className="btn primary small" onClick={() => handleSaveCardSettings(acc)}>
-                              Save card settings
-                            </button>
+                            <div className="settings-panel-actions">
+                              <button className="btn primary small" onClick={() => handleSaveCardSettings(acc)}>
+                                Save card settings
+                              </button>
+                            </div>
                           )}
                         </div>
                       )}
@@ -738,10 +704,9 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                           importing new statement files like a manual upload.
                           Collapsed by default to keep the account row compact. */}
                       {isAdmin && (
-                        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' }}>
+                        <div className="settings-panel">
                           <button
-                            className="btn small"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                            className="btn small auto-import-toggle"
                             onClick={() => setAutoOpen(prev => ({ ...prev, [acc.id]: !prev[acc.id] }))}
                           >
                             Auto-import
@@ -752,9 +717,9 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                           </button>
                           {autoOpen[acc.id] && (
                           <>
-                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginTop: '10px' }}>
-                            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', flex: '1 1 240px' }}>
-                              Auto-import folder
+                          <div className="settings-field-grid" style={{ marginTop: 'var(--space-4)' }}>
+                            <label className="settings-field grow">
+                              <span className="settings-field-label">Auto-import folder</span>
                               <input
                                 type="text"
                                 placeholder="e.g. D:\Statements\HDFC"
@@ -766,31 +731,28 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                             <button type="button" className="btn small" onClick={() => openBrowse(acc)}>
                               <FiFolder size={12} /> Browse…
                             </button>
-                            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
-                              Statement PDF password
-                              <div style={{ position: 'relative', display: 'inline-block' }}>
+                            <label className="settings-field md">
+                              <span className="settings-field-label">Statement PDF password</span>
+                              <span className="field-affix">
                                 <input
                                   type={showPw[acc.id] ? "text" : "password"}
                                   placeholder={acc.hasStatementPassword ? "••••• (saved)" : "optional"}
                                   value={autoDraft(acc).statementPassword}
                                   onChange={(e) => setAutoDraft(acc.id, { statementPassword: e.target.value })}
                                   className="field-input"
-                                  style={{ width: '160px', paddingRight: '30px' }}
                                 />
                                 <button
                                   type="button"
+                                  className="field-affix-btn"
                                   title={showPw[acc.id] ? "Hide password" : "Show password"}
                                   onClick={() => setShowPw(prev => ({ ...prev, [acc.id]: !prev[acc.id] }))}
-                                  style={{
-                                    position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)',
-                                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                                    color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center'
-                                  }}
                                 >
                                   {showPw[acc.id] ? <FiEyeOff size={14} /> : <FiEye size={14} />}
                                 </button>
-                              </div>
+                              </span>
                             </label>
+                          </div>
+                          <div className="settings-panel-actions">
                             {autoDrafts[acc.id] && (
                               <button className="btn primary small" onClick={() => handleSaveAutoImport(acc)}>
                                 Save auto-import
@@ -824,9 +786,9 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                             )}
                           </div>
                           {browse?.accId === acc.id && (
-                            <div style={{ marginTop: '8px', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '10px', maxWidth: '480px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-main)', flex: 1, wordBreak: 'break-all' }}>
+                            <div className="folder-browser">
+                              <div className="folder-browser-head">
+                                <span className="folder-browser-path">
                                   {browse.path || 'Quick access & drives'}
                                 </span>
                                 {browse.path && (
@@ -835,17 +797,16 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                                 <button type="button" className="btn small" onClick={() => setBrowse(null)}>Close</button>
                               </div>
                               {browse.error && (
-                                <div style={{ fontSize: '11px', color: 'var(--danger, #dc2626)', marginBottom: '6px' }}>{browse.error}</div>
+                                <div className="folder-browser-error">{browse.error}</div>
                               )}
-                              <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <div className="folder-browser-list">
                                 {browse.folders.length === 0 ? (
-                                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '4px' }}>No subfolders</div>
+                                  <div className="folder-browser-empty">No subfolders</div>
                                 ) : browse.folders.map(f => (
                                   <button
                                     key={f.path}
                                     type="button"
-                                    className="btn small"
-                                    style={{ justifyContent: 'flex-start', textAlign: 'left', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                    className="btn small folder-browser-item"
                                     onClick={() => loadBrowse(acc.id, f.path)}
                                   >
                                     <FiFolder size={12} style={{ flexShrink: 0 }} /> {f.name}
@@ -856,7 +817,7 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                                 <button
                                   type="button"
                                   className="btn primary small"
-                                  style={{ marginTop: '8px' }}
+                                  style={{ marginTop: 'var(--space-2)' }}
                                   onClick={() => { setAutoDraft(acc.id, { watchFolderPath: browse.path }); setBrowse(null); }}
                                 >
                                   Use this folder
@@ -864,11 +825,11 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
                               )}
                             </div>
                           )}
-                          <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                          <p className="settings-help-text">
                             New statement files in this folder are imported automatically about once a minute.
                             The password is stored on this computer and used to open protected PDFs.
                             Tip: in Explorer you can right-click a folder → “Copy as path” and paste it here.
-                          </div>
+                          </p>
                           </>
                           )}
                         </div>
@@ -1019,10 +980,7 @@ export default function Settings({ isOpen, onClose, onAddAccount, onAccountCreat
               </>
             )}
 
-          </div>
-        </div>
       </div>
-    </>,
-    document.body
+    </div>
   );
 }
