@@ -439,21 +439,21 @@ export default function Merchants() {
   const displayedTxs = merchantDetails?.transactions?.filter(tx => {
     if (txFilterName === 'ALL') return true;
 
-    // Process of elimination: if searching for the primary name, return
-    // transactions that don't belong to any of the merged aliases
-    if (txFilterName === merchantDetails.name) {
-      const matchesAlias = merchantDetails.aliases?.some(alias => {
-        if (!alias) return false;
-        const aliasTerm = alias.toLowerCase();
-        return tx.description?.toLowerCase().includes(aliasTerm) ||
-               tx.upiReference?.toLowerCase().includes(aliasTerm);
-      });
-      return !matchesAlias;
+    // Assign the transaction to the longest name appearing in its text, so an alias
+    // that is a substring of the primary name (or of another alias) can't claim
+    // every transaction. Text matching no name defaults to the primary.
+    const hay = `${tx.description || ''} ${tx.upiReference || ''}`.toLowerCase();
+    let owner = null;
+    for (const name of [merchantDetails.name, ...(merchantDetails.aliases || [])]) {
+      const term = (name || '').trim().toLowerCase();
+      if (term && hay.includes(term) && (!owner || term.length > owner.length)) owner = term;
     }
 
-    const filterTerm = txFilterName.toLowerCase();
-    return tx.description?.toLowerCase().includes(filterTerm) ||
-           tx.upiReference?.toLowerCase().includes(filterTerm);
+    const selected = txFilterName.trim().toLowerCase();
+    if (selected === (merchantDetails.name || '').trim().toLowerCase()) {
+      return owner === null || owner === selected;
+    }
+    return owner === selected;
   }) || [];
 
   const allSelected = filteredData.length > 0 && selectedIds.length === filteredData.length;

@@ -16,6 +16,28 @@ namespace BankStatementAnalytics.Controllers.Api
     [Route("api/merchants")]
     public class MerchantApiController : TenantControllerBase
     {
+        // Aliases are stored for upload-time resolution (CounterPartyService matches
+        // Aliases.Contains(name) so a same-named counterparty from another bank code still
+        // resolves here), which means merging two same-named merchants records the primary's
+        // own name as an alias. Those rows must stay in the DB, but showing them duplicates
+        // the name in the UI and breaks the per-name transaction filter — so strip self-name
+        // aliases and whitespace/case duplicates from API responses.
+        private static List<string> DisplayAliases(Merchant merchant)
+        {
+            static string Normalize(string value) =>
+                string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
+
+            var seen = new HashSet<string> { Normalize(merchant.Name ?? string.Empty) };
+            var aliases = new List<string>();
+            foreach (var alias in merchant.Aliases)
+            {
+                if (string.IsNullOrWhiteSpace(alias)) continue;
+                if (seen.Add(Normalize(alias)))
+                    aliases.Add(alias.Trim());
+            }
+            return aliases;
+        }
+
         // GET: api/merchants
         [HttpGet]
         public IActionResult GetAll([FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
@@ -58,7 +80,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     SubCategory = merchantEntity.SubCategory,
                     ShiftToNextMonth = merchantEntity.ShiftToNextMonth == true,
                     UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
-                    Aliases = merchantEntity.Aliases.ToList(),
+                    Aliases = DisplayAliases(merchantEntity),
                     TransactionCount = txCounts.TryGetValue(merchantEntity.Id, out var c) ? c : 0
                 })
                 .OrderByDescending(m => m.TransactionCount)
@@ -122,7 +144,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 BankCode = merchantEntity.BankCode,
                 Notes = merchantEntity.Notes,
                 UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
-                Aliases = merchantEntity.Aliases.ToList(),
+                Aliases = DisplayAliases(merchantEntity),
                 Transactions = allTransactions
             };
 
