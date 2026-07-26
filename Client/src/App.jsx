@@ -4,7 +4,9 @@ import api from "./api/client";
 import { useAccount } from "./context/useAccount";
 import { useAuth } from "./context/useAuth";
 import { usePrivacy } from "./context/usePrivacy";
+import { FiHelpCircle } from "react-icons/fi";
 import CreateAccount from "./components/CreateAccount";
+import OnboardingGuide from "./components/OnboardingGuide";
 import Modal from "./components/ui/Modal";
 import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
@@ -99,6 +101,20 @@ function Layout() {
   // don't re-render from this alone — React Router bails out on the cached
   // outlet element — so those pages call usePrivacy() themselves.
   const { maskAmounts, setMaskAmounts } = usePrivacy();
+  const { username } = useAuth();
+
+  // ── First-login onboarding guide ──────────────────────────────────────
+  // Auto-opens once per user (flag kept in localStorage, keyed by username);
+  // the header ? button reopens it anytime.
+  const guideSeenKey = username ? `guideSeen:${username}` : null;
+  const [guideOpen, setGuideOpen] = useState(false);
+  useEffect(() => {
+    if (guideSeenKey && !localStorage.getItem(guideSeenKey)) setGuideOpen(true);
+  }, [guideSeenKey]);
+  const closeGuide = () => {
+    setGuideOpen(false);
+    if (guideSeenKey) localStorage.setItem(guideSeenKey, "1");
+  };
 
   // Fire desktop reminders for bills due soon (opt-in; see Settings → Reminders).
   useBillReminders();
@@ -137,18 +153,23 @@ function Layout() {
   // Sidebar accounts
   useEffect(() => {
     api.get('/statements/accounts')
-      .then(res => {
-        setAccounts(res.data);
-        if (res.data.length > 0) {
-          // "All accounts" is a valid selection even though no account has that id.
-          const stillExists = selectedAccountId === ALL_ACCOUNTS
-            || res.data.some(a => a.id === selectedAccountId);
-          if (!selectedAccountId || !stillExists)
-            setSelectedAccountId(res.data[0].id);
-        }
-      })
+      .then(res => setAccounts(res.data))
       .catch(() => setAccounts([]));
-  }, [selectedAccountId, setSelectedAccountId]);
+  }, []);
+
+  // Keep the global selection pointing at a real account. Watching `accounts`
+  // (not just the selection) means the first created account gets selected
+  // immediately instead of only after a full page reload. Optimistic temp
+  // entries (string ids) are never auto-selected.
+  useEffect(() => {
+    const real = accounts.filter(a => typeof a.id === 'number');
+    if (real.length === 0) return;
+    // "All accounts" is a valid selection even though no account has that id.
+    const stillExists = selectedAccountId === ALL_ACCOUNTS
+      || real.some(a => a.id === selectedAccountId);
+    if (!selectedAccountId || !stillExists)
+      setSelectedAccountId(real[0].id);
+  }, [accounts, selectedAccountId, setSelectedAccountId]);
 
   const meta = PAGE_META[location.pathname] ?? { title: '' };
   const isOverview = location.pathname === '/';
@@ -221,10 +242,25 @@ function Layout() {
           subtitle={meta.subtitle}
           filters={filters}
           actions={<>
+            <button
+              onClick={() => setGuideOpen(true)}
+              className="btn icon"
+              style={{ borderRadius: '50%', width: '36px', height: '36px', color: 'var(--text-muted)', flexShrink: 0 }}
+              title="How to use this app"
+              aria-label="Open the getting-started guide"
+            >
+              <FiHelpCircle size={17} />
+            </button>
             <PrivacyToggle masked={maskAmounts} onToggle={() => setMaskAmounts(m => !m)} />
             <NotificationBell onDockChange={setRemindersDock} />
           </>}
-          onSettings={goSettings}
+        />
+
+        <OnboardingGuide
+          open={guideOpen}
+          onClose={closeGuide}
+          hasAccounts={accounts.some(a => typeof a.id === 'number')}
+          onAddAccount={() => setShowCreate(true)}
         />
 
         <Modal

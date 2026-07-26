@@ -1,0 +1,103 @@
+/* OnboardingGuide — first-login tour modal */
+
+.og-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 4px 8px 4px;
+  min-height: 250px; /* keeps the modal height stable across steps */
+}
+
+.og-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.og-title {
+  margin: 0 0 6px;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.01em;
+}
+
+.og-text {
+  margin: 0 0 14px;
+  font-size: var(--text-base);
+  color: var(--text-muted);
+  line-height: 1.55;
+  max-width: 420px;
+}
+
+.og-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+}
+
+.og-points li {
+  position: relative;
+  padding: 8px 12px 8px 32px;
+  background: var(--bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--text-main);
+  line-height: 1.45;
+}
+
+.og-points li::before {
+  content: '✓';
+  position: absolute;
+  left: 12px;
+  color: var(--success);
+  font-weight: 700;
+}
+
+.og-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+}
+
+.og-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.og-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.og-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-color);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+
+.og-dot.active {
+  background: var(--primary);
+  transform: scale(1.3);
+}
