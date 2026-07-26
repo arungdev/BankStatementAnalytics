@@ -278,8 +278,8 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // POST: api/statements/auto-imports/{historyId}/retry — re-attempt one
         // failed auto-import after supplying the PDF password ("Try again" in the
-        // history). Re-imports that specific file directly and, on success, clears
-        // its failed-history row; also saves the password for future statements.
+        // history). Re-imports that specific file directly and, on success, marks
+        // its history row as Success so the attempt stays in auto-import history.
         [HttpPost("auto-imports/{historyId:guid}/retry")]
         public async Task<IActionResult> RetryAutoImport(Guid historyId,
             [FromBody] RetryAutoImportRequest request)
@@ -313,8 +313,15 @@ namespace BankStatementAnalytics.Controllers.Api
             {
                 case ImportOutcome.Success:
                 case ImportOutcome.Duplicate:
-                    // Cleared: the failed row shouldn't linger once the file is in.
-                    await DbHelper.DeleteAsync(history);
+                    // Converted in place, not deleted — the attempt should stay
+                    // visible in auto-import history as a success after a retry.
+                    // (Duplicate means the file is already in via another upload,
+                    // so there's no new Upload row to link.)
+                    history.Status = "Success";
+                    history.Error = null;
+                    history.CreatedAt = DateTime.UtcNow;
+                    history.UploadId = result.Upload?.Id;
+                    await DbHelper.UpdateAsync(history);
                     return Ok(new { result.Total, result.NewCount, duplicate = result.Outcome == ImportOutcome.Duplicate });
                 default:
                     // Still failing (e.g. wrong password) — refresh the message/time in place.

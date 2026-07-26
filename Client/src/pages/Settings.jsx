@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud } from "react-icons/fi";
+import { FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle } from "react-icons/fi";
 import api from "../api/client";
 import { updateCardSettings } from "../api/cards";
 import { updateAutoImport, browseFolders } from "../api/accounts";
-import { triggerAutoImportSweep } from "../api/statements";
+import { triggerAutoImportSweep, getAutoImports, retryAutoImport } from "../api/statements";
 import { useAccount } from "../context/useAccount";
 import { useAuth } from "../context/useAuth";
 import { usePrivacy } from "../context/usePrivacy";
@@ -12,6 +12,7 @@ import useTheme from "../context/useTheme";
 import { FONT_SIZE_OPTIONS } from "../context/ThemeContext";
 import ProfileSettings from "../components/ProfileSettings";
 import Badge from "../components/ui/Badge";
+import Drawer from "../components/ui/Drawer";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
 import { currencyFormatterFull, formatDate } from "../utils/format";
 import "./Settings.css";
@@ -154,6 +155,38 @@ export default function Settings() {
       alert("Could not start the import. Please try again.");
     } finally {
       setSweeping(prev => { const next = { ...prev }; delete next[acc.id]; return next; });
+    }
+  };
+
+  // Auto-import history drawer (RHS) — one account at a time. Rows come from
+  // ImportHistory on the server, so failures show up even though they leave no
+  // Upload row. Failed rows offer a retry (with an optional one-time password).
+  const [historyAcc, setHistoryAcc] = useState(null);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyWidth, setHistoryWidth] = useState(450);
+  const [retryPw, setRetryPw] = useState({});
+  const [retrying, setRetrying] = useState({});
+
+  const loadHistory = (acc) => {
+    setHistoryLoading(true);
+    getAutoImports(acc.id)
+      .then(res => setHistoryItems(res.data || []))
+      .catch(() => setHistoryItems([]))
+      .finally(() => setHistoryLoading(false));
+  };
+  const openHistory = (acc) => { setHistoryAcc(acc); loadHistory(acc); };
+
+  const handleRetryImport = async (fail) => {
+    setRetrying(prev => ({ ...prev, [fail.id]: true }));
+    try {
+      await retryAutoImport(fail.id, retryPw[fail.id] || undefined);
+      setRetryPw(prev => { const next = { ...prev }; delete next[fail.id]; return next; });
+      if (historyAcc) loadHistory(historyAcc);
+    } catch (err) {
+      alert(err.response?.data?.message || "Retry failed. Please try again.");
+    } finally {
+      setRetrying(prev => { const next = { ...prev }; delete next[fail.id]; return next; });
     }
   };
 
@@ -784,6 +817,16 @@ export default function Settings() {
                                 {sweeping[acc.id] ? 'Checking folder…' : 'Import now'}
                               </button>
                             )}
+                            {acc.watchFolderPath && (
+                              <button
+                                type="button"
+                                className="btn small"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                onClick={() => openHistory(acc)}
+                              >
+                                <FiClock size={12} /> History
+                              </button>
+                            )}
                           </div>
                           {browse?.accId === acc.id && (
                             <div className="folder-browser">
@@ -981,6 +1024,71 @@ export default function Settings() {
             )}
 
       </div>
+
+      {/* Auto-import history — RHS drawer for one account's watch-folder runs */}
+      <Drawer
+        open={!!historyAcc}
+        onClose={() => setHistoryAcc(null)}
+        title={`Auto-import history${historyAcc ? ` — ${historyAcc.accountHolderName || historyAcc.bankName}` : ''}`}
+        width={historyWidth}
+        onWidthChange={setHistoryWidth}
+      >
+        {historyLoading ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Loading…</div>
+        ) : historyItems.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+            No auto-imports yet. Files picked up from the watch folder will appear here.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {historyItems.map(h => (
+              <div key={h.id} className="card" style={{ padding: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  {h.status === 'Success'
+                    ? <FiCheckCircle size={20} color="var(--success, #16a34a)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                    : <FiAlertCircle size={20} color="var(--danger, #dc2626)" style={{ flexShrink: 0, marginTop: '2px' }} />}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>
+                      {h.fileName}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                      {new Date(h.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      {h.status === 'Success'
+                        ? <Badge variant="green">Imported</Badge>
+                        : <Badge variant="red">Failed</Badge>}
+                    </div>
+                    {h.status !== 'Success' && h.error && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{h.error}</div>
+                    )}
+                    {h.status !== 'Success' && isAdmin && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                        <input
+                          type="password"
+                          placeholder="PDF password (if needed)"
+                          value={retryPw[h.id] || ''}
+                          onChange={(e) => setRetryPw(prev => ({ ...prev, [h.id]: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleRetryImport(h); }}
+                          className="field-input"
+                          style={{ width: '160px' }}
+                        />
+                        <button
+                          className="btn primary small"
+                          disabled={!!retrying[h.id]}
+                          onClick={() => handleRetryImport(h)}
+                        >
+                          <FiRotateCcw size={12} /> {retrying[h.id] ? 'Retrying…' : 'Try again'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }
