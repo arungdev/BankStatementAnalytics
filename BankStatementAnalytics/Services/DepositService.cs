@@ -22,6 +22,10 @@ namespace BankStatementAnalytics.Services
     ///
     /// Nothing detected is persisted — figures are recomputed on demand, like bill suggestions.
     /// Only the metadata a user types is stored (in <see cref="Deposit"/>).
+    ///
+    /// Every read is account-scoped: pass the accounts to look at (null = all owned), so
+    /// the Investments page and the report's deposits section follow the selected account the
+    /// same way the rest of the app does.
     /// </summary>
     public class DepositService
     {
@@ -29,11 +33,11 @@ namespace BankStatementAnalytics.Services
         // so a 6+ digit run reliably isolates the account number in the narration.
         private static readonly Regex AccountNumRegex = new(@"\d{6,}", RegexOptions.Compiled);
 
-        public DepositSummary GetSummary(long userId)
+        public DepositSummary GetSummary(long userId, IReadOnlyCollection<long>? scope = null)
         {
             using var session = DbHelper.GetSession();
 
-            var accountIds = OwnedAccountIds(session, userId);
+            var accountIds = ScopedAccountIds(session, userId, scope);
             var summary = new DepositSummary();
             if (accountIds.Count == 0)
                 return summary;
@@ -156,12 +160,13 @@ namespace BankStatementAnalytics.Services
         /// FD returns credited, plus a per-deposit line-item list. Uses the same detection and
         /// grouping rules as <see cref="GetSummary"/> so a deposit reports under the same name.
         /// </summary>
-        public DepositPeriodSummary GetContributionsInPeriod(long userId, DateTime start, DateTime end)
+        public DepositPeriodSummary GetContributionsInPeriod(
+            long userId, DateTime start, DateTime end, IReadOnlyCollection<long>? scope = null)
         {
             using var session = DbHelper.GetSession();
 
             var result = new DepositPeriodSummary();
-            var accountIds = OwnedAccountIds(session, userId);
+            var accountIds = ScopedAccountIds(session, userId, scope);
             if (accountIds.Count == 0)
                 return result;
 
@@ -221,11 +226,12 @@ namespace BankStatementAnalytics.Services
         }
 
         /// <summary>The individual transactions behind one detected deposit, newest first.</summary>
-        public List<DepositTxn> GetTransactions(long userId, string kind, string matchKey)
+        public List<DepositTxn> GetTransactions(
+            long userId, string kind, string matchKey, IReadOnlyCollection<long>? scope = null)
         {
             using var session = DbHelper.GetSession();
 
-            var accountIds = OwnedAccountIds(session, userId);
+            var accountIds = ScopedAccountIds(session, userId, scope);
             if (accountIds.Count == 0 || string.IsNullOrWhiteSpace(matchKey))
                 return new List<DepositTxn>();
 
@@ -306,8 +312,18 @@ namespace BankStatementAnalytics.Services
 
         private static string MetaKey(string kind, string matchKey) => $"{kind}|{matchKey}";
 
-        private static List<long> OwnedAccountIds(NHibernate.ISession session, long userId) =>
-            AccountAccess.OwnedIds(session, userId);
+        // Accounts to detect across: null scope = every owned account ("All accounts"); an explicit
+        // scope is intersected with ownership so a foreign id can never widen it — and an explicit
+        // but empty scope means nothing matched, not everything.
+        private static List<long> ScopedAccountIds(
+            NHibernate.ISession session, long userId, IReadOnlyCollection<long>? scope)
+        {
+            if (scope != null && scope.Count == 0)
+                return new List<long>();
+
+            var owned = AccountAccess.OwnedIds(session, userId);
+            return scope == null ? owned : owned.Where(scope.Contains).ToList();
+        }
     }
 
     public class DepositSummary

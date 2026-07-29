@@ -5,6 +5,7 @@ using Common.Framework.Web;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -21,22 +22,49 @@ namespace BankStatementAnalytics.Controllers.Api
             _service = service;
         }
 
-        // GET: api/deposits — RD/FD investments detected from transactions, merged with saved
-        // metadata, plus roll-up totals.
+        // GET: api/deposits?accountId=1 (or ?accountIds=1,2) — RD/FD investments detected from the
+        // selected account's transactions, merged with saved metadata, plus roll-up totals.
+        // No account params = every owned account ("All accounts").
         [HttpGet]
-        public IActionResult GetSummary()
+        public IActionResult GetSummary([FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
         {
-            return Ok(_service.GetSummary(CurrentUserId));
+            var (ok, ids) = ResolveScope(accountId, accountIds);
+            if (!ok)
+                return NotFound();
+
+            return Ok(_service.GetSummary(CurrentUserId, ids));
         }
 
-        // GET: api/deposits/transactions?kind=RD&matchKey=... — the transactions behind one deposit.
+        // GET: api/deposits/transactions?kind=RD&matchKey=... — the transactions behind one deposit,
+        // scoped to the same accounts as the summary that listed it.
         [HttpGet("transactions")]
-        public IActionResult GetTransactions([FromQuery] string kind, [FromQuery] string matchKey)
+        public IActionResult GetTransactions(
+            [FromQuery] string kind,
+            [FromQuery] string matchKey,
+            [FromQuery] long accountId = 0,
+            [FromQuery] string accountIds = null)
         {
             if (string.IsNullOrWhiteSpace(matchKey))
                 return BadRequest("matchKey is required.");
 
-            return Ok(_service.GetTransactions(CurrentUserId, kind ?? "RD", matchKey));
+            var (ok, ids) = ResolveScope(accountId, accountIds);
+            if (!ok)
+                return NotFound();
+
+            return Ok(_service.GetTransactions(CurrentUserId, kind ?? "RD", matchKey, ids));
+        }
+
+        // Owned-account resolution shared by the two read endpoints. Null ids means "no account
+        // requested" — the service reads that as every owned account ("All accounts").
+        private (bool Ok, List<long>? Ids) ResolveScope(long accountId, string accountIds)
+        {
+            using var session = DbHelper.GetSession();
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return (false, null);
+
+            return (true, status == AccountAccess.ScopeStatus.Empty ? null : ids);
         }
 
         // PUT: api/deposits — save/update the editable metadata (nickname, rate, maturity, tenure,

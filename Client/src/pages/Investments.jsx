@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FiRefreshCw, FiLock, FiCheckCircle, FiClock, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
@@ -7,6 +7,8 @@ import Drawer from '../components/ui/Drawer';
 import Avatar from '../components/ui/Avatar';
 import { currencyFormatter as fmt } from '../utils/format';
 import { usePrivacy } from '../context/usePrivacy';
+import { useAccount } from '../context/useAccount';
+import { ALL_ACCOUNTS } from '../components/AccountFilter';
 
 /* ─── Design tokens — mapped to the global CSS variable system ─────────────
  * Keys kept stable so the inline styles below read straight from var()s and
@@ -77,6 +79,15 @@ export default function Investments() {
   // Router's cached outlet element bails out of re-rendering and the
   // fmt.format() amounts stay stale until the next unrelated render.
   usePrivacy();
+
+  // Account scoping: "All accounts" (or no selection yet) sends no params, which the
+  // API treats as every owned account.
+  const { selectedAccountId } = useAccount();
+  const accountParams = useMemo(
+    () => (!selectedAccountId || selectedAccountId === ALL_ACCOUNTS ? {} : { accountId: selectedAccountId }),
+    [selectedAccountId],
+  );
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -87,12 +98,20 @@ export default function Investments() {
   const [form, setForm] = useState(null);           // editable metadata
   const [saving, setSaving] = useState(false);
 
+  // Reloads on mount and whenever the selected account changes (accountParams is
+  // the dependency behind `load`).
   const load = useCallback(() => {
-    return api.get('/deposits')
-      .then((res) => setData(res.data))
+    return api.get('/deposits', { params: accountParams })
+      .then((res) => {
+        setData(res.data);
+        // Whatever the drawer was showing belonged to the previous account scope.
+        setSelected(null);
+        setForm(null);
+        setTxns([]);
+      })
       .catch((err) => { console.error('Failed to fetch deposits', err); setData(null); })
       .finally(() => setLoading(false));
-  }, []);
+  }, [accountParams]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -107,7 +126,7 @@ export default function Investments() {
     });
     setTxns([]);
     setLoadingTxns(true);
-    api.get('/deposits/transactions', { params: { kind, matchKey: d.matchKey } })
+    api.get('/deposits/transactions', { params: { kind, matchKey: d.matchKey, ...accountParams } })
       .then((res) => setTxns(res.data || []))
       .catch((err) => console.error(err))
       .finally(() => setLoadingTxns(false));
