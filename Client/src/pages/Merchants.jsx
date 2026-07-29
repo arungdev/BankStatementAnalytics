@@ -79,7 +79,9 @@ export default function Merchants() {
   const [merchantDetails, setMerchantDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ category: '', subCategory: '', shiftToNextMonth: false });
+  const [editForm, setEditForm] = useState({ friendlyName: '', notes: '', category: '', subCategory: '', shiftToNextMonth: false });
+  // Spend column sort: null keeps the API's own order (transaction count desc).
+  const [spentSort, setSpentSort] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(460);
   const [categoriesList, setCategoriesList] = useState([]);
   // Most-used category values (names), ranked by usage — drives the CategoryPicker
@@ -91,6 +93,8 @@ export default function Merchants() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [primaryMergeId, setPrimaryMergeId] = useState("");
+  // In-flight guard for the bulk "set category on all selected" action
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   // Auto-suggested merges (duplicate detection)
   const [showSuggestModal, setShowSuggestModal] = useState(false);
@@ -194,6 +198,8 @@ export default function Merchants() {
 
   const handleEditClick = () => {
     setEditForm({
+      friendlyName: merchantDetails.friendlyName || '',
+      notes: merchantDetails.notes || '',
       category: merchantDetails.category || '',
       subCategory: merchantDetails.subCategory || '',
       shiftToNextMonth: merchantDetails.shiftToNextMonth || false
@@ -247,21 +253,20 @@ export default function Merchants() {
       });
   };
 
-  // Inline categorization from the list rows (same UX as the Transactions page).
-  // The select's value is subCategory when set, else category — picking a
-  // sub-category option resolves its parent category before saving.
-  const applyMerchantCategory = (merchant, selectedValue) => {
-    let category = selectedValue || '';
-    let subCategory = '';
-    if (selectedValue) {
-      for (const cat of categoriesList) {
-        if (cat.subCategories?.includes(selectedValue)) {
-          category = cat.name;
-          subCategory = selectedValue;
-          break;
-        }
-      }
+  // The picker's value is a subCategory when set, else a category — split it back
+  // into the {category, subCategory} pair the API stores.
+  const resolveCategory = (selectedValue) => {
+    if (!selectedValue) return { category: '', subCategory: '' };
+    for (const cat of categoriesList) {
+      if (cat.subCategories?.includes(selectedValue))
+        return { category: cat.name, subCategory: selectedValue };
     }
+    return { category: selectedValue, subCategory: '' };
+  };
+
+  // Inline categorization from the list rows (same UX as the Transactions page).
+  const applyMerchantCategory = (merchant, selectedValue) => {
+    const { category, subCategory } = resolveCategory(selectedValue);
     const previous = { category: merchant.category, subCategory: merchant.subCategory };
     const patch = (m) => ({ ...m, category, subCategory });
     setData(prev => prev.map(m => m.id === merchant.id ? patch(m) : m));
@@ -299,18 +304,73 @@ export default function Merchants() {
       });
   };
 
+  // Bulk categorization: apply one category to every checked merchant in a single
+  // request. Optimistic like the row picker, but the rollback has to restore each
+  // merchant's own previous value rather than a single pair.
+  const applyBulkCategory = (selectedValue) => {
+    const ids = selectedIds;
+    if (ids.length === 0 || bulkSaving) return;
+    const { category, subCategory } = resolveCategory(selectedValue);
+    const idSet = new Set(ids);
+    const previous = new Map(
+      data.filter(m => idSet.has(m.id)).map(m => [m.id, { category: m.category, subCategory: m.subCategory }])
+    );
+
+    const patch = (m) => ({ ...m, category, subCategory });
+    setData(prev => prev.map(m => idSet.has(m.id) ? patch(m) : m));
+    if (merchantDetails && idSet.has(merchantDetails.id)) setMerchantDetails(patch);
+
+    setBulkSaving(true);
+    api.post('/merchants/bulk-category', { ids, category, subCategory })
+      .then(() => setSelectedIds([]))
+      .catch(err => {
+        console.error('Failed to update categories', err);
+        alert('Failed to update categories. Please try again.');
+        const revert = (m) => previous.has(m.id) ? { ...m, ...previous.get(m.id) } : m;
+        setData(prev => prev.map(revert));
+        if (merchantDetails && previous.has(merchantDetails.id)) setMerchantDetails(revert);
+      })
+      .finally(() => setBulkSaving(false));
+  };
+
+  // Inline "Create category" from the bulk picker — mirrors handleCreateRowCategory.
+  const handleCreateBulkCategory = (name) => {
+    const existing = categoriesList.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      applyBulkCategory(existing.name);
+      return;
+    }
+    api.post('/categories', { name })
+      .then(res => {
+        setCategoriesList(prev => [...prev, { id: res.data.id, name: res.data.name, subCategories: [] }]);
+        applyBulkCategory(res.data.name);
+      })
+      .catch(err => {
+        console.error('Failed to create category', err);
+        alert('Failed to create category.');
+      });
+  };
+
   const handleSaveClick = () => {
-    api.put(`/merchants/${merchantDetails.id}`, editForm)
+    // Blank boxes mean "no value" — mirror the server's own normalization locally so the
+    // list and drawer don't briefly show '' where the DB now holds null.
+    const payload = {
+      ...editForm,
+      friendlyName: editForm.friendlyName.trim() || null,
+      notes: editForm.notes.trim() || null,
+    };
+    api.put(`/merchants/${merchantDetails.id}`, payload)
       .then(() => {
-        setMerchantDetails({ ...merchantDetails, ...editForm });
+        setMerchantDetails({ ...merchantDetails, ...payload });
         setIsEditing(false);
         // Update the main list so changes reflect immediately in the table
         setData(prevData => prevData.map(merchant =>
-          merchant.id === merchantDetails.id ? { ...merchant, ...editForm } : merchant
+          merchant.id === merchantDetails.id ? { ...merchant, ...payload } : merchant
         ));
       })
       .catch(err => {
         console.error("Failed to update merchant", err);
+        alert("Failed to save changes. Please try again.");
       });
   };
 
@@ -433,6 +493,11 @@ export default function Merchants() {
            merchant.aliases?.some(alias => alias?.toLowerCase().includes(term));
   });
 
+  if (spentSort) {
+    const dir = spentSort === 'desc' ? -1 : 1;
+    filteredData.sort((a, b) => ((a.totalSpent ?? 0) - (b.totalSpent ?? 0)) * dir);
+  }
+
   const categorizedCount = data.filter(m => m.category).length;
   const linkedCount = data.filter(m => (m.aliases?.length || 0) > 0).length;
 
@@ -460,7 +525,7 @@ export default function Merchants() {
 
   const fmtShort = (v) =>
     isAmountMasked() ? MASKED_AMOUNT :
-    v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : v >= 1000 ? `₹${(v / 1000).toFixed(0)}k` : `₹${v}`;
+    v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : v >= 1000 ? `₹${(v / 1000).toFixed(0)}k` : `₹${Math.round(v)}`;
   const fmtMY = (d) => (d ? d.toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "—");
 
   return (
@@ -468,7 +533,7 @@ export default function Merchants() {
       <style>{`
         .mrc-row {
           display: grid;
-          grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 150px 120px 96px 20px;
+          grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 150px 100px 96px 88px 20px;
           align-items: center;
           gap: 16px;
           padding: 14px 20px;
@@ -483,7 +548,7 @@ export default function Merchants() {
         .mrc-row:hover .mrc-chevron { opacity: 1; transform: translateX(2px); }
         .mrc-head {
           display: grid;
-          grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 150px 120px 96px 20px;
+          grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 150px 100px 96px 88px 20px;
           gap: 16px;
           padding: 12px 20px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
@@ -491,6 +556,14 @@ export default function Merchants() {
           border-bottom: 1px solid ${T.border};
           background: ${T.bg};
         }
+        .mrc-sort {
+          display: inline-flex; align-items: center; gap: 4px;
+          background: none; border: none; padding: 0; cursor: pointer;
+          font: inherit; color: inherit; letter-spacing: inherit;
+          text-transform: inherit; margin-left: auto;
+        }
+        .mrc-sort:hover { color: ${T.text}; }
+        .mrc-sort.active { color: ${T.indigo}; }
         .mrc-chip {
           display: inline-flex; align-items: center; gap: 4px;
           font-size: 11px; font-weight: 600; color: ${T.muted};
@@ -514,19 +587,46 @@ export default function Merchants() {
         .mrc-cat-select:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
         @media (max-width: 720px) {
           .mrc-row, .mrc-head { grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 88px 20px; }
-          .mrc-col-cat, .mrc-col-meta { display: none; }
+          /* Spend survives the squeeze — it's the column worth scanning on a phone. */
+          .mrc-col-cat, .mrc-col-meta, .mrc-col-count { display: none; }
         }
       `}</style>
 
-      {/* ── Merge action (title/subtitle now come from the shared PageHeader) ── */}
-      {isAdmin && selectedIds.length > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-          <button
-            className="btn primary"
-            onClick={() => { setShowMergeModal(true); setPrimaryMergeId(String(selectedIds[0])); }}
-          >
-            Merge selected ({selectedIds.length})
-          </button>
+      {/* ── Selection actions: bulk categorize + merge (title/subtitle come from
+           the shared PageHeader). Categorizing works on one row too; merging
+           needs at least two. ── */}
+      {isAdmin && selectedIds.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+          marginBottom: '16px', padding: '10px 14px',
+          background: T.indigoDim, border: `1px solid ${T.border}`, borderRadius: '12px',
+        }}>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: T.text }}>
+            {selectedIds.length} selected
+          </span>
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: '12px', fontWeight: 600, color: T.muted }}>Set category</span>
+          <div style={{ width: '210px' }}>
+            <CategoryPicker
+              value=""
+              placeholder={bulkSaving ? 'Applying…' : 'Choose category…'}
+              categories={categoriesList}
+              frequentCategories={frequentCategories}
+              onChange={applyBulkCategory}
+              onCreate={handleCreateBulkCategory}
+              disabled={bulkSaving}
+              size="sm"
+            />
+          </div>
+          {selectedIds.length > 1 && (
+            <button
+              className="btn primary"
+              onClick={() => { setShowMergeModal(true); setPrimaryMergeId(String(selectedIds[0])); }}
+            >
+              Merge selected ({selectedIds.length})
+            </button>
+          )}
+          <button className="btn" onClick={() => setSelectedIds([])}>Clear</button>
         </div>
       )}
 
@@ -602,7 +702,17 @@ export default function Merchants() {
           <span>Merchant</span>
           <span className="mrc-col-cat">Category</span>
           <span className="mrc-col-meta">Identifiers</span>
-          <span style={{ textAlign: 'right' }}>Transactions</span>
+          <span className="mrc-col-count" style={{ textAlign: 'right' }}>Transactions</span>
+          <span style={{ display: 'flex' }}>
+            <button
+              type="button"
+              className={`mrc-sort${spentSort ? ' active' : ''}`}
+              onClick={() => setSpentSort(s => (s === null ? 'desc' : s === 'desc' ? 'asc' : null))}
+              title="Sort by amount spent"
+            >
+              Spent {spentSort === 'desc' ? '▾' : spentSort === 'asc' ? '▴' : '⇅'}
+            </button>
+          </span>
           <span />
         </div>
 
@@ -623,6 +733,7 @@ export default function Merchants() {
               const hasOriginal = merchant.friendlyName && merchant.name !== merchant.friendlyName;
               const upiCount = merchant.upiIds?.length || 0;
               const aliasCount = merchant.aliases?.length || 0;
+              const spent = merchant.totalSpent ?? 0;
               const [, catFg] = avatarColors(merchant.category || '');
               return (
                 <div
@@ -689,8 +800,16 @@ export default function Merchants() {
                     {upiCount === 0 && aliasCount === 0 && <span style={{ color: T.faint, fontSize: '13px' }}>—</span>}
                   </div>
 
-                  <div style={{ textAlign: 'right', fontSize: '14px', fontWeight: 700, color: T.text }}>
+                  <div className="mrc-col-count tnum" style={{ textAlign: 'right', fontSize: '14px', fontWeight: 700, color: T.text }}>
                     {(merchant.transactionCount ?? 0).toLocaleString('en-IN')}
+                  </div>
+
+                  <div
+                    className="tnum"
+                    style={{ textAlign: 'right', fontSize: '14px', fontWeight: 700, color: spent > 0 ? T.text : T.faint }}
+                    title={spent > 0 && !isAmountMasked() ? currencyFormatter.format(spent) : undefined}
+                  >
+                    {spent > 0 ? fmtShort(spent) : '—'}
                   </div>
 
                   <span className="mrc-chevron">›</span>
@@ -833,14 +952,36 @@ export default function Merchants() {
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '24px' }}>
               <Avatar name={maskName(merchantDetails.friendlyName || merchantDetails.name)} size={52} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <h3 style={{ margin: '0 0 2px 0', fontSize: '19px', color: T.text, letterSpacing: '-0.02em' }}>
-                  {maskName(merchantDetails.friendlyName || merchantDetails.name)}
-                </h3>
-                <p style={{ margin: 0, color: T.muted, fontSize: '13px' }}>
-                  {merchantDetails.friendlyName && merchantDetails.name !== merchantDetails.friendlyName
-                    ? maskName(merchantDetails.name)
-                    : 'Original name matches'}
-                </p>
+                {isEditing ? (
+                  <>
+                    {/* Shown unmasked: you can't meaningfully edit a masked value, and this
+                        is admin-only. The bank's raw name stays visible underneath as the
+                        reference for what's being renamed. */}
+                    <input
+                      type="text"
+                      value={editForm.friendlyName}
+                      onChange={(e) => setEditForm({ ...editForm, friendlyName: e.target.value })}
+                      placeholder={merchantDetails.name}
+                      className="mrc-search"
+                      style={{ padding: '7px 10px', fontSize: '16px', fontWeight: 700 }}
+                      autoFocus
+                    />
+                    <p style={{ margin: '6px 0 0', color: T.faint, fontSize: '12px' }}>
+                      From statement: {merchantDetails.name}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h3 style={{ margin: '0 0 2px 0', fontSize: '19px', color: T.text, letterSpacing: '-0.02em' }}>
+                      {maskName(merchantDetails.friendlyName || merchantDetails.name)}
+                    </h3>
+                    <p style={{ margin: 0, color: T.muted, fontSize: '13px' }}>
+                      {merchantDetails.friendlyName && merchantDetails.name !== merchantDetails.friendlyName
+                        ? maskName(merchantDetails.name)
+                        : 'Original name matches'}
+                    </p>
+                  </>
+                )}
               </div>
               {isAdmin && (!isEditing ? (
                 <button className="btn small" onClick={handleEditClick}>Edit</button>
@@ -912,6 +1053,28 @@ export default function Merchants() {
                 ) : (merchantDetails.shiftToNextMonth ? 'Yes' : <span style={{ color: T.faint }}>—</span>)}
               </Field>
             </div>
+
+            {/* Notes — free-text, admin-editable */}
+            {(isEditing || merchantDetails.notes) && (
+              <div style={{ marginBottom: '22px' }}>
+                <div style={{ fontSize: '11px', color: T.faint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Notes</div>
+                {isEditing ? (
+                  <textarea
+                    value={editForm.notes}
+                    onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                    placeholder="Anything worth remembering about this merchant…"
+                    rows={3}
+                    maxLength={500}
+                    className="mrc-search"
+                    style={{ padding: '9px 12px', resize: 'vertical', lineHeight: 1.5 }}
+                  />
+                ) : (
+                  <div style={{ fontSize: '13px', color: T.text, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                    {merchantDetails.notes}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* UPI IDs */}
             <div style={{ marginBottom: '22px' }}>
