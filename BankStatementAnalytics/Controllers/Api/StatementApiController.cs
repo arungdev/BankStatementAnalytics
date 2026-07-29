@@ -33,6 +33,25 @@ namespace BankStatementAnalytics.Controllers.Api
             var accounts = await DbHelper.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId);
 
             using var session = DbHelper.GetSession();
+
+            // Latest statement per credit card, fetched once for every card rather than
+            // re-reading the summaries table inside the per-account loop. Ordered in SQL
+            // (null StatementDate sorts oldest) so the first row per account is the latest.
+            var cardAccountIds = accounts
+                .Where(a => a.BankName == Bank.HDFCCreditCard)
+                .Select(a => a.Id)
+                .ToList();
+
+            var latestSummaryByAccount = cardAccountIds.Count == 0
+                ? new Dictionary<long, CardStatementSummary>()
+                : session.Query<CardStatementSummary>()
+                    .Where(s => cardAccountIds.Contains(s.AccountId))
+                    .OrderByDescending(s => s.StatementDate ?? DateTime.MinValue)
+                    .ThenByDescending(s => s.CreatedAt)
+                    .ToList()
+                    .GroupBy(s => s.AccountId)
+                    .ToDictionary(g => g.Key, g => g.First());
+
             var result = new List<object>();
             foreach (var a in accounts)
             {
@@ -62,12 +81,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     // plus activity since (same rule as CardApiController.GetSummary) — the
                     // raw Σ(Debit−Credit) goes negative when history before the first
                     // uploaded statement is missing.
-                    var latest = session.Query<CardStatementSummary>()
-                        .Where(s => s.AccountId == a.Id)
-                        .ToList()
-                        .OrderByDescending(s => s.StatementDate ?? DateTime.MinValue)
-                        .ThenByDescending(s => s.CreatedAt)
-                        .FirstOrDefault();
+                    latestSummaryByAccount.TryGetValue(a.Id, out var latest);
 
                     balance = latest?.StatementDate != null && latest.TotalDue != null
                         ? latest.TotalDue.Value + (txns
@@ -192,7 +206,10 @@ namespace BankStatementAnalytics.Controllers.Api
                     Category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
                     SubCategory = t.SubCategoryOverride ?? (t.CounterParty != null ? t.CounterParty.SubCategory : null),
                     Tags = t.Tags != null ? t.Tags.Split(',').ToList() : new List<string>(),
-                    Note = t.Note
+                    Note = t.Note,
+                    // Own-money move: parser-marked (CC bill payment) or a detected
+                    // inter-account transfer pair — excluded from analytics.
+                    IsTransfer = t.TransferGroupId != null || (t.Mode != null && t.Mode == "TRANSFER")
                 });
 
             var paged = await projectedQuery.ToPagedResultAsync(page, pageSize);
@@ -218,18 +235,23 @@ namespace BankStatementAnalytics.Controllers.Api
             if (accountId.HasValue && !ownedAccountIds.Contains(accountId.Value))
                 return NotFound();
 
-            var uploadsQuery = session.Query<Models.Upload>();
+            // Never return uploads across accounts the caller doesn't own, even when
+            // accountId is omitted (the "all uploads" path). Both filters run in SQL —
+            // reading every user's uploads just to discard most of them in memory got
+            // more wasteful with each account added.
+            // Upload.AccountId is an int, so the id list is narrowed to match — an
+            // int/long comparison inside the expression tree needs a Convert node
+            // NHibernate would have to translate.
+            var ownedIdList = ownedAccountIds.Select(id => (int)id).ToList();
+            var uploadsQuery = session.Query<Models.Upload>()
+                .Where(u => u.AccountId != null && ownedIdList.Contains(u.AccountId.Value));
 
             if (accountId.HasValue)
             {
                 uploadsQuery = uploadsQuery.Where(u => u.AccountId == accountId.Value);
             }
 
-            // Never return uploads across accounts the caller doesn't own, even when
-            // accountId is omitted (the "all uploads" path).
-            var uploads = uploadsQuery.ToList()
-                .Where(u => u.AccountId.HasValue && ownedAccountIds.Contains(u.AccountId.Value))
-                .ToList();
+            var uploads = uploadsQuery.ToList();
 
             // Only count transactions tied to the uploads we're actually returning.
             var uploadIds = uploads.Select(u => u.Id).ToHashSet();
@@ -322,6 +344,16 @@ namespace BankStatementAnalytics.Controllers.Api
                     history.CreatedAt = DateTime.UtcNow;
                     history.UploadId = result.Upload?.Id;
                     await DbHelper.UpdateAsync(history);
+
+                    // Earlier attempts on the same file (recorded before failures were
+                    // updated in place) are now resolved too — drop them, or the card
+                    // this retry just cleared would come straight back.
+                    foreach (var stale in await DbHelper.QueryAsync<ImportHistory>(
+                                 h => h.AccountId == history.AccountId
+                                      && h.SourcePath == history.SourcePath
+                                      && h.Status == "Failed"))
+                        await DbHelper.DeleteAsync(stale);
+
                     return Ok(new { result.Total, result.NewCount, duplicate = result.Outcome == ImportOutcome.Duplicate });
                 default:
                     // Still failing (e.g. wrong password) — refresh the message/time in place.
@@ -344,15 +376,45 @@ namespace BankStatementAnalytics.Controllers.Api
             if (accountId.HasValue && !ownedAccountIds.Contains(accountId.Value))
                 return NotFound();
 
-            var query = session.Query<ImportHistory>();
+            // Ownership filtered in SQL rather than after loading every user's history.
+            // ImportHistory.AccountId is an int — see the note in GetUploads.
+            var ownedIdList = ownedAccountIds.Select(id => (int)id).ToList();
+            var query = session.Query<ImportHistory>()
+                .Where(h => ownedIdList.Contains(h.AccountId));
             if (accountId.HasValue)
                 query = query.Where(h => h.AccountId == accountId.Value);
 
-            var items = query.ToList()
-                .Where(h => ownedAccountIds.Contains(h.AccountId))
-                .OrderByDescending(h => h.CreatedAt)
+            var rows = query.ToList();
+
+            // Collapse repeat failures of the same file into one entry (newest wins,
+            // with the attempt count) — older duplicates from before failures were
+            // recorded in place would otherwise show as a stack of identical cards.
+            var failures = rows
+                .Where(h => h.Status == "Failed")
+                .GroupBy(h => (h.AccountId, Key: h.SourcePath ?? h.FileName))
+                .Select(g =>
+                {
+                    var latest = g.OrderByDescending(h => h.CreatedAt).First();
+                    return new { Row = latest, Attempts = g.Count() };
+                });
+
+            var items = rows
+                .Where(h => h.Status != "Failed")
+                .Select(h => new { Row = h, Attempts = 1 })
+                .Concat(failures)
+                .OrderByDescending(x => x.Row.CreatedAt)
                 .Take(100)
-                .Select(h => new { h.Id, h.AccountId, h.FileName, h.Status, h.Error, h.CreatedAt, h.UploadId });
+                .Select(x => new
+                {
+                    x.Row.Id,
+                    x.Row.AccountId,
+                    x.Row.FileName,
+                    x.Row.Status,
+                    x.Row.Error,
+                    x.Row.CreatedAt,
+                    x.Row.UploadId,
+                    x.Attempts
+                });
 
             return Ok(items);
         }

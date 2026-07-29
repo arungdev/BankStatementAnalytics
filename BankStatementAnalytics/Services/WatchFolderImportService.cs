@@ -39,6 +39,11 @@ namespace BankStatementAnalytics.Services
         // Folders already reported missing, so an offline drive logs once, not every sweep.
         private readonly HashSet<string> _reportedMissing = new(StringComparer.OrdinalIgnoreCase);
 
+        // Per-account "ignore failures recorded before this instant" marks, set by
+        // ForgetAccount. Without them the persisted-failure check below would keep
+        // suppressing a file even after the user fixed the reason it failed.
+        private readonly Dictionary<long, DateTime> _retryFailuresFrom = new();
+
         public WatchFolderImportService(IServiceScopeFactory scopeFactory)
         {
             _scopeFactory = scopeFactory;
@@ -64,12 +69,18 @@ namespace BankStatementAnalytics.Services
 
         /// <summary>
         /// Drop the account's handled-file memory so a reverted upload's source file
-        /// is picked up again on the next sweep instead of waiting for a restart.
+        /// — or a file that failed before the user fixed the cause (a wrong/missing
+        /// PDF password) — is picked up again on the next sweep instead of waiting
+        /// for a restart. Also clears the persisted-failure suppression, so already
+        /// recorded failures stop blocking a fresh attempt.
         /// </summary>
         public void ForgetAccount(long accountId)
         {
             lock (_handledLock)
+            {
                 _handled.RemoveWhere(k => k.Item1 == accountId);
+                _retryFailuresFrom[accountId] = DateTime.UtcNow;
+            }
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -159,15 +170,29 @@ namespace BankStatementAnalytics.Services
         private async Task ImportFileAsync(Account account, string file)
         {
             (long, string, DateTime, long) key;
+            DateTime lastWriteUtc;
             byte[] bytes;
             try
             {
                 var info = new FileInfo(file);
-                key = (account.Id, file, info.LastWriteTimeUtc, info.Length);
+                lastWriteUtc = info.LastWriteTimeUtc;
+                key = (account.Id, file, lastWriteUtc, info.Length);
                 lock (_handledLock)
                 {
                     if (_handled.Contains(key))
                         return;
+                }
+
+                // A file that already failed and hasn't been touched since would fail
+                // the same way again, so don't re-attempt it — otherwise every service
+                // restart (which empties _handled) adds another identical failure card
+                // to the import history. Editing/replacing the file, or ForgetAccount
+                // (e.g. the account's PDF password changed), clears the suppression.
+                if (await HasStandingFailureAsync(account.Id, file, lastWriteUtc))
+                {
+                    lock (_handledLock)
+                        _handled.Add(key);
+                    return;
                 }
 
                 // A file still being written/downloaded is opened exclusively by its
@@ -217,24 +242,82 @@ namespace BankStatementAnalytics.Services
             }
 
             // Handled either way — success, duplicate, or failure. Failures are not
-            // retried every sweep; a restart, a change to the file, or a revert
-            // (ForgetAccount) retries.
+            // retried every sweep, and (via the recorded ImportHistory row) not on
+            // restart either; a change to the file or a ForgetAccount — revert, or
+            // the account's PDF password being changed — retries.
             lock (_handledLock)
                 _handled.Add(key);
+        }
+
+        /// <summary>
+        /// True when this file has a recorded failure that still applies: the failure
+        /// was logged after the file was last written, and after any ForgetAccount
+        /// mark for the account. Survives restarts (unlike <see cref="_handled"/>),
+        /// which is what stops repeat attempts piling up duplicate history rows.
+        /// </summary>
+        private async Task<bool> HasStandingFailureAsync(long accountId, string file, DateTime lastWriteUtc)
+        {
+            DateTime? retryFrom;
+            lock (_handledLock)
+                retryFrom = _retryFailuresFrom.TryGetValue(accountId, out var t) ? t : null;
+
+            try
+            {
+                var accId = (int)accountId;
+                var failures = await DbHelper.QueryAsync<ImportHistory>(
+                    h => h.AccountId == accId && h.SourcePath == file && h.Status == "Failed");
+                if (failures.Count == 0) return false;
+
+                var lastAttempt = failures.Max(h => h.CreatedAt);
+                return lastAttempt >= lastWriteUtc && (retryFrom == null || lastAttempt >= retryFrom.Value);
+            }
+            catch (Exception ex)
+            {
+                // Never let a history lookup stop an import; fall through and try.
+                Log.Exception(ex);
+                return false;
+            }
         }
 
         private static async Task RecordHistoryAsync(Account account, string file, string status, string? error, Guid? uploadId)
         {
             try
             {
+                var accountId = (int)account.Id;
+                var trimmed = error?.Length > 2000 ? error[..2000] : error;
+
+                // Earlier failures of this same file are what this attempt supersedes:
+                // one of them is reused (so a repeat failure refreshes a single card
+                // instead of stacking another, and a later success clears the card
+                // rather than leaving it beside the success), the rest are dropped.
+                var priorFailures = (await DbHelper.QueryAsync<ImportHistory>(
+                        h => h.AccountId == accountId && h.SourcePath == file && h.Status == "Failed"))
+                    .OrderByDescending(h => h.CreatedAt)
+                    .ToList();
+
+                if (priorFailures.Count > 0)
+                {
+                    var row = priorFailures[0];
+                    row.FileName = Path.GetFileName(file);
+                    row.Status = status;
+                    row.Error = trimmed;
+                    row.CreatedAt = DateTime.UtcNow;
+                    row.UploadId = uploadId;
+                    await DbHelper.UpdateAsync(row);
+
+                    foreach (var stale in priorFailures.Skip(1))
+                        await DbHelper.DeleteAsync(stale);
+                    return;
+                }
+
                 await DbHelper.SaveAsync(new ImportHistory
                 {
                     Id = Guid.NewGuid(),
-                    AccountId = (int)account.Id,
+                    AccountId = accountId,
                     FileName = Path.GetFileName(file),
                     SourcePath = file,
                     Status = status,
-                    Error = error?.Length > 2000 ? error[..2000] : error,
+                    Error = trimmed,
                     CreatedAt = DateTime.UtcNow,
                     UploadId = uploadId
                 });

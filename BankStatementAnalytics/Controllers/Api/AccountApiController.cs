@@ -262,14 +262,26 @@ namespace BankStatementAnalytics.Controllers.Api
             }
 
             // null = unchanged, empty string = clear, otherwise set.
+            var passwordChanged = false;
             if (request?.StatementPassword != null)
-                account.StatementPassword = request.StatementPassword.Length == 0 ? null : request.StatementPassword;
+            {
+                var newPassword = request.StatementPassword.Length == 0 ? null : request.StatementPassword;
+                passwordChanged = newPassword != account.StatementPassword;
+                account.StatementPassword = newPassword;
+            }
 
             // null = unchanged; the pause switch keeps the folder configured.
             if (request?.Enabled != null)
                 account.WatchEnabled = request.Enabled;
 
             await DbHelper.UpdateAsync(account);
+
+            // A new password is exactly what a "password-protected"/"incorrect
+            // password" failure was waiting for — clear the watcher's suppression so
+            // those files are retried automatically instead of one "Try again" click
+            // per failed card.
+            if (passwordChanged)
+                watcher.ForgetAccount(account.Id);
 
             // Sweep right away so the first import doesn't wait out the interval;
             // no need to hold this response until it finishes.
@@ -311,13 +323,25 @@ namespace BankStatementAnalytics.Controllers.Api
             foreach (var t in transactions)
                 await session.DeleteAsync(t);
 
+            // Which of those merchants still have transactions after this account's rows are
+            // gone, answered in one query rather than an EXISTS per merchant (which was a
+            // round trip for every merchant the account ever touched). The pending deletes
+            // above are auto-flushed before this query runs, so they're already excluded.
+            long accountId = id;
+            var stillUsed = merchantIds.Count == 0
+                ? new HashSet<int>()
+                : session.Query<BankTransaction>()
+                    .Where(t => t.CounterParty != null && merchantIds.Contains(t.CounterParty.Id))
+                    .Select(t => t.CounterParty.Id)
+                    .Distinct()
+                    .ToList()
+                    .ToHashSet();
+
             // Delete merchants that only belonged to this account; for merchants still
             // used by another account, just drop this account from their list.
-            long accountId = id;
             foreach (var merchantId in merchantIds)
             {
-                bool usedElsewhere = session.Query<BankTransaction>()
-                    .Any(t => t.CounterParty.Id == merchantId);
+                bool usedElsewhere = stillUsed.Contains(merchantId);
 
                 var merchant = session.Get<Merchant>(merchantId);
                 if (merchant == null) continue;

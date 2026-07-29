@@ -54,25 +54,15 @@ namespace BankStatementAnalytics.Services
             if (ext != ".txt" && ext != ".csv" && ext != ".pdf")
                 return Invalid("Only TXT, CSV and PDF files are supported.");
 
-            // Pre-flight PDFs BEFORE any DB write: a wrong password / scanned PDF
-            // must not leave an Upload row behind, or the corrected retry would
-            // trip the duplicate-hash check below.
-            if (ext == ".pdf")
-            {
-                try
-                {
-                    _pdfReader.Validate(bytes, password);
-                }
-                catch (PdfExtractionException pex)
-                {
-                    return Invalid(pex.Message);
-                }
-            }
-
             var accountId = (int)account.Id;
             var fileHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
 
             // Reject an exact re-upload of the same file for the same account.
+            // Checked before the PDF pre-flight below: a file that is already in
+            // is a duplicate whether or not we can open it now, and re-validating
+            // it would report a password failure for a statement already imported
+            // (the watch folder still holds the source file, and the password used
+            // for a manual upload is never persisted to the account).
             using (var checkSession = DbHelper.GetSession())
             {
                 bool alreadyUploaded = checkSession.Query<Upload>()
@@ -83,6 +73,21 @@ namespace BankStatementAnalytics.Services
                         Outcome = ImportOutcome.Duplicate,
                         Error = "This statement file has already been uploaded for this account."
                     };
+            }
+
+            // Pre-flight PDFs BEFORE any DB write: a wrong password / scanned PDF
+            // must not leave an Upload row behind, or the corrected retry would
+            // trip the duplicate-hash check above.
+            if (ext == ".pdf")
+            {
+                try
+                {
+                    _pdfReader.Validate(bytes, password);
+                }
+                catch (PdfExtractionException pex)
+                {
+                    return Invalid(pex.Message);
+                }
             }
 
             var accountFolder = UploadStorage.AccountFolderName(account);

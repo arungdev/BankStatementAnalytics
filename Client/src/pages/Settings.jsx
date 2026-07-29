@@ -1058,6 +1058,9 @@ export default function Settings() {
                       {h.status === 'Success'
                         ? <Badge variant="green">Imported</Badge>
                         : <Badge variant="red">Failed</Badge>}
+                      {h.status !== 'Success' && h.attempts > 1 && (
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{h.attempts} attempts</span>
+                      )}
                     </div>
                     {h.status !== 'Success' && h.error && (
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{h.error}</div>
