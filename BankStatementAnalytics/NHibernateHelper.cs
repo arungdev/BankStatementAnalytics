@@ -79,12 +79,57 @@ namespace BankStatementAnalytics
                         }
                         : null);
 
+                    CreateExpressionIndexes();
+
                     return NHibernateManager.SessionFactory;
                 }
                 catch (Exception ex)
                 {
                     Log.Exception(ex);
                     throw;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Indexes that mapping-by-code can't express, created after SchemaUpdate has built
+        /// the tables. All are IF NOT EXISTS, so this is a cheap no-op on every start after
+        /// the first, and failures are logged rather than thrown: a missing index makes
+        /// queries slower, not wrong.
+        /// </summary>
+        private static void CreateExpressionIndexes()
+        {
+            // Analytics (trends, insights, budgets, reports, the transactions month filter)
+            // all attribute a row to a month by COALESCE(EffectiveDate, TransactionDate) so
+            // that merchants flagged ShiftToNextMonth land in the following month. That
+            // expression can't use IX_BankTransactions_Account_Date — the planner only
+            // matches an index on the bare TransactionDate column — so every one of those
+            // date-range filters degrades into a full scan of the user's rows. An index on
+            // the expression itself makes them index-scannable again.
+            //
+            // Written unquoted so it works on both providers: PostgreSQL folds the
+            // identifiers to the lowercase names NHibernate created, and SQLite treats
+            // identifiers case-insensitively. COALESCE is deterministic, so both accept it
+            // in an index expression.
+            var statements = new[]
+            {
+                @"create index if not exists ix_banktransactions_account_effectivedate
+                    on bank_transactions (accountid, coalesce(effectivedate, transactiondate))",
+
+                // Uploads and auto-import history are both listed per account.
+                @"create index if not exists ix_uploads_accountid on uploads (accountid)",
+            };
+
+            foreach (var sql in statements)
+            {
+                try
+                {
+                    using var session = NHibernateManager.SessionFactory.OpenStatelessSession();
+                    session.CreateSQLQuery(sql).ExecuteUpdate();
+                }
+                catch (Exception ex)
+                {
+                    Log.Info($"Could not create performance index (continuing without it): {ex.Message}");
                 }
             }
         }

@@ -347,12 +347,18 @@ namespace BankStatementAnalytics.Controllers.Api
                 .ToList();
         }
 
+        /// <summary>
+        /// Newest parsed statement for a card: latest StatementDate, CreatedAt breaking ties.
+        /// Ordered and limited in SQL (a null StatementDate sorts oldest) so only the one row
+        /// needed leaves the DB, instead of every statement the card has ever had.
+        /// </summary>
         private static CardStatementSummary? LatestSummary(NHibernate.ISession session, int accountId) =>
             session.Query<CardStatementSummary>()
                 .Where(s => s.AccountId == accountId)
-                .ToList()
                 .OrderByDescending(s => s.StatementDate ?? DateTime.MinValue)
                 .ThenByDescending(s => s.CreatedAt)
+                .Take(1)
+                .ToList()
                 .FirstOrDefault();
 
         private static DateTime ClampDay(int year, int month, int day) =>
