@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import api from "../api/client";
 import usePersistedState from "../hooks/usePersistedState";
 import { useAccount } from "../context/useAccount";
@@ -18,6 +18,7 @@ import EmptyState from "../components/ui/EmptyState";
 import Drawer from "../components/ui/Drawer";
 import Avatar from "../components/ui/Avatar";
 import Modal from "../components/ui/Modal";
+import Tabs from "../components/ui/Tabs";
 import CategoryPicker from "../components/CategoryPicker";
 import { currencyFormatter, maskName } from "../utils/format";
 
@@ -57,6 +58,7 @@ export function TransactionsFilters({ dateRange, setDateRange }) {
 export default function Transactions() {
   const { isAdmin } = useAuth();
   const { selectedAccountId } = useAccount();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // ── Date filter now lives in Layout, shared with the header row ───────
   const {
@@ -92,6 +94,26 @@ export default function Transactions() {
     setCurrentPage(1);
   };
 
+  // ── Bulk selection ────────────────────────────────────────────────────
+  // Set of BankReferences. Kept across pages (so you can page through and act
+  // once) but cleared whenever the account or filters change underneath it.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [selectionFilterKey, setSelectionFilterKey] = useState(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkTag, setBulkTag] = useState('');
+  // Every row of an account carries the same bankType — remembered from the last
+  // non-empty fetch so a bulk action still keys correctly on an empty page.
+  const [bankType, setBankType] = useState(null);
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const toggleSelected = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   // Search — searchInput follows the textbox, search is its debounced value used for fetching
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -119,6 +141,22 @@ export default function Transactions() {
   const [importFails, setImportFails] = useState([]);
   const [showUploadHistory, setShowUploadHistory] = useState(false);
   const [loadingUploads, setLoadingUploads] = useState(false);
+  const [uploadTab, setUploadTab] = useState('success'); // 'success' | 'failed'
+
+  // The reminders panel deep-links here as /transactions?uploads=1 to surface a
+  // failed import's "Try again". Derived rather than synced into state via an
+  // effect, so it also works when this page is already mounted.
+  const deepLinkedToUploads = searchParams.get('uploads') === '1';
+  const uploadHistoryOpen = showUploadHistory || deepLinkedToUploads;
+
+  const closeUploadHistory = () => {
+    setShowUploadHistory(false);
+    if (searchParams.has('uploads')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('uploads');
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   // "Try again" on a failed auto-import: a per-row PDF-password draft and busy flag.
   const [retryPw, setRetryPw] = useState({});
@@ -153,7 +191,7 @@ export default function Transactions() {
       : null;
 
   const showNewTransactions = (upload) => {
-    setShowUploadHistory(false);
+    closeUploadHistory();
     setSelectedTx(null);
     setUploadFilter({ id: upload.id, fileName: upload.fileName, accountId: effectiveAccountId });
     setCurrentPage(1);
@@ -162,6 +200,7 @@ export default function Transactions() {
   const openUploadHistory = () => {
     setSelectedTx(null);            // only one RHS panel at a time
     setShowUploadHistory(true);
+    setUploadTab('success');
 
     // Background auto-imports don't announce themselves to this page — refetch
     // the list alongside the drawer so both reflect the same state.
@@ -171,7 +210,7 @@ export default function Transactions() {
   // Load the drawer's uploads whenever it's open — and re-load when the account
   // changes underneath it, so it never keeps showing another account's history.
   useEffect(() => {
-    if (!showUploadHistory) return;
+    if (!uploadHistoryOpen) return;
     if (!effectiveAccountId) { setUploads([]); setImportFails([]); return; }
     setLoadingUploads(true);
     Promise.all([
@@ -183,11 +222,19 @@ export default function Transactions() {
       // still show up in the history alongside successful uploads.
       getAutoImports().then(res => (res.data || [])
         .filter(h => h.status === 'Failed' && String(h.accountId) === String(effectiveAccountId))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       ).catch(() => []),
     ])
-      .then(([ups, fails]) => { setUploads(ups); setImportFails(fails); })
+      .then(([ups, fails]) => {
+        setUploads(ups);
+        setImportFails(fails);
+        // The ?uploads=1 deep-link exists to surface a failed import's "Try
+        // again" — land on that tab rather than making the user find it.
+        if (deepLinkedToUploads && fails.length > 0) setUploadTab('failed');
+      })
       .finally(() => setLoadingUploads(false));
-  }, [showUploadHistory, effectiveAccountId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadHistoryOpen, effectiveAccountId]);
 
   const handleRevert = async (upload) => {
     if (!upload?.id) return;
@@ -252,8 +299,22 @@ export default function Transactions() {
     setSelectedTx(null);
     setTagEditRowId(null);
     setNoteEditRowId(null);
+    setBankType(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveAccountId]);
+
+  // Selection survives paging, but not a change to what's being listed — acting
+  // on rows the user can no longer see would be a surprise. Reset during render
+  // rather than in an effect so no stale selection is ever painted.
+  const filterKey = [
+    effectiveAccountId,
+    dateRange.start, dateRange.end,
+    uncategorizedOnly, search, uploadFilter?.id ?? '',
+  ].join('|');
+  if (selectionFilterKey !== filterKey) {
+    setSelectionFilterKey(filterKey);
+    if (selectedIds.size > 0) setSelectedIds(new Set());
+  }
 
   useEffect(() => {
     if (!effectiveAccountId) {
@@ -325,6 +386,7 @@ export default function Transactions() {
           setTx(allTx);
           setTotalTransactions(res.data.totalCount);
         }
+        if (allTx.length > 0 && allTx[0].bankType) setBankType(allTx[0].bankType);
         setLoading(false);
         setHasLoaded(true);
       })
@@ -496,6 +558,60 @@ export default function Transactions() {
 
   const handleNoteChange = (newNote) => updateNote(selectedTx, newNote);
 
+  // ── Bulk actions ──────────────────────────────────────────────────────
+  // One PATCH for the whole selection; the list is refetched afterwards so the
+  // rows reflect server truth (merchant defaults, normalised tags) rather than
+  // an optimistic guess applied to many rows at once.
+  const runBulk = async (payload, describe) => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const res = await api.patch('/transactions/bulk', {
+        AccountId: effectiveAccountId,
+        BankType: bankType,
+        BankReferences: ids,
+        ...payload,
+      });
+      clearSelection();
+      setSelectedTx(null);
+      setRefreshKey(k => k + 1);
+      const updated = res.data?.updated ?? ids.length;
+      if (updated === 0) alert(`Nothing to change — ${describe} left every selected transaction as it was.`);
+    } catch (err) {
+      console.error("Bulk update failed", err);
+      alert(err.response?.data?.message || "Bulk update failed. Please try again.");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleBulkCategory = (selectedValue) => {
+    let resolvedCategory = selectedValue;
+    let resolvedSubCategory = null;
+    if (selectedValue) {
+      for (const cat of categories) {
+        if (cat.subCategories?.includes(selectedValue)) {
+          resolvedCategory = cat.name;
+          resolvedSubCategory = selectedValue;
+          break;
+        }
+      }
+    } else {
+      resolvedCategory = null;
+    }
+    runBulk(
+      { Action: 'category', Category: resolvedCategory, SubCategory: resolvedSubCategory },
+      'that category',
+    ).then(loadFrequentCategories);
+  };
+
+  const handleBulkTag = (action, value) => {
+    const tag = (value || '').trim().toLowerCase();
+    if (!tag) return;
+    runBulk({ Action: action, Tag: tag }, `#${tag}`);
+  };
+
   const handleExportCSV = () => {
     const { start: startDate, end: endDate } = dateRange;
     const params = new URLSearchParams({ pageSize: 0 });
@@ -542,12 +658,27 @@ export default function Transactions() {
       });
   };
 
+  // Select-all applies to the rows currently on screen; the selection itself may
+  // already hold rows from other pages, so count them separately.
+  const pageIds = tx.map(t => t.id).filter(Boolean);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id));
+  const someOnPageSelected = pageIds.some(id => selectedIds.has(id));
+
+  const toggleSelectPage = () => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allOnPageSelected) pageIds.forEach(id => next.delete(id));
+      else pageIds.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
   return (
-    <div style={{ marginRight: (selectedTx || showUploadHistory) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
+    <div style={{ marginRight: (selectedTx || uploadHistoryOpen) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
       <style>{`
         .tx-row {
           display: grid;
-          grid-template-columns: 76px minmax(0,1fr) 168px 128px;
+          grid-template-columns: ${isAdmin ? '22px ' : ''}76px minmax(0,1fr) 168px 128px;
           align-items: center;
           gap: 16px;
           padding: 13px 20px;
@@ -557,10 +688,15 @@ export default function Transactions() {
         }
         .tx-row:hover { background: ${T.bg}; }
         .tx-row.selected { background: ${T.indigoDim}; }
+        .tx-row.checked { background: ${T.indigoDim}; }
         .tx-row:last-child { border-bottom: none; }
+        .tx-check {
+          width: 15px; height: 15px; cursor: pointer; accent-color: ${T.indigo};
+          margin: 0; display: block;
+        }
         .tx-head {
           display: grid;
-          grid-template-columns: 76px minmax(0,1fr) 168px 128px;
+          grid-template-columns: ${isAdmin ? '22px ' : ''}76px minmax(0,1fr) 168px 128px;
           gap: 16px;
           padding: 12px 20px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
@@ -609,8 +745,21 @@ export default function Transactions() {
         }
         .tx-search:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
         .tx-search::placeholder { color: ${T.faint}; }
+        .tx-bulkbar {
+          display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+          padding: 10px 14px; margin-bottom: var(--space-3);
+          background: ${T.indigoDim}; border: 1px solid ${T.indigo};
+          border-radius: 12px;
+        }
+        .tx-bulk-count { font-size: 13px; font-weight: 700; color: ${T.indigo}; }
+        .tx-bulk-tag {
+          width: 130px; padding: 5px 10px; font-size: 13px;
+          border: 1px solid ${T.border}; border-radius: 8px; outline: none;
+          background: ${T.surface}; color: ${T.text}; font-family: inherit;
+        }
+        .tx-bulk-tag:focus { border-color: ${T.indigo}; }
         @media (max-width: 720px) {
-          .tx-row, .tx-head { grid-template-columns: 60px minmax(0,1fr) 110px; }
+          .tx-row, .tx-head { grid-template-columns: ${isAdmin ? '22px ' : ''}60px minmax(0,1fr) 110px; }
           .tx-col-cat { display: none; }
         }
       `}</style>
@@ -671,11 +820,82 @@ export default function Transactions() {
         </Badge>
       </div>
 
+      {/* ── Bulk action bar — only while something is selected ────────────── */}
+      {isAdmin && selectedIds.size > 0 && (
+        <div className="tx-bulkbar">
+          <span className="tx-bulk-count">{selectedIds.size} selected</span>
+
+          <div style={{ width: '190px' }} onClick={(e) => e.stopPropagation()}>
+            <CategoryPicker
+              value=""
+              categories={categories}
+              frequentCategories={frequentCategories}
+              onChange={handleBulkCategory}
+              disabled={bulkBusy}
+              size="sm"
+              placeholder="Set category…"
+            />
+          </div>
+
+          <input
+            className="tx-bulk-tag"
+            list="tx-row-tags-list"
+            placeholder="tag…"
+            value={bulkTag}
+            disabled={bulkBusy}
+            onChange={(e) => setBulkTag(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && bulkTag.trim()) {
+                handleBulkTag('addTag', bulkTag);
+                setBulkTag('');
+              }
+            }}
+          />
+          <Button
+            variant="secondary"
+            disabled={bulkBusy || !bulkTag.trim()}
+            onClick={() => { handleBulkTag('addTag', bulkTag); setBulkTag(''); }}
+            style={{ fontSize: 'var(--text-sm)' }}
+          >
+            Add tag
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={bulkBusy || !bulkTag.trim()}
+            onClick={() => { handleBulkTag('removeTag', bulkTag); setBulkTag(''); }}
+            style={{ fontSize: 'var(--text-sm)' }}
+          >
+            Remove tag
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={clearSelection}
+            disabled={bulkBusy}
+            style={{ fontSize: 'var(--text-sm)', marginLeft: 'auto' }}
+          >
+            Clear
+          </Button>
+          {bulkBusy && <span style={{ fontSize: '12px', color: T.muted }}>Applying…</span>}
+        </div>
+      )}
+
       <div style={{
         background: T.surface, border: `1px solid ${T.border}`,
         borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
       }}>
         <div className="tx-head">
+          {isAdmin && (
+            <input
+              type="checkbox"
+              className="tx-check"
+              checked={allOnPageSelected}
+              ref={el => { if (el) el.indeterminate = !allOnPageSelected && someOnPageSelected; }}
+              onChange={toggleSelectPage}
+              disabled={pageIds.length === 0}
+              title={allOnPageSelected ? 'Clear this page' : 'Select every transaction on this page'}
+            />
+          )}
           <span>Date</span>
           <span>Merchant</span>
           <span className="tx-col-cat">Category</span>
@@ -697,12 +917,22 @@ export default function Transactions() {
               const d = new Date(t.transactionDate);
               const catValue = t.subCategory || t.category || '';
               const rowTags = t.tags || [];
+              const isChecked = selectedIds.has(t.id);
               return (
                 <div
                   key={t.id || index}
-                  className={`tx-row${selectedTx && selectedTx.id === t.id ? ' selected' : ''}`}
-                  onClick={() => { setShowUploadHistory(false); setSelectedTx(t); }}
+                  className={`tx-row${selectedTx && selectedTx.id === t.id ? ' selected' : ''}${isChecked ? ' checked' : ''}`}
+                  onClick={() => { closeUploadHistory(); setSelectedTx(t); }}
                 >
+                  {isAdmin && (
+                    <input
+                      type="checkbox"
+                      className="tx-check"
+                      checked={isChecked}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleSelected(t.id)}
+                    />
+                  )}
                   <div style={{ textAlign: 'center' }}>
                     <div className="tnum" style={{ fontSize: '17px', fontWeight: 800, color: T.text, lineHeight: 1.1 }}>
                       {d.toLocaleDateString('en-IN', { day: '2-digit' })}
@@ -715,11 +945,26 @@ export default function Transactions() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                     <Avatar name={maskName(t.merchant) || '?'} />
                     <div style={{ minWidth: 0 }}>
-                      <div style={{
-                        fontSize: '14px', fontWeight: 700, color: T.text,
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>
-                        {maskName(t.merchant) || '—'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                        <span style={{
+                          fontSize: '14px', fontWeight: 700, color: T.text,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {maskName(t.merchant) || '—'}
+                        </span>
+                        {t.isTransfer && (
+                          <span
+                            title="Money moved between your own accounts — excluded from income/spend analytics"
+                            style={{
+                              fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+                              color: 'var(--text-muted)', background: 'var(--surface-2)',
+                              border: '1px solid var(--border-color)', padding: '1px 7px',
+                              borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: 0,
+                            }}
+                          >
+                            ⇄ Transfer
+                          </span>
+                        )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', minWidth: 0 }}>
                         <span style={{ fontSize: '12px', color: T.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -948,8 +1193,8 @@ export default function Transactions() {
 
       {/* Upload history — RHS drawer */}
       <Drawer
-        open={showUploadHistory}
-        onClose={() => setShowUploadHistory(false)}
+        open={uploadHistoryOpen}
+        onClose={closeUploadHistory}
         title="Upload History"
         width={sidebarWidth}
         onWidthChange={setSidebarWidth}
@@ -957,86 +1202,112 @@ export default function Transactions() {
       >
         {loadingUploads ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '40px' }}>Loading...</div>
-        ) : uploads.length === 0 && importFails.length === 0 ? (
-          <EmptyState message="No statements have been uploaded for this account yet." />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {[
-              ...uploads.map(u => ({ key: `u-${u.id}`, time: new Date(u.uploadedAt).getTime(), upload: u })),
-              ...importFails.map(f => ({ key: `f-${f.id}`, time: new Date(f.createdAt).getTime(), fail: f })),
-            ].sort((a, b) => b.time - a.time).map(item => item.upload ? (
-              <div key={item.key} className="card" style={{ padding: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                  <FiFileText size={22} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{item.upload.fileName}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {new Date(item.upload.uploadedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                      <Badge variant="blue">{item.upload.totalCount ?? item.upload.transactionCount ?? 0} total</Badge>
-                      {(item.upload.newCount ?? 0) > 0 ? (
-                        <Badge
-                          variant="green"
-                          onClick={() => showNewTransactions(item.upload)}
-                          style={{ cursor: 'pointer', textDecoration: 'underline' }}
-                          title="Show the transactions this upload added"
-                        >
-                          {item.upload.newCount} new
-                        </Badge>
-                      ) : (
-                        <Badge variant="green">0 new</Badge>
-                      )}
-                      {item.upload.autoImported && <Badge variant="purple">Auto</Badge>}
-                      {isAdmin && (
-                        <button className="btn danger small" onClick={() => handleRevert(item.upload)}>
-                          <FiRotateCcw size={12} /> Revert
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div key={item.key} className="card" style={{ padding: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                  <FiAlertCircle size={22} color="var(--danger, #dc2626)" style={{ flexShrink: 0, marginTop: '2px' }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{item.fail.fileName}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {new Date(item.fail.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                      <Badge variant="red">Auto-import failed</Badge>
-                    </div>
-                    {item.fail.error && (
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{item.fail.error}</div>
-                    )}
-                    {isAdmin && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                        <input
-                          type="password"
-                          placeholder="PDF password"
-                          value={retryPw[item.fail.id] || ''}
-                          onChange={(e) => setRetryPw(prev => ({ ...prev, [item.fail.id]: e.target.value }))}
-                          onKeyDown={(e) => { if (e.key === 'Enter') handleRetryImport(item.fail); }}
-                          className="field-input"
-                          style={{ width: '150px' }}
-                        />
-                        <button
-                          className="btn primary small"
-                          disabled={!!retrying[item.fail.id]}
-                          onClick={() => handleRetryImport(item.fail)}
-                        >
-                          <FiRotateCcw size={12} /> {retrying[item.fail.id] ? 'Retrying…' : 'Try again'}
-                        </button>
+          <>
+            <div style={{ marginBottom: '14px' }}>
+              <Tabs
+                variant="underline"
+                active={uploadTab}
+                onChange={setUploadTab}
+                tabs={[
+                  { key: 'success', label: 'Imported', count: uploads.length },
+                  { key: 'failed', label: 'Failed', count: importFails.length },
+                ]}
+              />
+            </div>
+
+            {uploadTab === 'success' ? (
+              uploads.length === 0 ? (
+                <EmptyState message="No statements have been imported for this account yet." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {uploads.map(upload => (
+                    <div key={`u-${upload.id}`} className="card" style={{ padding: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <FiFileText size={22} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{upload.fileName}</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            {new Date(upload.uploadedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                            <Badge variant="blue">{upload.totalCount ?? upload.transactionCount ?? 0} total</Badge>
+                            {(upload.newCount ?? 0) > 0 ? (
+                              <Badge
+                                variant="green"
+                                onClick={() => showNewTransactions(upload)}
+                                style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                                title="Show the transactions this upload added"
+                              >
+                                {upload.newCount} new
+                              </Badge>
+                            ) : (
+                              <Badge variant="green">0 new</Badge>
+                            )}
+                            {upload.autoImported && <Badge variant="purple">Auto</Badge>}
+                            {isAdmin && (
+                              <button className="btn danger small" onClick={() => handleRevert(upload)}>
+                                <FiRotateCcw size={12} /> Revert
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            ))}
-          </div>
+              )
+            ) : (
+              importFails.length === 0 ? (
+                <EmptyState message="No failed imports for this account." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {importFails.map(fail => (
+                    <div key={`f-${fail.id}`} className="card" style={{ padding: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <FiAlertCircle size={22} color="var(--danger, #dc2626)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{fail.fileName}</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            {new Date(fail.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                            <Badge variant="red">Auto-import failed</Badge>
+                            {fail.attempts > 1 && (
+                              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{fail.attempts} attempts</span>
+                            )}
+                          </div>
+                          {fail.error && (
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{fail.error}</div>
+                          )}
+                          {isAdmin && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                              <input
+                                type="password"
+                                placeholder="PDF password"
+                                value={retryPw[fail.id] || ''}
+                                onChange={(e) => setRetryPw(prev => ({ ...prev, [fail.id]: e.target.value }))}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleRetryImport(fail); }}
+                                className="field-input"
+                                style={{ width: '150px' }}
+                              />
+                              <button
+                                className="btn primary small"
+                                disabled={!!retrying[fail.id]}
+                                onClick={() => handleRetryImport(fail)}
+                              >
+                                <FiRotateCcw size={12} /> {retrying[fail.id] ? 'Retrying…' : 'Try again'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </>
         )}
       </Drawer>
 
