@@ -336,6 +336,16 @@ tr:hover td {
   font-variant-numeric: tabular-nums;
 }
 
+/* Summary tiles that drill down to their underlying rows (see StatCard). */
+.stat-card.is-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 26px rgba(79, 70, 229, 0.28);
+}
+.stat-card.is-clickable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 /* --- MODAL --- */
 .modal {
   position: fixed;
@@ -795,4 +805,15 @@ tr:hover td {
 .auth-footer a:hover {
   color: var(--primary-hover);
   text-decoration: underline;
+}
+
+/* Transfers page — the whole pair card is clickable (opens the detail drawer). */
+.transfer-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+}
+
+.transfer-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }

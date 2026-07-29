@@ -27,6 +27,9 @@ export default function CategoryPicker({
   onCreate,
   disabled = false,
   size = "sm",
+  // Trigger label when nothing is selected. Bulk/"apply to many" pickers pass a
+  // prompt here ("Choose category…") since they have no current value to show.
+  placeholder = "Uncategorized",
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -131,7 +134,7 @@ export default function CategoryPicker({
     setOpen(false);
   };
 
-  const label = hasValue ? value : "Uncategorized";
+  const label = hasValue ? value : placeholder;
 
   return (
     <>
