@@ -60,6 +60,49 @@ const formatShort = (v) => {
 
 const VISIBLE_GROUPS = 8;
 
+// Per-period column width. Wide enough that the bar pair reads as two solid
+// marks and the two-line date tick never collides with its neighbour.
+const GROUP_WIDTH = { day: 84, week: 74, month: 96 };
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Shared by both canvases (bars + the standalone y-axis) so they reserve the
+// same x-axis footer height — see axisOptions.
+const X_TICKS = {
+  font: { size: 11, family: "'Inter'" },
+  padding: 10,
+  maxRotation: 0,
+  autoSkip: false,
+};
+
+// Hovering anywhere in a column tints the whole column, so the pair of bars
+// under the tooltip reads as one bucket. Drawn under the bars, inside the plot.
+const hoverBandPlugin = {
+  id: 'hoverBand',
+  beforeDatasetsDraw(chart, _args, opts) {
+    const active = chart.getActiveElements?.() ?? [];
+    if (!active.length || !opts?.color) return;
+    const { ctx, chartArea, scales } = chart;
+    const x = scales.x;
+    const idx = active[0].index;
+    const step = x.getPixelForValue(1) - x.getPixelForValue(0);
+    const width = (step > 0 ? step : chartArea.width) * 0.9;
+    const cx = x.getPixelForValue(idx);
+
+    const height = chartArea.bottom - chartArea.top;
+    ctx.save();
+    ctx.fillStyle = opts.color;
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(cx - width / 2, chartArea.top, width, height, 8);
+      ctx.fill();
+    } else {
+      ctx.fillRect(cx - width / 2, chartArea.top, width, height);
+    }
+    ctx.restore();
+  },
+};
+
 /* ─── TrendsFilters — rendered in Layout's PageHeader filter row ───────── */
 export function TrendsFilters({ period, setPeriod, dateRange, setDateRange }) {
   return (
@@ -102,9 +145,11 @@ const Trends = () => {
   const { theme } = T;
 
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: Infinity });
+  // Which side still has off-screen columns — drives the edge fades.
+  const [edges, setEdges] = useState({ left: false, right: false });
   const scrollRef   = useRef(null);
   const debounceRef = useRef(null);
-  const barGroupWidth = period === 'day' ? 84 : 62;
+  const barGroupWidth = GROUP_WIDTH[period] ?? 74;
 
   // ── Drill-down modal state ─────────────────────────────────────────────
   const [drillDown, setDrillDown]           = useState(null);
@@ -157,14 +202,26 @@ const Trends = () => {
       .finally(() => setLoading(false));
   }, [period, selectedAccountId, dateRange, accounts, isAllAccounts]);
 
+  const syncEdges = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setEdges({
+      left:  el.scrollLeft > 4,
+      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+    });
+  }, []);
+
   // Land on the most recent buckets — that's what the reader came to check.
   useEffect(() => {
     setVisibleRange({ start: Math.max(0, data.length - VISIBLE_GROUPS), end: data.length });
     if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
-  }, [data]);
+    const id = requestAnimationFrame(syncEdges);
+    return () => cancelAnimationFrame(id);
+  }, [data, syncEdges]);
 
   // ── Scroll → visible range ─────────────────────────────────────────────
   const handleScroll = useCallback(() => {
+    syncEdges();
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       if (!scrollRef.current || !data.length) return;
@@ -173,7 +230,38 @@ const Trends = () => {
       const end   = Math.min(data.length, Math.ceil((scrollLeft + clientWidth) / barGroupWidth) + 1);
       setVisibleRange({ start, end });
     }, 40);
-  }, [data.length, barGroupWidth]);
+  }, [data.length, barGroupWidth, syncEdges]);
+
+  // ── Axis + tooltip labels ──────────────────────────────────────────────
+  // Ticks are two lines: the bucket on top, its month/year underneath and only
+  // where it changes — so "W 08/02, W 15/02, W 22/02" collapses to 08 / 15 / 22
+  // under a single "Feb". Tooltips and the drawer keep the full, spelled-out date.
+  const { tickLabels, fullLabels } = useMemo(() => {
+    let lastGroup = null;
+    const ticks = [];
+    const full  = [];
+
+    data.forEach((d) => {
+      const [y, m, day] = (d.date || '').split('-').map(Number);
+      if (!y) { ticks.push(d.label); full.push(d.label); return; }
+
+      if (period === 'month') {
+        ticks.push([MONTHS[m - 1], lastGroup === y ? '' : String(y)]);
+        full.push(`${MONTHS[m - 1]} ${y}`);
+        lastGroup = y;
+        return;
+      }
+
+      const key = `${y}-${m}`;
+      ticks.push([String(day).padStart(2, '0'), key === lastGroup ? '' : MONTHS[m - 1]]);
+      full.push(period === 'week'
+        ? `Week of ${String(day).padStart(2, '0')} ${MONTHS[m - 1]} ${y}`
+        : `${String(day).padStart(2, '0')} ${MONTHS[m - 1]} ${y}`);
+      lastGroup = key;
+    });
+
+    return { tickLabels: ticks, fullLabels: full };
+  }, [data, period]);
 
   // ── Dynamic Y-scale — nice round max/step for the visible slice ─────────
   const yScale = useMemo(() => {
@@ -218,7 +306,7 @@ const Trends = () => {
 
     const { startDate: bStart, endDate: bEnd } = getBucketRange(item);
 
-    setDrillDown({ label: item.label, date: item.date, start: bStart, end: bEnd });
+    setDrillDown({ label: fullLabels[index] ?? item.label, date: item.date, start: bStart, end: bEnd });
     setDrillLoading(true);
     setDrillTransactions([]);
 
@@ -238,12 +326,50 @@ const Trends = () => {
       .then(results => setDrillTransactions(results.flat()))
       .catch(() => setDrillTransactions([]))
       .finally(() => setDrillLoading(false));
-  }, [data, selectedAccountId, isAllAccounts, accounts, getBucketRange]);
+  }, [data, selectedAccountId, isAllAccounts, accounts, getBucketRange, fullLabels]);
 
-  const closeDrillDown = () => {
+  const closeDrillDown = useCallback(() => {
     setDrillDown(null);
     setDrillTransactions([]);
-  };
+  }, []);
+
+  // ── Summary tile click → every transaction behind that tile ────────────
+  // Unlike the per-bar drill-down (one bucket, via api/statements) this spans the
+  // whole selected range and goes through api/trends/transactions, which applies
+  // the same filters as the bars — so the drawer's totals match the tile's.
+  const TILE_LABELS = { income: 'Total Income', spend: 'Total Spends', all: 'Net Flow' };
+
+  const handleTileClick = useCallback((kind) => {
+    if (!selectedAccountId) return;
+    if (drillDown?.kind === kind) { closeDrillDown(); return; }
+
+    const startStr = dateRange.start ? toLocalDate(dateRange.start) : null;
+    const endStr   = dateRange.end   ? toLocalDate(dateRange.end)   : null;
+
+    setDrillDown({
+      label: TILE_LABELS[kind],
+      kind,
+      start: startStr ?? 'Earliest',
+      end:   endStr   ?? 'Latest',
+    });
+    setDrillLoading(true);
+    setDrillTransactions([]);
+
+    const params = new URLSearchParams({ kind });
+    if (isAllAccounts) params.append('accountIds', accounts.map(a => a.id).join(','));
+    else               params.append('accountId', selectedAccountId);
+    if (startStr) params.append('startDate', startStr);
+    if (endStr)   params.append('endDate',   endStr);
+
+    api.get(`/trends/transactions?${params.toString()}`)
+      .then(res => setDrillTransactions(Array.isArray(res.data) ? res.data : []))
+      .catch(err => {
+        console.error('Failed to fetch trend transactions', err);
+        setDrillTransactions([]);
+      })
+      .finally(() => setDrillLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAccountId, isAllAccounts, accounts, dateRange, drillDown, closeDrillDown]);
 
   // ── Shared Y scale factory — solid hairline grid, clean round ticks ─────
   const makeYScale = (showTicks) => ({
@@ -257,8 +383,11 @@ const Trends = () => {
   });
 
   // ── Left Y-axis-only chart ─────────────────────────────────────────────
+  // Its x-axis carries an invisible two-line tick in the same font as the bars
+  // chart, so chart.js reserves exactly the same footer height on both canvases
+  // and the gridlines line up without a hand-tuned padding constant.
   const axisData = {
-    labels: [''],
+    labels: [['', '']],
     datasets: [{ data: [0], backgroundColor: 'transparent', borderWidth: 0 }],
   };
   const axisOptions = {
@@ -268,9 +397,12 @@ const Trends = () => {
     plugins: { legend: { display: false }, tooltip: { enabled: false } },
     scales: {
       y: makeYScale(true),
-      x: { grid: { display: false }, ticks: { display: false }, border: { display: false } },
+      x: {
+        grid: { display: false },
+        border: { display: false },
+        ticks: { ...X_TICKS, color: 'transparent' },
+      },
     },
-    layout: { padding: { bottom: 24 } },
   };
 
   // ── Main bars chart ────────────────────────────────────────────────────
@@ -278,13 +410,13 @@ const Trends = () => {
   const barStyle = {
     borderRadius: { topLeft: 4, topRight: 4 },
     borderSkipped: false,
-    maxBarThickness: 22,
-    categoryPercentage: 0.62,
-    barPercentage: 0.86,
+    maxBarThickness: 20,
+    categoryPercentage: 0.66,
+    barPercentage: 0.82,   // ~2px of surface between the spend/income pair
   };
 
   const mainData = useMemo(() => ({
-    labels: data.map(d => d.label),
+    labels: tickLabels,
     datasets: [
       {
         label: 'Spends',
@@ -302,7 +434,7 @@ const Trends = () => {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [data, T]);
+  }), [data, tickLabels, T]);
 
   const mainOptions = useMemo(() => ({
     responsive: true,
@@ -314,8 +446,12 @@ const Trends = () => {
         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
       }
     },
+    // Whole-column hover: anywhere in the bucket lights both bars and the
+    // tooltip, so thin bars don't have to be hit precisely.
+    interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: { display: false },
+      hoverBand: { color: hexToRgba(T.grid, 0.55) },
       tooltip: {
         backgroundColor: T.tooltipBg,
         borderColor: 'rgba(148,163,184,0.2)',
@@ -327,6 +463,7 @@ const Trends = () => {
         titleFont: { size: 12, weight: '600', family: "'Inter'" },
         bodyFont: { size: 12, family: "'Inter'" },
         callbacks: {
+          title: items => fullLabels[items[0]?.dataIndex] ?? '',
           label: ctx => `  ${ctx.dataset.label}  ${currencyFormatter.format(ctx.parsed.y)}`,
           afterBody: (items) => {
             if (items.length < 2) return [];
@@ -342,12 +479,12 @@ const Trends = () => {
       y: makeYScale(false),
       x: {
         grid: { display: false },
-        ticks: { font: { size: 10.5, family: "'Inter'" }, color: T.axisTick, maxRotation: 0 },
+        ticks: { ...X_TICKS, color: T.axisTick },
         border: { display: false },
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [yScale, handleBarClick, T]);
+  }), [yScale, handleBarClick, fullLabels, T]);
 
   // ── Render helpers ─────────────────────────────────────────────────────
   const renderChart = () => {
@@ -372,14 +509,21 @@ const Trends = () => {
       );
     }
 
+    const cls = [
+      'split-chart-container',
+      loading    ? 'is-refetching' : '',
+      edges.left  ? 'has-more-left'  : '',
+      edges.right ? 'has-more-right' : '',
+    ].filter(Boolean).join(' ');
+
     return (
-      <div className={`split-chart-container${loading ? ' is-refetching' : ''}`}>
+      <div className={cls}>
         <div className="y-axis-panel">
           <Bar key={theme} data={axisData} options={axisOptions} />
         </div>
         <div className="bars-scroll-panel" ref={scrollRef} onScroll={handleScroll}>
           <div style={{ position: 'relative', height: '100%', minWidth: `max(100%, ${data.length * barGroupWidth}px)` }}>
-            <Bar key={theme} data={mainData} options={mainOptions} />
+            <Bar key={theme} data={mainData} options={mainOptions} plugins={[hoverBandPlugin]} />
           </div>
         </div>
       </div>
@@ -410,11 +554,17 @@ const Trends = () => {
           label="Total Income"
           value={currencyFormatter.format(summary.totalIncome)}
           valueColor="#34d399"
+          onClick={() => handleTileClick('income')}
+          active={drillDown?.kind === 'income'}
+          title="Show the income transactions behind this total"
         />
         <StatCard
           label="Total Spends"
           value={currencyFormatter.format(summary.totalSpends)}
           valueColor="#f87171"
+          onClick={() => handleTileClick('spend')}
+          active={drillDown?.kind === 'spend'}
+          title="Show the spend transactions behind this total"
         />
         <StatCard
           label="Net Flow"
@@ -422,6 +572,9 @@ const Trends = () => {
           valueColor={netPositive ? '#34d399' : '#f87171'}
           sub={netPositive ? 'Positive cash flow' : 'Negative cash flow'}
           accent={netPositive ? '#34d399' : '#f87171'}
+          onClick={() => handleTileClick('all')}
+          active={drillDown?.kind === 'all'}
+          title="Show every transaction in this range"
         />
       </div>
 
@@ -485,7 +638,9 @@ const Trends = () => {
                   {drillTransactions.map((t, i) => {
                     const debit    = t.Debit    ?? t.debit    ?? 0;
                     const credit   = t.Credit   ?? t.credit   ?? 0;
-                    const date     = t.TransactionDate ?? t.transactionDate;
+                    // api/statements (bar drill-down) and api/trends/transactions
+                    // (tile drill-down) name the date field differently.
+                    const date     = t.TransactionDate ?? t.transactionDate ?? t.date;
                     const desc     = t.Description    ?? t.description;
                     const merchant = t.Merchant       ?? t.merchant;
                     const isCredit = credit > 0;

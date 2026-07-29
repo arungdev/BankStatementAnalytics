@@ -38,14 +38,18 @@
 }
 
 /* ── Summary cards ───────────────────────────────────────────────────────── */
+/* Grid rather than a wrapping flex row: when the drill-down drawer narrows the
+   page the tiles reflow 3 → 2 → 1 evenly, instead of one stretching full-width. */
 .summary-stats {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
   position: relative;
   z-index: 1;
 }
-.summary-stats > * { min-width: 220px; }
+/* The grid track already sizes each tile; StatCard's own flex-row floor must not
+   force the row to overflow. */
+.summary-stats > * { min-width: 0; }
 
 /* ── Chart card ──────────────────────────────────────────────────────────── */
 .trends-chart-card {
@@ -78,15 +82,41 @@
 .legend-dot.income { background: var(--chart-income); }
 
 /* ── Chart wrapper + split-canvas ────────────────────────────────────────── */
-.chart-wrapper { height: 420px; position: relative; }
+.chart-wrapper { height: 440px; position: relative; }
 
 .split-chart-container {
   display: flex;
   width: 100%;
   height: 100%;
   overflow: hidden;
+  position: relative;
   transition: opacity 0.15s ease;
 }
+
+/* Edge fades — the only cue that there are more buckets past the frame.
+   Pinned above the bars but out of the pointer's way. */
+.split-chart-container::before,
+.split-chart-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 34px;             /* stop above the two-line x-axis labels */
+  width: 22px;              /* a hint at the boundary — never wide enough to wash out a bar */
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 3;
+}
+.split-chart-container::before {
+  left: 64px;               /* just right of the y-axis panel */
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+.split-chart-container::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+.split-chart-container.has-more-left::before  { opacity: 1; }
+.split-chart-container.has-more-right::after  { opacity: 1; }
 /* Refetch in progress: hold the previous render at reduced opacity — no flash. */
 .split-chart-container.is-refetching {
   opacity: 0.45;
@@ -117,9 +147,14 @@
   scrollbar-color: var(--gray-300) transparent;
 }
 .bars-scroll-panel:active { cursor: grabbing; }
-.bars-scroll-panel::-webkit-scrollbar        { height: 4px; }
+/* Overlay-style bar: invisible track, thumb only, and it fades up on hover so
+   it never competes with the date labels it sits under. */
+.bars-scroll-panel::-webkit-scrollbar        { height: 6px; }
 .bars-scroll-panel::-webkit-scrollbar-track  { background: transparent; }
-.bars-scroll-panel::-webkit-scrollbar-thumb  { background: var(--gray-300); border-radius: 10px; }
+.bars-scroll-panel::-webkit-scrollbar-thumb  {
+  background: var(--gray-300);
+  border-radius: 10px;
+}
 .bars-scroll-panel::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
 
 /* ── Loading ─────────────────────────────────────────────────────────────── */

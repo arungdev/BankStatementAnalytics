@@ -38,10 +38,8 @@ namespace BankStatementAnalytics.Controllers.Api
             var end = endDate.HasValue ? endDate.Value.Date : (DateTime?)null;
 
             var query = session.Query<BankTransaction>()
-                .Where(t => ids.Contains(t.AccountId)
-                         // TRANSFER rows (e.g. credit-card bill payments) are the
-                         // user's own money — not income or spend.
-                         && (t.Mode == null || t.Mode != "TRANSFER"));
+                .ExcludeOwnMoneyMoves()
+                .Where(t => ids.Contains(t.AccountId));
 
             // Filter on COALESCE(EffectiveDate, TransactionDate) so merchants flagged
             // ShiftToNextMonth land in the right bucket. This sacrifices the
@@ -114,6 +112,68 @@ namespace BankStatementAnalytics.Controllers.Api
             }
 
             return Ok(result);
+        }
+
+        // GET: api/trends/transactions?accountIds=1,2&startDate=&endDate=&kind=income|spend|all
+        // The rows behind the Trends summary tiles. Same accounts, same effective-date window
+        // and the same own-money-move exclusion as GetTrends, so the list always adds up to
+        // the tile that was clicked (the per-bar drill-down uses api/statements instead, which
+        // shows a single bucket's raw ledger including transfers).
+        [HttpGet("transactions")]
+        public async Task<IActionResult> GetTrendTransactions(
+            [FromQuery] int accountId,
+            [FromQuery] string accountIds = null,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] string kind = null)
+        {
+            using var session = DbHelper.GetSession();
+
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            if (ids.Count == 0)
+                return Ok(new List<object>());
+
+            var query = session.Query<BankTransaction>()
+                .ExcludeOwnMoneyMoves()
+                .Where(t => ids.Contains(t.AccountId));
+
+            if (startDate.HasValue)
+            {
+                var start = startDate.Value.Date;
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= start);
+            }
+            if (endDate.HasValue)
+            {
+                var endExclusive = endDate.Value.Date.AddDays(1);
+                query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) < endExclusive);
+            }
+
+            query = kind?.ToLowerInvariant() switch
+            {
+                "income" => query.Where(t => t.Credit > 0),
+                "spend" => query.Where(t => t.Debit > 0),
+                _ => query,
+            };
+
+            var rows = await query
+                .OrderByDescending(t => t.EffectiveDate ?? t.TransactionDate)
+                .Select(t => new
+                {
+                    id = t.BankReference,
+                    date = t.EffectiveDate ?? t.TransactionDate,
+                    accountId = t.AccountId,
+                    description = t.Description,
+                    merchant = t.CounterParty != null ? t.CounterParty.Name : null,
+                    category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
+                    debit = t.Debit,
+                    credit = t.Credit,
+                })
+                .ToListAsync();
+
+            return Ok(rows);
         }
 
         private static DateTime GetStartOfWeek(DateTime dt)
