@@ -172,6 +172,13 @@ export default function Insights() {
   const topSpend      = chartData[0] || null;
   const avgSpend      = chartData.length ? grandTotal / chartData.length : 0;
 
+  // Synthetic "slice" for the Total Spent tile: the drawer treats it like any other
+  // selection, but its rows span every group in the range rather than one of them.
+  const allSpendItem  = useMemo(
+    () => ({ name: 'Total spent', total: grandTotal, count: null, isAll: true }),
+    [grandTotal]
+  );
+
   const activeTab     = GROUP_TABS.find(g => g.key === groupBy);
   const groupLabel    = activeTab?.label    ?? '';
   const groupSingular = activeTab?.singular ?? '';
@@ -180,7 +187,9 @@ export default function Insights() {
   // no-op unless name masking is active (Settings → Privacy + eye toggle on).
   const maskLabel = (n) => (groupBy === 'byMerchant' ? maskName(n) : n);
 
-  const handleSliceClick = useCallback((item) => {
+  // `groupOverride` is 'all' for the Total Spent tile, whose rows span every group
+  // rather than one slice; everything else drills into the clicked item.
+  const handleSliceClick = useCallback((item, groupOverride) => {
     if (!item) return;
     setSelectedItem(item);
     setTrayOpen(true);
@@ -192,7 +201,7 @@ export default function Insights() {
     p.append('accountIds', accountIdsParam);
     if (range.start) p.append('startDate', toISODate(range.start));
     if (range.end)   p.append('endDate',   toISODate(range.end));
-    p.append('groupBy',    groupBy);
+    p.append('groupBy',    groupOverride ?? groupBy);
     p.append('groupValue', item.name);
 
     api.get(`/dashboard/insights/transactions?${p.toString()}`)
@@ -231,7 +240,13 @@ export default function Insights() {
       transition: 'margin-right 0.28s cubic-bezier(0.4,0,0.2,1)',
       overflow: 'visible',
     },
-    statsRow: { display: 'flex', gap: '16px', marginBottom: '20px' },
+    // Grid rather than a flex row: with the drawer docked the page narrows, and the
+    // tiles reflow 4 → 2 → 1 evenly instead of overflowing (StatCard's own minWidth
+    // is neutralised by the .ins-stat-row rule below).
+    statsRow: {
+      display: 'grid', gap: '16px', marginBottom: '20px',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    },
     chartsGrid: {
       display: 'grid', gridTemplateColumns: '3fr 2fr',
       gap: '20px', marginBottom: '20px', alignItems: 'stretch',
@@ -281,20 +296,28 @@ export default function Insights() {
           @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
           @keyframes spin    { to { transform: rotate(360deg); } }
           .ins-row:hover { background: var(--surface-2) !important; cursor: pointer; }
+          .ins-stat-row .stat-card { min-width: 0; }
         `}</style>
 
-        {/* ── Stat cards ── */}
-        <div style={s.statsRow}>
+        {/* ── Stat cards — each drills into the rows behind it. "Avg per …" has no
+             underlying set of transactions, so it stays a plain tile. ── */}
+        <div className="ins-stat-row" style={s.statsRow}>
           <StatCard
             label="Total Spent"
             value={loading ? '—' : fmt.format(grandTotal)}
             sub={loading ? '' : `Across ${chartData.length} ${groupLabel.toLowerCase()}`}
+            onClick={chartData.length ? () => handleSliceClick(allSpendItem, 'all') : undefined}
+            active={trayOpen && selectedItem?.isAll === true}
+            title="Show every transaction behind this total"
           />
           <StatCard
             label={`Top ${groupSingular}`}
             value={loading || !topSpend ? '—' : maskLabel(topSpend.name)}
             sub={loading || !topSpend ? '' : fmt.format(topSpend.total)}
             accent={T.indigoSoft}
+            onClick={topSpend ? () => handleSliceClick(topSpend) : undefined}
+            active={trayOpen && !!topSpend && selectedItem?.name === topSpend.name}
+            title={`Show the transactions for this ${groupSingular.toLowerCase()}`}
           />
           <StatCard
             label={`Avg per ${groupSingular}`}
@@ -306,6 +329,9 @@ export default function Insights() {
             value={loading || !topSpend ? '—' : (topSpend.count ?? '—')}
             sub={loading || !topSpend ? '' : `in ${maskLabel(topSpend.name)}`}
             accent={T.greenSoft}
+            onClick={topSpend ? () => handleSliceClick(topSpend) : undefined}
+            active={trayOpen && !!topSpend && selectedItem?.name === topSpend.name}
+            title={`Show the transactions for this ${groupSingular.toLowerCase()}`}
           />
         </div>
 
@@ -487,7 +513,9 @@ export default function Insights() {
       <Drawer
         open={trayOpen}
         onClose={closeTray}
-        title={groupSingular ? `${groupSingular} transactions` : 'Transactions'}
+        title={selectedItem?.isAll
+          ? 'All transactions'
+          : groupSingular ? `${groupSingular} transactions` : 'Transactions'}
         width={drawerWidth}
         onWidthChange={setDrawerWidth}
         modal={false}
@@ -496,13 +524,14 @@ export default function Insights() {
           <>
             {/* Header: identity + totals */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', minWidth: 0 }}>
-              <Avatar name={maskLabel(selectedItem.name) || '?'} size={44} />
+              {/* "Total spent" isn't a merchant name, so it's never masked. */}
+              <Avatar name={(selectedItem.isAll ? selectedItem.name : maskLabel(selectedItem.name)) || '?'} size={44} />
               <div style={{ minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  {groupSingular}
+                  {selectedItem.isAll ? `All ${groupLabel.toLowerCase()}` : groupSingular}
                 </p>
                 <h2 style={{ margin: '4px 0 0', fontSize: '18px', fontWeight: 800, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {maskLabel(selectedItem.name)}
+                  {selectedItem.isAll ? selectedItem.name : maskLabel(selectedItem.name)}
                 </h2>
               </div>
             </div>
