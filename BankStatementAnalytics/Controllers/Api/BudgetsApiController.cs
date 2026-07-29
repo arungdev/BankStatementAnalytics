@@ -245,9 +245,9 @@ namespace BankStatementAnalytics.Controllers.Api
             NHibernate.ISession session, IReadOnlyCollection<long> ownedIds, DateTime from, DateTime to)
         {
             return await session.Query<BankTransaction>()
+                .ExcludeOwnMoneyMoves()
                 .Where(t => ownedIds.Contains(t.AccountId)
                          && t.Debit > 0
-                         && (t.Mode == null || t.Mode != "TRANSFER")
                          && (t.EffectiveDate ?? t.TransactionDate) >= from
                          && (t.EffectiveDate ?? t.TransactionDate) < to)
                 .Select(t => new SpendRow
@@ -269,11 +269,10 @@ namespace BankStatementAnalytics.Controllers.Api
 
             // Narrow projection: only the two fields the category coalesce needs.
             var rows = await session.Query<BankTransaction>()
+                // Own-money moves (CC bill payments, inter-account transfers) don't consume a budget.
+                .ExcludeOwnMoneyMoves()
                 .Where(t => ownedIds.Contains(t.AccountId)
                          && t.Debit > 0
-                         // TRANSFER rows (e.g. credit-card bill payments) are the
-                         // user's own money — they don't consume a budget.
-                         && (t.Mode == null || t.Mode != "TRANSFER")
                          && (t.EffectiveDate ?? t.TransactionDate) >= monthStart
                          && (t.EffectiveDate ?? t.TransactionDate) < monthEnd)
                 .Select(t => new
