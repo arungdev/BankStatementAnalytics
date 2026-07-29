@@ -28,6 +28,9 @@ namespace BankStatementAnalytics.Models
         // Typical day of month (1-31) the debit posts.
         public virtual int DueDayOfMonth { get; set; }
 
+        // "Weekly", "Monthly", "Quarterly" or "Yearly"; null (pre-existing rows) means Monthly.
+        public virtual string? Cadence { get; set; }
+
         // "Confirmed" or "Dismissed".
         public virtual string Status { get; set; } = "Confirmed";
 
