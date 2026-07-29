@@ -31,6 +31,15 @@ namespace BankStatementAnalytics.Services
 
     internal static class DetectionQuery
     {
+        /// <summary>
+        /// Filters out the user's own money moving between their accounts: parser-marked
+        /// TRANSFER rows (credit-card bill payments) and detected inter-account transfer
+        /// pairs (<see cref="Models.BankTransaction.TransferGroupId"/>). Analytics apply
+        /// this so transfers inflate neither income nor spend.
+        /// </summary>
+        public static IQueryable<Models.BankTransaction> ExcludeOwnMoneyMoves(this IQueryable<Models.BankTransaction> query) =>
+            query.Where(t => (t.Mode == null || t.Mode != "TRANSFER") && t.TransferGroupId == null);
+
         /// <summary>Projects a transaction query into the narrow <see cref="DetectionTxn"/> shape.</summary>
         public static IQueryable<DetectionTxn> ProjectDetection(this IQueryable<Models.BankTransaction> query) =>
             query.Select(t => new DetectionTxn

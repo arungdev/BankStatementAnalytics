@@ -6,6 +6,7 @@ import {
   FiTrendingUp, FiPieChart, FiLogOut,
   FiChevronsLeft, FiChevronsRight, FiBell, FiHome, FiTarget,
   FiDollarSign, FiSun, FiMoon, FiMonitor, FiFileText, FiSettings,
+  FiShuffle,
 } from 'react-icons/fi';
 import { useAuth } from '../context/useAuth';
 import useTheme from '../context/useTheme';
@@ -132,6 +133,14 @@ const Sidebar = () => {
             <NavLink to="/merchants" className="nav-item-header" title="Merchants">
               <FiUsers size={16} />
               {isOpen && <span>Merchants</span>}
+            </NavLink>
+          </li>
+
+          {/* Transfers */}
+          <li>
+            <NavLink to="/transfers" className="nav-item-header" title="Transfers between your accounts">
+              <FiShuffle size={16} />
+              {isOpen && <span>Transfers</span>}
             </NavLink>
           </li>
 

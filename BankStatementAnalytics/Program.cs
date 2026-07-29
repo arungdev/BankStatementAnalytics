@@ -96,6 +96,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchFolderImportS
 builder.Services.AddScoped<TransactionRepositoryFactory>();
 builder.Services.AddScoped<CounterPartyService>();
 builder.Services.AddScoped<RecurringBillService>();
+builder.Services.AddScoped<TransferDetectionService>();
 builder.Services.AddScoped<DepositService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<ReportPdfService>();

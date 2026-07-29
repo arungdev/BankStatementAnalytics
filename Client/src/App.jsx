@@ -28,6 +28,7 @@ import UploadStatement from "./pages/UploadStatement";
 import Trends from "./pages/Trends";
 import Insights from "./pages/Insights";
 import Bills from "./pages/Bills";
+import Transfers from "./pages/Transfers";
 import Budgets from "./pages/Budgets";
 import Investments from "./pages/Investments";
 import Reports from "./pages/Reports";
@@ -65,6 +66,7 @@ function AuthGate() {
         <Route path="/trends" element={<Trends />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/merchants" element={<Merchants />} />
+        <Route path="/transfers" element={<Transfers />} />
         <Route path="/upload" element={<UploadStatement />} />
         <Route path="/insights" element={<Insights />} />
         <Route path="/bills" element={<Bills />} />
@@ -82,6 +84,7 @@ const PAGE_META = {
   '/trends': { title: 'Trends', subtitle: 'Income vs. spends over time' },
   '/transactions': { title: 'Transactions' },
   '/merchants': { title: 'Merchants', subtitle: 'Who you transact with, and how they’re categorized' },
+  '/transfers': { title: 'Transfers', subtitle: 'Money moved between your own accounts' },
   '/upload': { title: 'Upload Statement' },
   '/insights': { title: 'Spending Insights', subtitle: 'Where your money goes' },
   '/bills': { title: 'Bills & Reminders', subtitle: 'Upcoming recurring bills' },
@@ -178,6 +181,7 @@ function Layout() {
   const isTransactions = location.pathname === '/transactions';
   const isReports = location.pathname === '/reports';
   const isMerchants = location.pathname === '/merchants';
+  const isInvestments = location.pathname === '/investments';
 
   // Opens the Create Account modal directly, skipping the Settings detour.
   const goAddAccount = () => setShowCreate(true);
@@ -228,7 +232,7 @@ function Layout() {
               setReportPeriod={setReportPeriod}
             />
           </>
-          : isMerchants
+          : (isMerchants || isInvestments)
             ? <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
             : undefined;
 
@@ -252,7 +256,7 @@ function Layout() {
               <FiHelpCircle size={17} />
             </button>
             <PrivacyToggle masked={maskAmounts} onToggle={() => setMaskAmounts(m => !m)} />
-            <NotificationBell onDockChange={setRemindersDock} />
+            <NotificationBell onDockChange={setRemindersDock} accounts={accounts} />
           </>}
         />
 
