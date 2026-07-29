@@ -24,6 +24,17 @@ namespace BankStatementAnalytics.Services.Parser
         private static readonly Regex AmountRegex =
             new(@"[\d,]+\.\d{2}", RegexOptions.Compiled);
 
+        /// <summary>
+        /// Instalment rows print an "EMI" badge to the left of the merchant name.
+        /// It is ordinary text in the PDF, and its word center falls inside the
+        /// description column, so it arrives glued to the description
+        /// ("EMI Flipkart Internet PrivateBangalore"). Requiring a following
+        /// space keeps merchants that merely start with those letters
+        /// ("EMIRATES ...") out of it.
+        /// </summary>
+        private static readonly Regex EmiBadgeRegex =
+            new(@"^EMI\s+(?=\S)", RegexOptions.Compiled);
+
         public IEnumerable<BankTransaction> Parse(string text, int accountId)
         {
             var transactions = new List<BankTransaction>();
@@ -52,6 +63,13 @@ namespace BankStatementAnalytics.Services.Parser
         private static BankTransaction? BuildTransaction(string[] cells, int accountId)
         {
             string desc = cells[1].Trim();
+
+            // Strip the "EMI" badge before anything reads the description: it
+            // would otherwise become the counterparty name for every instalment
+            // row, and it has no counterpart in the CSV export of the same bill,
+            // which would break cross-format dedupe (see ReferenceSeed).
+            bool isEmi = EmiBadgeRegex.IsMatch(desc);
+            if (isEmi) desc = EmiBadgeRegex.Replace(desc, string.Empty).Trim();
 
             // "08/06/2026| 19:29" → "08/06/2026 19:29"
             string dateRaw = Regex.Replace(cells[0].Trim(), @"\|\s*", " ").Trim();
@@ -97,6 +115,10 @@ namespace BankStatementAnalytics.Services.Parser
             };
 
             HdfcCreditCardParser.ParseNarration(desc, tx, out string? counterPartyName);
+
+            // The badge is the only marker an instalment row carries here; the
+            // description left behind is a plain merchant name.
+            if (isEmi) tx.Mode = "EMI";
 
             // Payment rows wrap their description across neighbouring visual rows
             // that this layout discards (ContinuationMode.None) — label them

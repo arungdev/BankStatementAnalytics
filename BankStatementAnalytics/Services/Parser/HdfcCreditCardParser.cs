@@ -208,14 +208,26 @@ namespace BankStatementAnalytics.Services.Parser
                 return;
             }
 
-            // EMI
-            if (narration.StartsWith("EMI", StringComparison.OrdinalIgnoreCase))
+            // EMI. Two shapes reach this: the export narration
+            // "EMI-<merchant>-<n>-<...>-" and (from the PDF) an "EMI" badge in
+            // front of a plain merchant name. Requiring a separator after "EMI"
+            // keeps merchants like "EMIRATES" from being read as instalments.
+            if (Regex.IsMatch(narration, @"^EMI[-\s]", RegexOptions.IgnoreCase))
             {
                 tx.Mode = "EMI";
                 var m = EmiFtRegex.Match(narration);
+                string rest = narration[3..].Trim();
+                bool dashForm = rest.StartsWith('-');
+                rest = rest.TrimStart('-').Trim();
+
                 counterPartyName = m.Success
                     ? m.Groups[4].Value.Trim()
-                    : narration.Split('-').Skip(1).FirstOrDefault()?.Trim() ?? "EMI";
+                    // Dash form: the merchant is the first segment, the rest is
+                    // the loan/instalment tail. Badge form: it is all merchant.
+                    : dashForm ? rest.Split('-').FirstOrDefault()?.Trim() : rest;
+
+                if (string.IsNullOrWhiteSpace(counterPartyName))
+                    counterPartyName = "EMI";
                 return;
             }
 

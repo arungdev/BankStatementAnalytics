@@ -27,6 +27,18 @@ namespace BankStatementAnalytics.Services.Pdf
 
         private static readonly Regex NonAlphaNum = new(@"[^a-z0-9]", RegexOptions.Compiled);
 
+        /// <summary>
+        /// The columns actually printed by the statement at hand, in left-to-right
+        /// order: <see cref="Boundaries"/> are the N-1 split Xs between them and
+        /// <see cref="ColumnIndexes"/> maps each slot back to its profile column,
+        /// so optional columns the statement omits stay empty in the output row.
+        /// </summary>
+        private sealed class ColumnLayout
+        {
+            public required double[] Boundaries { get; init; }
+            public required int[] ColumnIndexes { get; init; }
+        }
+
         // ── Public API ────────────────────────────────────────────────
 
         /// <summary>
@@ -46,7 +58,7 @@ namespace BankStatementAnalytics.Services.Pdf
             EnsureTextLayer(doc);
 
             var outputRows = new List<string[]>();
-            double[]? boundaries = null; // column split Xs from the most recent header
+            ColumnLayout? layout = null; // column geometry from the most recent header
 
             // Continuation state (see PdfContinuationMode). Kept across pages:
             // a narration fragment can sit at a page bottom with its data row on
@@ -62,21 +74,21 @@ namespace BankStatementAnalytics.Services.Pdf
                 for (int i = 0; i < rows.Count; i++)
                 {
                     // Header rows re-anchor the column boundaries (repeated per page).
-                    if (TryDetectHeader(rows, ref i, profile, out var newBoundaries))
+                    if (TryDetectHeader(rows, ref i, profile, out var newLayout))
                     {
-                        boundaries = newBoundaries;
+                        layout = newLayout;
                         continue;
                     }
 
-                    if (boundaries == null) continue; // furniture before the first header
+                    if (layout == null) continue; // furniture before the first header
 
-                    var cells = AssignCells(rows[i], boundaries, profile.Columns.Length);
+                    var cells = AssignCells(rows[i], layout, profile.Columns.Length);
                     ClassifyAndAppend(cells, profile, outputRows,
                         ref pendingNarration, ref appendSlotOpen, ref appendWindowOpen);
                 }
             }
 
-            if (boundaries == null)
+            if (layout == null)
                 throw new PdfTableNotFoundException(
                     $"(no header row matched the {profile.Bank} column profile)");
             if (outputRows.Count == 0)
@@ -99,7 +111,7 @@ namespace BankStatementAnalytics.Services.Pdf
             var profile = PdfTableProfiles.For(bank);
             using var doc = OpenDocument(pdfBytes, password);
 
-            double[]? boundaries = null;
+            ColumnLayout? layout = null;
             int pageNo = 0;
 
             foreach (var page in doc.GetPages())
@@ -109,16 +121,18 @@ namespace BankStatementAnalytics.Services.Pdf
 
                 for (int i = 0; i < rows.Count; i++)
                 {
-                    if (TryDetectHeader(rows, ref i, profile, out var b))
+                    if (TryDetectHeader(rows, ref i, profile, out var l))
                     {
-                        boundaries = b;
-                        yield return $"HEADER  boundaries: {string.Join(", ", b.Select(x => x.ToString("0.0")))}";
+                        layout = l;
+                        yield return
+                            $"HEADER  columns: {string.Join(", ", l.ColumnIndexes.Select(c => profile.Columns[c].Name))}" +
+                            $"  boundaries: {string.Join(", ", l.Boundaries.Select(x => x.ToString("0.0")))}";
                         continue;
                     }
 
-                    if (boundaries == null) continue;
+                    if (layout == null) continue;
 
-                    var cells = AssignCells(rows[i], boundaries, profile.Columns.Length);
+                    var cells = AssignCells(rows[i], layout, profile.Columns.Length);
                     var dm = profile.RowStartDatePattern.Match(cells[profile.DateColumnIndex]);
                     string verdict =
                         dm.Success && dm.Index == 0 ? "DATA"
@@ -221,20 +235,20 @@ namespace BankStatementAnalytics.Services.Pdf
         // ── Header detection ──────────────────────────────────────────
 
         /// <summary>
-        /// Tries to match ALL profile columns against the row at index <paramref name="i"/>.
+        /// Tries to match the profile's columns against the row at index <paramref name="i"/>.
         /// Some banks stack the header over two visual lines ("Withdrawal" / "Amt."),
         /// so when the single row matches at least two columns but not all, the next
         /// row's words are merged in and matching is retried (consuming both rows).
-        /// On success, outputs the column split Xs (midpoints between adjacent
-        /// header cell spans) and advances <paramref name="i"/> past consumed rows.
+        /// On success, outputs the layout of the columns this statement prints and
+        /// advances <paramref name="i"/> past consumed rows.
         /// </summary>
         private static bool TryDetectHeader(
-            List<List<Word>> rows, ref int i, PdfTableProfile profile, out double[] boundaries)
+            List<List<Word>> rows, ref int i, PdfTableProfile profile, out ColumnLayout layout)
         {
-            boundaries = Array.Empty<double>();
+            layout = null!;
 
             var spans = MatchColumns(rows[i], profile);
-            if (spans != null && BuildBoundaries(spans, out boundaries))
+            if (spans != null && BuildLayout(spans, out layout))
                 return true;
 
             // Two-line header attempt: merge with the following row.
@@ -243,7 +257,7 @@ namespace BankStatementAnalytics.Services.Pdf
                 var merged = rows[i].Concat(rows[i + 1])
                     .OrderBy(w => w.BoundingBox.Left).ToList();
                 spans = MatchColumns(merged, profile);
-                if (spans != null && BuildBoundaries(spans, out boundaries))
+                if (spans != null && BuildLayout(spans, out layout))
                 {
                     i++; // consume the second header line too
                     return true;
@@ -255,11 +269,12 @@ namespace BankStatementAnalytics.Services.Pdf
 
         /// <summary>
         /// Matches every profile column against the row's words. Returns one
-        /// (left, right) X span per column, or null when any column is missing.
+        /// (left, right) X span per column — null for optional columns this
+        /// statement omits — or null overall when a required column is missing.
         /// Longer aliases are matched first and each word is consumed by at most
         /// one column, so "Value Date" cannot double-claim the "Date" column.
         /// </summary>
-        private static (double Left, double Right)[]? MatchColumns(List<Word> row, PdfTableProfile profile)
+        private static (double Left, double Right)?[]? MatchColumns(List<Word> row, PdfTableProfile profile)
         {
             var spans = new (double Left, double Right)?[profile.Columns.Length];
             var consumed = new bool[row.Count];
@@ -269,10 +284,10 @@ namespace BankStatementAnalytics.Services.Pdf
                          .OrderByDescending(p => p.c.HeaderAliases.Max(a => Normalize(a).Length)))
             {
                 spans[index] = MatchAliasSpan(row, consumed, column.HeaderAliases);
-                if (spans[index] == null) return null;
+                if (spans[index] == null && !column.Optional) return null;
             }
 
-            return spans.Select(s => s!.Value).ToArray();
+            return spans;
         }
 
         private static int CountMatchedColumns(List<Word> row, PdfTableProfile profile)
@@ -316,26 +331,45 @@ namespace BankStatementAnalytics.Services.Pdf
             NonAlphaNum.Replace(s.ToLowerInvariant(), string.Empty);
 
         /// <summary>
-        /// Converts per-column header spans into N-1 split Xs (midpoints between
-        /// adjacent spans). Rejects the match when spans are not strictly
-        /// left-to-right in profile order — that means a false-positive header.
+        /// Converts the matched header spans into the split Xs between adjacent
+        /// printed columns (midpoints), skipping optional columns this statement
+        /// omits. Rejects the match when the spans are not strictly left-to-right
+        /// in profile order — that means a false-positive header.
         /// </summary>
-        private static bool BuildBoundaries((double Left, double Right)[] spans, out double[] boundaries)
+        private static bool BuildLayout((double Left, double Right)?[] spans, out ColumnLayout layout)
         {
-            boundaries = new double[spans.Length - 1];
-            for (int i = 0; i < spans.Length - 1; i++)
+            layout = null!;
+
+            var present = spans
+                .Select((s, idx) => (Span: s, Index: idx))
+                .Where(p => p.Span != null)
+                .Select(p => (p.Span!.Value, p.Index))
+                .ToArray();
+
+            if (present.Length < 2) return false;
+
+            var boundaries = new double[present.Length - 1];
+            for (int i = 0; i < present.Length - 1; i++)
             {
-                double a = (spans[i].Left + spans[i].Right) / 2;
-                double b = (spans[i + 1].Left + spans[i + 1].Right) / 2;
+                var (span, _) = present[i];
+                var (next, _) = present[i + 1];
+                double a = (span.Left + span.Right) / 2;
+                double b = (next.Left + next.Right) / 2;
                 if (b <= a) return false;
-                boundaries[i] = (spans[i].Right + spans[i + 1].Left) / 2;
+                boundaries[i] = (span.Right + next.Left) / 2;
             }
+
+            layout = new ColumnLayout
+            {
+                Boundaries = boundaries,
+                ColumnIndexes = present.Select(p => p.Index).ToArray(),
+            };
             return true;
         }
 
         // ── Cell assignment / row classification ──────────────────────
 
-        private static string[] AssignCells(List<Word> row, double[] boundaries, int columnCount)
+        private static string[] AssignCells(List<Word> row, ColumnLayout layout, int columnCount)
         {
             var cells = new StringBuilder[columnCount];
             for (int i = 0; i < columnCount; i++) cells[i] = new StringBuilder();
@@ -343,9 +377,10 @@ namespace BankStatementAnalytics.Services.Pdf
             foreach (var word in row)
             {
                 double center = (word.BoundingBox.Left + word.BoundingBox.Right) / 2;
-                int col = 0;
-                while (col < boundaries.Length && center >= boundaries[col]) col++;
+                int slot = 0;
+                while (slot < layout.Boundaries.Length && center >= layout.Boundaries[slot]) slot++;
 
+                int col = layout.ColumnIndexes[slot];
                 if (cells[col].Length > 0) cells[col].Append(' ');
                 cells[col].Append(word.Text);
             }

@@ -14,6 +14,13 @@ namespace BankStatementAnalytics.Services.Pdf
         /// List every wording variant seen across statement vintages.
         /// </summary>
         public required string[] HeaderAliases { get; init; }
+
+        /// <summary>
+        /// When true, a statement whose header lacks this column still matches:
+        /// the column keeps its slot in the normalized row but is always empty.
+        /// Use for columns some card products / statement vintages omit.
+        /// </summary>
+        public bool Optional { get; init; }
     }
 
     /// <summary>How date-less text rows relate to the data rows around them.</summary>
@@ -172,7 +179,9 @@ namespace BankStatementAnalytics.Services.Pdf
                 {
                     new() { Name = "Date",        HeaderAliases = new[] { "DATE & TIME", "Date & Time", "Date", "Transaction Date" } },
                     new() { Name = "Description", HeaderAliases = new[] { "TRANSACTION DESCRIPTION", "Description", "Transaction Details" } },
-                    new() { Name = "Rewards",     HeaderAliases = new[] { "REWARDS", "Feature Reward Points" } },
+                    // Cards without a rewards programme print the table with no
+                    // REWARDS column at all (seen on a Jul-2026 MoneyBack+ statement).
+                    new() { Name = "Rewards",     HeaderAliases = new[] { "REWARDS", "Feature Reward Points" }, Optional = true },
                     new() { Name = "Amount",      HeaderAliases = new[] { "AMOUNT", "Amount (in Rs.)", "Amount (Rs.)" } },
                     new() { Name = "PI",          HeaderAliases = new[] { "PI" } },
                 },
