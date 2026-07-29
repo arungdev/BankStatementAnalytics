@@ -20,3 +20,8 @@ Client/node_modules/
 # Private shared library - kept locally to rebuild the vendored lib/Common.Framework.dll,
 # but never published (referenced as a prebuilt DLL instead of source). See README.
 /Common.Framework/
+# Local verification tooling only (playwright, used to drive the UI while testing).
+# The app's own Node project lives in Client/ - nothing here belongs to the build.
+/node_modules/
+/package.json
+/package-lock.json
