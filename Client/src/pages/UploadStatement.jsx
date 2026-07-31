@@ -12,8 +12,11 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
   const [accounts, setAccounts]           = useState([]);
   const [selectedAccount, setSelectedAccount] = useState("");
   const [file, setFile]                   = useState(null);
+  const [password, setPassword]           = useState("");
   const [progress, setProgress]           = useState(null);
   const [loading, setLoading]             = useState(false);
+  // { text, isError } — the flag is set explicitly at each call site so server
+  // messages (e.g. PDF password errors) never get mis-styled by keyword sniffing.
   const [message, setMessage]             = useState(null);
   const [uploads, setUploads]             = useState([]);
   const [formats, setFormats]             = useState({ formats: [], label: 'TXT, CSV', bankName: '', downloadGuide: null });
@@ -47,6 +50,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
           accountId: u.accountId,
           time: new Date(u.uploadedAt).getTime(),
           transactionCount: u.transactionCount || 0,
+          autoImported: u.autoImported === true,
           response: u
         }));
         setUploads(loaded);
@@ -61,6 +65,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
     if (!selectedAccount) return;
     setLoadingFormats(true);
     setFile(null);
+    setPassword("");
     if (fileInputRef.current) fileInputRef.current.value = "";
     api.get(`/accounts/${selectedAccount}/supported-formats`)
       .then(res => setFormats(res.data))
@@ -73,6 +78,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
   }, [forcedAccountId]);
 
   const acceptAttr = formats.formats.join(',');
+  const isPdf = !!file && file.name.toLowerCase().endsWith('.pdf');
 
   const isValidFormat = (f) => {
     const ext = '.' + f.name.split('.').pop().toLowerCase();
@@ -82,9 +88,9 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
   const handleFileChange = (e) => {
     const picked = e.target.files?.[0];
     if (!picked) return;
-    if (!selectedAccount) { setMessage("Please select an account first."); return; }
+    if (!selectedAccount) { setMessage({ text: "Please select an account first.", isError: true }); return; }
     if (!isValidFormat(picked)) {
-      setMessage(`Only ${formats.label} files are supported for ${formats.bankName || 'this account'}.`);
+      setMessage({ text: `Only ${formats.label} files are supported for ${formats.bankName || 'this account'}.`, isError: true });
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -96,8 +102,8 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
     e.preventDefault();
     setMessage(null);
 
-    if (!selectedAccount) { setMessage("Please select an account."); return; }
-    if (!file)            { setMessage("Please select a statement file to upload."); return; }
+    if (!selectedAccount) { setMessage({ text: "Please select an account.", isError: true }); return; }
+    if (!file)            { setMessage({ text: "Please select a statement file to upload.", isError: true }); return; }
 
     setLoading(true);
     setProgress(0);
@@ -107,12 +113,13 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
         if (!evt) return;
         const percent = evt.total ? Math.round((evt.loaded * 100) / evt.total) : null;
         setProgress(percent);
-      });
+      }, isPdf ? password : undefined);
 
       const total = res?.data?.totalCount ?? res?.data?.transactionCount ?? 0;
       const added = res?.data?.newCount ?? total;
-      setMessage(`Upload successful — ${added} new of ${total} transactions imported.`);
+      setMessage({ text: `Upload successful — ${added} new of ${total} transactions imported.`, isError: false });
       setFile(null);
+      setPassword("");
       setProgress(100);
       if (fileInputRef.current) fileInputRef.current.value = "";
 
@@ -131,9 +138,12 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
       onUploaded?.();
     } catch (err) {
       console.error(err);
-      // Show the server's message (e.g. duplicate-file 409) when present.
+      // Show the server's message (e.g. duplicate-file 409, PDF password errors) when present.
       const serverMsg = err.response?.data;
-      setMessage(typeof serverMsg === "string" && serverMsg ? serverMsg : "Upload failed. Please try again.");
+      setMessage({
+        text: typeof serverMsg === "string" && serverMsg ? serverMsg : "Upload failed. Please try again.",
+        isError: true,
+      });
       setProgress(null);
     } finally {
       setLoading(false);
@@ -142,14 +152,14 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
 
   const handleRevert = async (item) => {
     setMessage(null);
-    if (!item?.id) { setMessage("Cannot revert: no server id for this upload."); return; }
+    if (!item?.id) { setMessage({ text: "Cannot revert: no server id for this upload.", isError: true }); return; }
     try {
       await revertStatement(item.id);
       setUploads((prev) => prev.filter((u) => u.id !== item.id));
-      setMessage("Reverted upload.");
+      setMessage({ text: "Reverted upload.", isError: false });
     } catch (err) {
       console.error(err);
-      setMessage("Revert failed. Please try again.");
+      setMessage({ text: "Revert failed. Please try again.", isError: true });
     }
   };
 
@@ -229,7 +239,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                   </div>
                   <button
                     type="button"
-                    onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; setProgress(null); setMessage(null); }}
+                    onClick={() => { setFile(null); setPassword(""); if (fileInputRef.current) fileInputRef.current.value = ""; setProgress(null); setMessage(null); }}
                     style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 'var(--space-2)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--danger-light)'}
                     onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -261,6 +271,26 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
               )}
             </div>
 
+            {/* PDF password (only for protected e-statement PDFs) */}
+            {isPdf && (
+              <div style={{ marginBottom: 'var(--space-6)' }}>
+                <label style={{ display: 'block', fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--gray-700)', marginBottom: 'var(--space-2)' }}>
+                  PDF Password
+                </label>
+                <input
+                  type="password"
+                  className="field-input"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Leave blank if the PDF isn't protected"
+                  autoComplete="off"
+                />
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>
+                  Emailed e-statements are usually protected — the password format is described in the bank's email.
+                </div>
+              </div>
+            )}
+
             {/* Progress bar */}
             {progress !== null && (
               <div style={{ marginBottom: 'var(--space-6)' }}>
@@ -277,18 +307,15 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
             )}
 
             {/* Message */}
-            {message && (() => {
-              const isError = ['failed', 'Only', 'Please', 'already'].some(k => message.includes(k));
-              return (
-                <div style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', backgroundColor: isError ? 'var(--danger-light)' : 'var(--success-light)', color: isError ? 'var(--danger)' : 'var(--success)', border: `1px solid ${isError ? 'var(--danger-border)' : 'var(--success)'}` }}>
-                  {isError
-                    ? <FiAlertCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
-                    : <FiCheckCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
-                  }
-                  <span style={{ fontSize: 'var(--text-base)', fontWeight: 500 }}>{message}</span>
-                </div>
-              );
-            })()}
+            {message && (
+              <div style={{ marginBottom: 'var(--space-6)', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', backgroundColor: message.isError ? 'var(--danger-light)' : 'var(--success-light)', color: message.isError ? 'var(--danger)' : 'var(--success)', border: `1px solid ${message.isError ? 'var(--danger-border)' : 'var(--success)'}` }}>
+                {message.isError
+                  ? <FiAlertCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
+                  : <FiCheckCircle size={18} style={{ marginRight: 'var(--space-2)' }} />
+                }
+                <span style={{ fontSize: 'var(--text-base)', fontWeight: 500 }}>{message.text}</span>
+              </div>
+            )}
 
             {/* Submit */}
             <div style={{ display: 'flex', gap: '12px' }}>
@@ -324,7 +351,10 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                   {filteredUploads.map((u) => (
                     <tr key={`${u.id || u.time}-${u.fileName}`}>
                       <td>
-                        <div style={{ fontWeight: 500, color: 'var(--gray-700)' }}>{u.fileName}</div>
+                        <div style={{ fontWeight: 500, color: 'var(--gray-700)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {u.fileName}
+                          {u.autoImported && <Badge variant="green">Auto</Badge>}
+                        </div>
                         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>
                           {accounts.find(a => String(a.id) === String(u.accountId))?.bankName || u.accountId}
                         </div>

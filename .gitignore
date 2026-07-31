@@ -1,6 +1,8 @@
 ﻿﻿# Ignore React build output and dependencies
 BankStatementAnalytics/wwwroot/
 Client/node_modules/
+# Local env overrides - never commit; ship Client/.env.example as the template instead
+/Client/.env
 /.vs/BankStatementAnalytics
 /BankStatementAnalytics/bin/Debug/net10.0
 /BankStatementAnalytics/obj
@@ -13,3 +15,13 @@ Client/node_modules/
 /BankStatementAnalytics/bin
 /server.log
 /server.err.log
+# Real bank statements used for tuning PDF extraction - never commit (contain account numbers)
+/samples/
+# Private shared library - kept locally to rebuild the vendored lib/Common.Framework.dll,
+# but never published (referenced as a prebuilt DLL instead of source). See README.
+/Common.Framework/
+# Local verification tooling only (playwright, used to drive the UI while testing).
+# The app's own Node project lives in Client/ - nothing here belongs to the build.
+/node_modules/
+/package.json
+/package-lock.json

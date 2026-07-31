@@ -11,6 +11,10 @@ namespace BankStatementAnalytics.Mapping
         {
             Table("Merchant");
 
+            // Batches the initialization of pending Merchant proxies into one
+            // `where Id in (…)` instead of a SELECT each.
+            BatchSize(64);
+
             Id(x => x.Id, m => m.Generator(Generators.Identity));
 
             Property(x => x.OwnerUserId, m => m.Index("IX_Merchant_OwnerUserId"));
@@ -35,12 +39,17 @@ namespace BankStatementAnalytics.Mapping
             },
             r => r.OneToMany());
 
-            // Aliases collection to track merged names
+            // Aliases collection to track merged names.
+            // BatchSize: the merchants list reads Aliases for every row, which as a plain
+            // lazy bag is one SELECT per merchant (an N+1 that grows with the merchant
+            // count). Batching collects the pending keys into `where CounterPartyId in (…)`,
+            // so a few hundred merchants cost a handful of round trips instead of hundreds.
             Bag(x => x.Aliases, m =>
             {
                 m.Table("CounterPartyAliases");
                 m.Key(k => k.Column("CounterPartyId"));
                 m.Lazy(CollectionLazy.Lazy);
+                m.BatchSize(64);
             }, r => r.Element(e => e.Column(c =>
             {
                 c.Name("AliasName");
@@ -53,6 +62,7 @@ namespace BankStatementAnalytics.Mapping
                 m.Table("MerchantAccounts");
                 m.Key(k => k.Column("CounterPartyId"));
                 m.Lazy(CollectionLazy.Lazy);
+                m.BatchSize(64);
             }, r => r.Element(e => e.Column(c =>
             {
                 c.Name("AccountId");

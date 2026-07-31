@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 export function AuthShell({ title, subtitle, onSubmit, children }) {
   return (
-    <div className="auth-page">
+    <div className="auth-page app-fade">
       <form onSubmit={onSubmit} className="auth-card">
         <div className="auth-logo">
           <img src="/icon-192.png" alt="Bank Analytics" />

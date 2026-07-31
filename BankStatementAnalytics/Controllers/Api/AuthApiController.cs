@@ -26,5 +26,11 @@ namespace BankStatementAnalytics.Controllers.Api
             UserProvisioningService.SeedDefaultsForUser(user.Id);
             return Task.CompletedTask;
         }
+
+        protected override Task OnUserDeletingAsync(AppUser user)
+        {
+            UserProvisioningService.PurgeUserData(user.Id);
+            return Task.CompletedTask;
+        }
     }
 }

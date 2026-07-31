@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import './ui.css';
 
 /**
@@ -26,7 +27,10 @@ export default function Modal({ open, onClose, title, subtitle, width = 420, foo
 
   if (!open) return null;
 
-  return (
+  // Portal to <body>: callers mount modals inside .app / .route-fade, whose
+  // fill-mode:both opacity animations keep a stacking context alive that would
+  // trap the backdrop's z-index below body-portaled drawers.
+  return createPortal(
     <div className="ui-modal-backdrop" style={zIndex ? { zIndex } : undefined} onClick={onClose}>
       <div
         className="ui-modal"
@@ -51,6 +55,7 @@ export default function Modal({ open, onClose, title, subtitle, width = 420, foo
         <div className="ui-modal-body">{children}</div>
         {footer && <div className="ui-modal-footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

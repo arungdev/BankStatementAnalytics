@@ -1,12 +1,16 @@
 // Services/CounterPartyService.cs
+using System.Text.RegularExpressions;
 using Common.Framework.Data;
 using BankStatementAnalytics.Models;
 using ISession = NHibernate.ISession;
 
 namespace BankStatementAnalytics.Services
 {
-    public class CounterPartyService
+    public partial class CounterPartyService
     {
+        [GeneratedRegex(@"\s+")]
+        private static partial Regex WhitespaceRegex();
+
         /// <summary>
         /// Resolves (or creates) the merchant for a single counterparty in its own transaction.
         /// Kept for one-off callers; the import path uses <see cref="ResolveOrCreateBatch"/>.
@@ -21,7 +25,7 @@ namespace BankStatementAnalytics.Services
             using var tx = session.BeginTransaction();
 
             var ownerUserId = session.Get<Account>(accountId)?.OwnerUserId;
-            var merchant = ResolveOrCreateCore(session, ownerUserId, name, bankCode, accountId, upiId);
+            var merchant = ResolveOrCreateCore(session, ownerUserId, name, bankCode, accountId, NormalizeUpi(upiId));
 
             tx.Commit();
             return merchant;
@@ -51,9 +55,12 @@ namespace BankStatementAnalytics.Services
 
             foreach (var t in pending)
             {
-                var name = t.PendingCounterPartyName!;
-                var upiId = t.UpiVpa;
-                var bankCode = t.BankCode;
+                // Clamp to the mapped column sizes (Merchant.Name 250, BankCode 20,
+                // MerchantUpi.UpiId 100): a misparsed statement row can produce a
+                // monster name, and one oversized insert must not fail the import.
+                var name = Truncate(t.PendingCounterPartyName, 250)!;
+                var upiId = NormalizeUpi(Truncate(t.UpiVpa, 100));
+                var bankCode = Truncate(t.BankCode, 20);
 
                 var cacheKey = !string.IsNullOrWhiteSpace(upiId) ? "U:" + upiId : $"N:{name}|{bankCode}";
 
@@ -114,6 +121,15 @@ namespace BankStatementAnalytics.Services
             TrackAccountAndUpi(session, found, accountId, upiId);
             return found;
         }
+
+        private static string? Truncate(string? value, int max) =>
+            value != null && value.Length > max ? value[..max] : value;
+
+        // A VPA never contains internal whitespace; PDF cell extraction can split a digit
+        // run with a stray space (e.g. "MSWIPE.1400010824 000232@KOTAK"), which would
+        // otherwise register the same payee as a second, distinct identifier. Collapse it.
+        private static string? NormalizeUpi(string? upiId) =>
+            string.IsNullOrWhiteSpace(upiId) ? upiId : WhitespaceRegex().Replace(upiId, "");
 
         // Track which account this merchant was funded from, and register a new UPI id.
         private static void TrackAccountAndUpi(ISession session, Merchant merchant, long accountId, string? upiId)

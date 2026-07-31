@@ -3,6 +3,7 @@
     public enum StatementFileFormat
     {
         Txt,
-        Csv
+        Csv,
+        Pdf
     }
 }

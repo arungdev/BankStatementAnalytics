@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiBell, FiCalendar, FiCheck, FiRotateCcw } from "react-icons/fi";
+import { FiBell, FiCalendar, FiCheck, FiRotateCcw, FiAlertCircle } from "react-icons/fi";
 import api from "../api/client";
-import { currencyFormatter } from "../utils/format";
+import { getAutoImports } from "../api/statements";
+import { useAccount } from "../context/useAccount";
+import { currencyFormatter, maskName } from "../utils/format";
 import Drawer from "./ui/Drawer";
 import EmptyState from "./ui/EmptyState";
 
@@ -11,8 +13,13 @@ const READ_KEY = "bills.readReminders";
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
+const fmtDateTime = (d) =>
+  new Date(d).toLocaleString("en-IN",
+    { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
 const dueLabel = (days) => {
-  if (days <= 0) return "Due today";
+  if (days < 0) return `Overdue by ${-days} day${days === -1 ? "" : "s"}`;
+  if (days === 0) return "Due today";
   if (days === 1) return "Due tomorrow";
   return `Due in ${days} days`;
 };
@@ -22,6 +29,11 @@ const reminderKey = (b) => {
   const c = new Date(b.nextDueDate);
   return `${b.id}.${c.getFullYear()}-${c.getMonth() + 1}`;
 };
+
+// Failed imports use their attempt timestamp, which the retry endpoint refreshes,
+// so a retry that fails again surfaces as unread rather than staying dismissed.
+const notificationKey = (n) =>
+  n.kind === "import" ? `import.${n.id}.${n.createdAt}` : reminderKey(n);
 
 const loadReadSet = () => {
   try {
@@ -36,26 +48,43 @@ const saveReadSet = (set) => {
 };
 
 /**
- * Header bell: opens a right-hand-side panel listing bills due soon. Each reminder can be
- * marked read/unread (persisted in localStorage); the badge counts only unread reminders.
- * The panel is docked (non-modal) like the other RHS drawers — onDockChange reports the
- * occupied width so the layout can shift the page content beside it.
+ * Header bell: opens a right-hand-side panel listing bills due soon and statement
+ * imports that failed. Each notification can be marked read/unread (persisted in
+ * localStorage); the badge counts only unread ones. The panel is docked (non-modal)
+ * like the other RHS drawers — onDockChange reports the occupied width so the layout
+ * can shift the page content beside it.
  */
-export default function NotificationBell({ onDockChange }) {
+export default function NotificationBell({ onDockChange, accounts = [] }) {
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   const [width, setWidth] = useState(420);
   const [readSet, setReadSet] = useState(loadReadSet);
   const navigate = useNavigate();
+  const { setSelectedAccountId } = useAccount();
 
   useEffect(() => {
     onDockChange?.(open ? width : 0);
   }, [open, width, onDockChange]);
 
+  // Two kinds of notification, tagged by `kind`: due-date reminders (recurring
+  // bills plus unpaid credit-card statements, ids prefixed "cc-") and statement
+  // imports that failed. Failed imports need the user to act, so they lead.
   const load = () =>
-    api.get("/bills/upcoming")
-      .then((res) => setItems(res.data || []))
-      .catch(() => setItems([]));
+    Promise.all([
+      api.get("/bills/upcoming").then((res) => res.data || []).catch(() => []),
+      api.get("/cards/upcoming").then((res) => res.data || []).catch(() => []),
+      getAutoImports()
+        .then((res) => (res.data || []).filter((h) => h.status === "Failed"))
+        .catch(() => []),
+    ]).then(([bills, cards, fails]) => {
+      const due = [...bills, ...cards]
+        .map((b) => ({ ...b, kind: "bill" }))
+        .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
+      const failed = fails
+        .map((f) => ({ ...f, kind: "import" }))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setItems([...failed, ...due]);
+    });
 
   useEffect(() => {
     load();
@@ -71,13 +100,33 @@ export default function NotificationBell({ onDockChange }) {
     navigate("/bills");
   };
 
-  const isRead = (b) => readSet.has(reminderKey(b));
+  // Failed imports open the Transactions upload history (where "Try again" lives)
+  // on their own account; card-bill reminders live on the Overview page's credit
+  // card panel, not in Bills.
+  const goToItem = (n) => {
+    setOpen(false);
+    if (n.kind === "import") {
+      // Transactions shows one account at a time — switch to the failed file's
+      // account first, or its history drawer would open on a different one.
+      if (n.accountId != null) setSelectedAccountId(n.accountId);
+      navigate("/transactions?uploads=1");
+      return;
+    }
+    navigate(String(n.id).startsWith("cc-") ? "/" : "/bills");
+  };
 
-  const setRead = (b, read) => {
+  const accountLabel = (accountId) => {
+    const acc = accounts.find((a) => a.id === accountId);
+    return acc ? (acc.accountHolderName || acc.bankName) : null;
+  };
+
+  const isRead = (n) => readSet.has(notificationKey(n));
+
+  const setRead = (n, read) => {
     setReadSet((prev) => {
       const next = new Set(prev);
-      if (read) next.add(reminderKey(b));
-      else next.delete(reminderKey(b));
+      if (read) next.add(notificationKey(n));
+      else next.delete(notificationKey(n));
       saveReadSet(next);
       return next;
     });
@@ -86,13 +135,13 @@ export default function NotificationBell({ onDockChange }) {
   const markAllRead = () => {
     setReadSet((prev) => {
       const next = new Set(prev);
-      items.forEach((b) => next.add(reminderKey(b)));
+      items.forEach((n) => next.add(notificationKey(n)));
       saveReadSet(next);
       return next;
     });
   };
 
-  const unreadCount = items.filter((b) => !isRead(b)).length;
+  const unreadCount = items.filter((n) => !isRead(n)).length;
 
   return (
     <>
@@ -144,7 +193,7 @@ export default function NotificationBell({ onDockChange }) {
         modal={false}
       >
         {items.length === 0 ? (
-          <EmptyState message="No bills due soon." />
+          <EmptyState message="You're all caught up — no bills due soon and no import problems." />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
@@ -161,18 +210,22 @@ export default function NotificationBell({ onDockChange }) {
               )}
             </div>
 
-            {items.map((b) => {
-              const read = isRead(b);
+            {items.map((n) => {
+              const read = isRead(n);
+              const isImport = n.kind === "import";
+              const accent = read
+                ? "var(--border-color)"
+                : isImport || n.daysUntilDue <= 2 ? "var(--danger)" : "var(--warning)";
               return (
                 <div
-                  key={b.id}
+                  key={notificationKey(n)}
                   style={{
                     display: "flex",
                     gap: "12px",
                     padding: "14px",
                     borderRadius: "10px",
                     border: "1px solid var(--border-color)",
-                    borderLeft: `4px solid ${read ? "var(--border-color)" : b.daysUntilDue <= 2 ? "var(--danger)" : "var(--warning)"}`,
+                    borderLeft: `4px solid ${accent}`,
                     background: read ? "var(--surface-2)" : "var(--surface)",
                     opacity: read ? 0.7 : 1,
                   }}
@@ -189,26 +242,51 @@ export default function NotificationBell({ onDockChange }) {
                     }}
                   />
 
-                  {/* Clickable body → bills page */}
+                  {/* Clickable body → upload history for imports, bills page
+                      (or Overview for card bills) for due-date reminders */}
                   <button
-                    onClick={goToBills}
-                    title="View bill"
+                    onClick={() => goToItem(n)}
+                    title={isImport ? "Open upload history to retry" : "View bill"}
                     style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
                   >
-                    <div style={{ fontWeight: read ? 500 : 700, fontSize: "14px", color: "var(--text-main)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {b.name}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", marginTop: "4px", color: b.daysUntilDue <= 2 && !read ? "var(--danger)" : "var(--warning)", fontWeight: 600 }}>
-                      <FiCalendar size={12} /> {dueLabel(b.daysUntilDue)} · {fmtDate(b.nextDueDate)}
-                    </div>
+                    {isImport ? (
+                      <>
+                        <div style={{ fontWeight: read ? 500 : 700, fontSize: "14px", color: "var(--text-main)", wordBreak: "break-all" }}>
+                          {n.fileName}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", marginTop: "4px", color: read ? "var(--text-muted)" : "var(--danger)", fontWeight: 600 }}>
+                          <FiAlertCircle size={12} /> Import failed
+                          {accountLabel(n.accountId) && <> · {maskName(accountLabel(n.accountId))}</>}
+                        </div>
+                        {n.error && (
+                          <div style={{ fontSize: "12px", marginTop: "6px", color: "var(--text-muted)" }}>
+                            {n.error}
+                          </div>
+                        )}
+                        <div style={{ fontSize: "11px", marginTop: "6px", color: "var(--text-faint)" }}>
+                          {fmtDateTime(n.createdAt)}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: read ? 500 : 700, fontSize: "14px", color: "var(--text-main)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {maskName(n.name)}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", marginTop: "4px", color: n.daysUntilDue <= 2 && !read ? "var(--danger)" : "var(--warning)", fontWeight: 600 }}>
+                          <FiCalendar size={12} /> {dueLabel(n.daysUntilDue)} · {fmtDate(n.nextDueDate)}
+                        </div>
+                      </>
+                    )}
                   </button>
 
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
-                    <div style={{ fontWeight: 800, fontSize: "15px", color: "var(--text-main)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                      {currencyFormatter.format(b.expectedAmount)}
-                    </div>
+                    {!isImport && (
+                      <div style={{ fontWeight: 800, fontSize: "15px", color: "var(--text-main)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                        {currencyFormatter.format(n.expectedAmount)}
+                      </div>
+                    )}
                     <button
-                      onClick={() => setRead(b, !read)}
+                      onClick={() => setRead(n, !read)}
                       title={read ? "Mark as unread" : "Mark as read"}
                       style={{
                         display: "inline-flex",
@@ -232,6 +310,7 @@ export default function NotificationBell({ onDockChange }) {
               );
             })}
 
+            {items.some((n) => n.kind === "bill") && (
             <button
               onClick={goToBills}
               style={{
@@ -248,6 +327,7 @@ export default function NotificationBell({ onDockChange }) {
             >
               View all bills
             </button>
+            )}
           </div>
         )}
       </Drawer>

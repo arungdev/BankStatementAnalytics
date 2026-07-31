@@ -38,6 +38,12 @@ namespace BankStatementAnalytics.Services.Parser
             new(@"^IB BILLPAY (DR|CR)-(.+?)-(.+)$",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        // Masked card number as the BillPay payee ("653029XXXXXX5216") — the
+        // payment is a credit card bill; capture the last 4 for the label.
+        private static readonly Regex MaskedCardRegex =
+            new(@"^\d{4,6}X{4,}(\d{4})$",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         private static readonly Regex FdRegex =
             new(@"^IB FD (.+?)-(\d+)$",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -289,8 +295,9 @@ namespace BankStatementAnalytics.Services.Parser
         }
 
         // ── Shared transaction builder ────────────────────────────────
+        // internal static: also reused by HdfcPdfParser (same 7-column layout).
 
-        private BankTransaction? BuildTransaction(string[] cols, int accountId)
+        internal static BankTransaction? BuildTransaction(string[] cols, int accountId)
         {
             string dateRaw = cols[0].Trim();
             string narration = cols[1].Trim();
@@ -306,7 +313,7 @@ namespace BankStatementAnalytics.Services.Parser
                 Description = narration,
                 Narration = narration,
                 AccountId = accountId,
-                BankType = Bank.HDFC.ToString(),
+                BankType = BankTypeCode.For(Bank.HDFC),
                 BankReference = refNo.TrimStart('0'),
             };
 
@@ -406,9 +413,10 @@ namespace BankStatementAnalytics.Services.Parser
                     string direction = m.Groups[1].Value.ToUpper();
                     tx.BankCode = m.Groups[2].Value;
                     tx.UpiReference = m.Groups[5].Value.Trim();
-                    counterPartyName = direction == "CR"
-                        ? m.Groups[3].Value.Trim()
-                        : m.Groups[4].Value.Trim();
+                    // Group 3 is the OTHER party in both directions:
+                    // CR: NEFT CR-<their ifsc>-<sender name>-<remark>-<ref>
+                    // DR: NEFT DR-<their ifsc>-<beneficiary name>-<remark>-<ref>
+                    counterPartyName = m.Groups[3].Value.Trim();
                     if (tx.TransactionType == null) tx.TransactionType = direction;
                 }
                 else counterPartyName = "NEFT";
@@ -459,7 +467,22 @@ namespace BankStatementAnalytics.Services.Parser
                 if (m.Success)
                 {
                     if (tx.TransactionType == null) tx.TransactionType = m.Groups[1].Value.ToUpper();
-                    counterPartyName = m.Groups[2].Value.Trim();
+
+                    // "IB BILLPAY DR-<biller code>-<payee>": a masked-card payee
+                    // means a credit card bill — label it so, instead of showing
+                    // the opaque biller code (HDFC5X etc.) as the merchant. It's
+                    // money moving to the user's own card, so mark it TRANSFER;
+                    // analytics exclude TRANSFER rows from income/spend.
+                    var card = MaskedCardRegex.Match(m.Groups[3].Value.Trim());
+                    if (card.Success)
+                    {
+                        tx.Mode = "TRANSFER";
+                        counterPartyName = $"CREDIT CARD BILL {card.Groups[1].Value}";
+                    }
+                    else
+                    {
+                        counterPartyName = m.Groups[2].Value.Trim();
+                    }
                 }
                 else counterPartyName = "BILL PAYMENT";
                 return;

@@ -5,6 +5,7 @@ using BankStatementAnalytics;
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.Services;
 using BankStatementAnalytics.Services.Parser;
+using BankStatementAnalytics.Services.Pdf;
 using System.Text.Json.Serialization;
 using Common.Framework.Auth;
 using Common.Framework.Logging;
@@ -19,6 +20,16 @@ using System.Threading;
 // appsettings.json / wwwroot that sit next to the actual exe (it would ignore "Urls" and 404 the
 // SPA). ResolveAppDirectory uses the process MainModule path, which survives self-extraction - the
 // same trick NHibernateHelper uses for the DB path.
+// ── Dev harness for tuning PDF extraction against sample statements ──────
+// Usage: dotnet run -- extract-pdf <pdf-path> <HDFC|IOB|HDFCCreditCard> [password]
+// Prints the normalized table (cells separated by '|') plus a parse summary,
+// so PdfTableProfiles can be tuned without launching the web host.
+if (args.Length >= 3 && args[0] == "extract-pdf")
+{
+    RunPdfExtractHarness(args);
+    return;
+}
+
 var exeDir = Common.Framework.AppPaths.ResolveAppDirectory();
 var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
 var exeConfig = new ConfigurationBuilder()
@@ -75,12 +86,20 @@ catch (UnauthorizedAccessException ex)
 builder.Services.AddControllersWithViews();
 
 // Services
+builder.Services.AddSingleton<PdfStatementReader>(); // stateless
 builder.Services.AddScoped<TextService>();
+builder.Services.AddScoped<StatementImportService>();
+// Watch-folder auto-import sweeps. Registered as a singleton first so controllers
+// can resolve the same instance and call TriggerSweep ("Import now").
+builder.Services.AddSingleton<WatchFolderImportService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WatchFolderImportService>());
 builder.Services.AddScoped<TransactionRepositoryFactory>();
 builder.Services.AddScoped<CounterPartyService>();
 builder.Services.AddScoped<RecurringBillService>();
+builder.Services.AddScoped<TransferDetectionService>();
 builder.Services.AddScoped<DepositService>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<ReportPdfService>();
 // ── Auto-register all parsers from registry ──────────────────────────────
 foreach (var config in BankParserRegistry.Parsers)
 {
@@ -160,7 +179,7 @@ app.UseAuthentication();
 
 app.UseRoleGate(options =>
 {
-    options.FullAccessRole = nameof(AppRole.Admin);
+    options.FullAccessRoles = new[] { nameof(AppRole.Admin), nameof(AppRole.User) };
     options.AllowedOrigins = allowedOrigins;
     // In dev the SPA runs on a localhost port that varies (Vite); accept any loopback
     // origin so uploads/mutations aren't blocked. Production stays strict.
@@ -182,6 +201,93 @@ else
     app.MapFallbackToFile("index.html").AllowAnonymous();
 
 app.Run();
+
+static void RunPdfExtractHarness(string[] args)
+{
+    try { Log.Initialize("log4net.config"); } catch { /* console-only run */ }
+
+    var pdfPath = args[1];
+    if (!File.Exists(pdfPath))
+    {
+        // dotnet run executes with the project directory as cwd - prefer absolute paths.
+        Console.WriteLine($"File not found: {Path.GetFullPath(pdfPath)}");
+        Environment.ExitCode = 1;
+        return;
+    }
+    // Bank "RAW" dumps every visual row as plain text instead of running a profile.
+    var rawDump = string.Equals(args[2], "RAW", StringComparison.OrdinalIgnoreCase);
+    var bank = rawDump
+        ? default(BankStatementAnalytics.EnumClass.Bank)
+        : Enum.Parse<BankStatementAnalytics.EnumClass.Bank>(args[2], ignoreCase: true);
+    var password = args.Length > 3 && args[3] != "--cells" ? args[3] : null;
+
+    try
+    {
+        var reader = new PdfStatementReader();
+
+        if (rawDump)
+        {
+            foreach (var row in reader.DumpVisualRows(File.ReadAllBytes(pdfPath), password))
+                Console.WriteLine(row);
+            return;
+        }
+
+        if (args.Contains("--cells"))
+        {
+            foreach (var row in reader.DumpAssignedCells(File.ReadAllBytes(pdfPath), bank, password))
+                Console.WriteLine(row);
+            return;
+        }
+
+        var normalized = reader.ExtractNormalizedText(File.ReadAllBytes(pdfPath), bank, password);
+
+        Console.WriteLine("── Normalized table ────────────────────────────────────────");
+        Console.WriteLine(normalized.Replace(PdfStatementReader.CellSeparator, '|'));
+
+        IBankParser parser = bank switch
+        {
+            BankStatementAnalytics.EnumClass.Bank.HDFC => new HdfcPdfParser(),
+            BankStatementAnalytics.EnumClass.Bank.IOB => new IobPdfParser(),
+            _ => new HdfcCreditCardPdfParser(),
+        };
+        // accountId 0: harness only inspects parse output, nothing is persisted.
+        var transactions = parser.Parse(normalized, 0).ToList();
+
+        Console.WriteLine($"── Parsed {transactions.Count} transaction(s) ──────────────");
+        foreach (var t in transactions.Take(3).Concat(transactions.TakeLast(Math.Min(3, Math.Max(0, transactions.Count - 3)))))
+            Console.WriteLine($"{t.TransactionDate:dd/MM/yyyy}  {t.TransactionType}  {t.Amount,12:0.00}  bal {t.Balance,12:0.00}  {t.Description}");
+        Console.WriteLine($"Totals: debit {transactions.Sum(t => t.Debit):0.00}, credit {transactions.Sum(t => t.Credit):0.00}");
+
+        // Rows without a merchant won't resolve in the app — the usual sign of a
+        // remark format the parser doesn't know yet.
+        var unresolved = transactions
+            .Where(t => string.IsNullOrWhiteSpace(t.PendingCounterPartyName))
+            .ToList();
+        Console.WriteLine($"Unresolved merchant: {unresolved.Count} row(s)");
+        foreach (var t in unresolved.Take(10))
+            Console.WriteLine($"  {t.TransactionDate:dd/MM/yyyy}  {t.TransactionType}  {t.Amount,10:0.00}  {t.Description}");
+
+        // Credit card statements also carry a summary block — show what the
+        // extractor found so its regexes can be tuned alongside the table profile.
+        if (bank == BankStatementAnalytics.EnumClass.Bank.HDFCCreditCard)
+        {
+            var s = HdfcCcSummaryExtractor.Extract(reader, File.ReadAllBytes(pdfPath), password);
+            Console.WriteLine("── Statement summary ───────────────────────────────────────");
+            Console.WriteLine($"Statement date : {s.StatementDate:dd/MM/yyyy}");
+            Console.WriteLine($"Billing period : {s.PeriodStart:dd/MM/yyyy} - {s.PeriodEnd:dd/MM/yyyy}");
+            Console.WriteLine($"Total due      : {s.TotalDue:0.00}");
+            Console.WriteLine($"Minimum due    : {s.MinimumDue:0.00}");
+            Console.WriteLine($"Due date       : {s.PaymentDueDate:dd/MM/yyyy}");
+            Console.WriteLine($"Credit limit   : {s.CreditLimit:0.00} (available {s.AvailableCreditLimit:0.00})");
+            Console.WriteLine($"Reward points  : {s.RewardPointsBalance}");
+        }
+    }
+    catch (PdfExtractionException pex)
+    {
+        Console.WriteLine($"EXTRACTION FAILED ({pex.GetType().Name}): {pex.Message}");
+        Environment.ExitCode = 1;
+    }
+}
 
 internal static class AppMutexHolder
 {

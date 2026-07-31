@@ -23,5 +23,8 @@ namespace BankStatementAnalytics.Models
         // Transactions parsed from the file vs. those that were actually new (not already imported).
         public virtual int TotalCount { get; set; }
         public virtual int NewCount { get; set; }
+
+        // Nullable so SchemaUpdate can add the column to existing rows; null == false (manual upload).
+        public virtual bool? AutoImported { get; set; }
     }
 }

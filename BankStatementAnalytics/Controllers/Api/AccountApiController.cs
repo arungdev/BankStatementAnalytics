@@ -1,6 +1,7 @@
 using BankStatementAnalytics.Data;
 using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using Microsoft.AspNetCore.Mvc;
@@ -23,19 +24,20 @@ namespace BankStatementAnalytics.Controllers.Api
             var account = DbHelper.GetById<Account>((long)id);
             if (!Owns(account)) return NotFound();
 
-            var formats = account.BankName switch
+            // Registry-driven so new parser registrations (e.g. PDF) flow to the
+            // client's file-picker accept attribute automatically.
+            var (formats, label) = TextService.GetSupportedFormats(account.BankName);
+            if (formats.Length == 0)
             {
-                Bank.HDFC => new[] { ".txt" },
-                Bank.HDFCCreditCard => new[] { ".csv" },
-                Bank.IOB => new[] { ".txt" },
-                _ => new[] { ".txt" }
-            };
+                formats = new[] { ".txt" };
+                label = "TXT";
+            }
 
             return Ok(new
             {
                 bankName = account.BankName.ToString(),
                 formats,
-                label = string.Join(", ", formats.Select(f => f.TrimStart('.').ToUpper())),
+                label,
                 downloadGuide = DownloadGuide(account.BankName)
             });
         }
@@ -45,35 +47,38 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             Bank.HDFC => new
             {
-                label = "HDFC Bank (.txt)",
+                label = "HDFC Bank (.txt / .pdf)",
                 steps = new[]
                 {
                     "Log in to HDFC NetBanking.",
                     "Go to Accounts → Enquire → Statement of Account (or \"Download Historical Transactions\").",
                     "Pick the account and the date range you want.",
-                    "Choose the \"Delimited (.txt)\" file type and download."
+                    "Choose the \"Delimited (.txt)\" file type and download.",
+                    "Or upload the monthly e-statement PDF emailed by the bank — enter its PDF password if it's protected."
                 }
             },
             Bank.HDFCCreditCard => new
             {
-                label = "HDFC Credit Card (.csv)",
+                label = "HDFC Credit Card (.csv / .pdf)",
                 steps = new[]
                 {
                     "Log in to HDFC NetBanking.",
                     "Go to Cards → Credit Cards → View / Download Statement.",
                     "Select the card and billing period.",
-                    "Download the statement in CSV format."
+                    "Download the statement in CSV format.",
+                    "Or upload the monthly e-statement PDF emailed by the bank — enter its PDF password if it's protected."
                 }
             },
             Bank.IOB => new
             {
-                label = "Indian Overseas Bank (.txt)",
+                label = "Indian Overseas Bank (.txt / .pdf)",
                 steps = new[]
                 {
                     "Log in to IOB NetBanking.",
                     "Go to Account Statement / Statement of Account.",
                     "Select the account and the period you want.",
-                    "Download / export the statement as a text (.txt) file."
+                    "Download / export the statement as a text (.txt) file.",
+                    "Or upload the e-statement PDF — enter its PDF password if it's protected."
                 }
             },
             _ => null
@@ -147,10 +152,148 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest(new { message = "Account name is required." });
 
             account.AccountHolderName = name;
-            await DbHelper.SaveAsync(account);
+            await DbHelper.UpdateAsync(account);
 
             var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
             return Ok(dto);
+        }
+
+        // GET: api/accounts/browse-folders  — server-side folder browser backing the
+        // auto-import folder picker (a browser cannot read real filesystem paths).
+        // No path → list drives; otherwise list that folder's subfolders.
+        [HttpGet("browse-folders")]
+        public IActionResult BrowseFolders([FromQuery] string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                // Quick access first: the native Explorer dialog can't hand a web page
+                // a real path, so surface the folders people actually keep statements in.
+                var roots = new List<(string Name, string Path)>();
+                try
+                {
+                    foreach (var profile in Directory.EnumerateDirectories(@"C:\Users"))
+                    {
+                        var user = Path.GetFileName(profile);
+                        if (user is "Public" or "Default" or "Default User" or "All Users")
+                            continue;
+                        foreach (var sub in new[] { "Downloads", "Documents", "Desktop" })
+                        {
+                            var candidate = Path.Combine(profile, sub);
+                            if (Directory.Exists(candidate))
+                                roots.Add(($"{sub} ({user})", candidate));
+                        }
+                    }
+                }
+                catch { /* profile listing is best-effort */ }
+
+                roots.AddRange(DriveInfo.GetDrives()
+                    .Where(d => d.IsReady)
+                    .Select(d => (d.Name, d.Name)));
+
+                return Ok(new
+                {
+                    path = (string?)null,
+                    parent = (string?)null,
+                    folders = roots.Select(r => new { name = r.Name, path = r.Path })
+                });
+            }
+
+            string full;
+            try { full = Path.GetFullPath(path.Trim().Trim('"').Trim()); }
+            catch { return BadRequest(new { message = "Invalid path." }); }
+
+            if (!Directory.Exists(full))
+                return BadRequest(new { message = "Folder not found or not accessible." });
+
+            var folders = new List<(string Name, string Path)>();
+            try
+            {
+                foreach (var dir in Directory.EnumerateDirectories(full))
+                {
+                    try
+                    {
+                        var info = new DirectoryInfo(dir);
+                        if ((info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0)
+                            continue;
+                        folders.Add((info.Name, info.FullName));
+                    }
+                    catch { /* skip unreadable entries */ }
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return BadRequest(new { message = "Folder not found or not accessible." });
+            }
+
+            return Ok(new
+            {
+                path = full,
+                parent = Directory.GetParent(full)?.FullName,
+                folders = folders
+                    .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(f => new { name = f.Name, path = f.Path })
+            });
+        }
+
+        // PUT: api/accounts/{id}/auto-import  — configure the watch folder the
+        // background importer sweeps for this account, plus the optional PDF password.
+        [HttpPut("{id}/auto-import")]
+        public async Task<IActionResult> UpdateAutoImport(int id, [FromBody] UpdateAutoImportRequest request,
+            [FromServices] WatchFolderImportService watcher)
+        {
+            var account = DbHelper.GetById<Account>((long)id);
+            if (!Owns(account))
+                return NotFound();
+
+            // Trim quotes so Explorer's "Copy as path" (which wraps in ") pastes cleanly.
+            var path = request?.WatchFolderPath?.Trim().Trim('"').Trim();
+            if (string.IsNullOrEmpty(path))
+            {
+                account.WatchFolderPath = null;
+            }
+            else
+            {
+                // Checked in the service process on purpose: also surfaces
+                // service-account permission problems at save time instead of
+                // silently in the background watcher.
+                if (!Directory.Exists(path))
+                    return BadRequest(new { message = "Folder not found or not accessible." });
+                account.WatchFolderPath = path;
+            }
+
+            // null = unchanged, empty string = clear, otherwise set.
+            var passwordChanged = false;
+            if (request?.StatementPassword != null)
+            {
+                var newPassword = request.StatementPassword.Length == 0 ? null : request.StatementPassword;
+                passwordChanged = newPassword != account.StatementPassword;
+                account.StatementPassword = newPassword;
+            }
+
+            // null = unchanged; the pause switch keeps the folder configured.
+            if (request?.Enabled != null)
+                account.WatchEnabled = request.Enabled;
+
+            await DbHelper.UpdateAsync(account);
+
+            // A new password is exactly what a "password-protected"/"incorrect
+            // password" failure was waiting for — clear the watcher's suppression so
+            // those files are retried automatically instead of one "Try again" click
+            // per failed card.
+            if (passwordChanged)
+                watcher.ForgetAccount(account.Id);
+
+            // Sweep right away so the first import doesn't wait out the interval;
+            // no need to hold this response until it finishes.
+            if (!string.IsNullOrEmpty(account.WatchFolderPath) && account.WatchEnabled != false)
+                _ = watcher.TriggerSweepAsync();
+
+            return Ok(new
+            {
+                account.WatchFolderPath,
+                WatchEnabled = account.WatchEnabled != false,
+                HasStatementPassword = !string.IsNullOrEmpty(account.StatementPassword)
+            });
         }
 
         // DELETE: api/accounts/{id}  — removes the account and all of its parsed
@@ -180,13 +323,25 @@ namespace BankStatementAnalytics.Controllers.Api
             foreach (var t in transactions)
                 await session.DeleteAsync(t);
 
+            // Which of those merchants still have transactions after this account's rows are
+            // gone, answered in one query rather than an EXISTS per merchant (which was a
+            // round trip for every merchant the account ever touched). The pending deletes
+            // above are auto-flushed before this query runs, so they're already excluded.
+            long accountId = id;
+            var stillUsed = merchantIds.Count == 0
+                ? new HashSet<int>()
+                : session.Query<BankTransaction>()
+                    .Where(t => t.CounterParty != null && merchantIds.Contains(t.CounterParty.Id))
+                    .Select(t => t.CounterParty.Id)
+                    .Distinct()
+                    .ToList()
+                    .ToHashSet();
+
             // Delete merchants that only belonged to this account; for merchants still
             // used by another account, just drop this account from their list.
-            long accountId = id;
             foreach (var merchantId in merchantIds)
             {
-                bool usedElsewhere = session.Query<BankTransaction>()
-                    .Any(t => t.CounterParty.Id == merchantId);
+                bool usedElsewhere = stillUsed.Contains(merchantId);
 
                 var merchant = session.Get<Merchant>(merchantId);
                 if (merchant == null) continue;
@@ -206,7 +361,6 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Where(u => u.AccountId == id)
                 .ToList();
 
-            var uploadsFolder = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
             foreach (var upload in uploads)
             {
                 if (upload.TransactionId.HasValue)
@@ -216,12 +370,7 @@ namespace BankStatementAnalytics.Controllers.Api
                         await session.DeleteAsync(uploadTx);
                 }
 
-                if (!string.IsNullOrEmpty(upload.StoredName))
-                {
-                    var filePath = Path.Combine(uploadsFolder, upload.StoredName);
-                    if (System.IO.File.Exists(filePath))
-                        System.IO.File.Delete(filePath);
-                }
+                UploadStorage.DeleteFile(upload.StoredName);
 
                 await session.DeleteAsync(upload);
             }
@@ -236,6 +385,13 @@ namespace BankStatementAnalytics.Controllers.Api
         public class UpdateAccountRequest
         {
             public string? AccountHolderName { get; set; }
+        }
+
+        public class UpdateAutoImportRequest
+        {
+            public string? WatchFolderPath { get; set; }
+            public string? StatementPassword { get; set; }
+            public bool? Enabled { get; set; }
         }
     }
 }

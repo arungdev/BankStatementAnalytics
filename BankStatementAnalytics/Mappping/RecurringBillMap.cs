@@ -31,6 +31,7 @@ namespace BankStatementAnalytics.Mappping
 
             Property(x => x.ExpectedAmount);
             Property(x => x.DueDayOfMonth);
+            Property(x => x.Cadence, m => m.Length(20));
             Property(x => x.Status, m => m.Length(20));
             Property(x => x.LastSeenDate);
             Property(x => x.CreatedOn);

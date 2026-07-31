@@ -7,6 +7,7 @@ using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System;
 
@@ -16,6 +17,33 @@ namespace BankStatementAnalytics.Controllers.Api
     [Route("api/merchants")]
     public class MerchantApiController : TenantControllerBase
     {
+        // Aliases are stored for upload-time resolution (CounterPartyService matches
+        // Aliases.Contains(name) so a same-named counterparty from another bank code still
+        // resolves here), which means merging two same-named merchants records the primary's
+        // own name as an alias. Those rows must stay in the DB, but showing them duplicates
+        // the name in the UI and breaks the per-name transaction filter — so strip self-name
+        // aliases and whitespace/case duplicates from API responses.
+        private static List<string> DisplayAliases(Merchant merchant)
+        {
+            static string Normalize(string value) =>
+                string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
+
+            var seen = new HashSet<string> { Normalize(merchant.Name ?? string.Empty) };
+            var aliases = new List<string>();
+            foreach (var alias in merchant.Aliases)
+            {
+                if (string.IsNullOrWhiteSpace(alias)) continue;
+                if (seen.Add(Normalize(alias)))
+                    aliases.Add(alias.Trim());
+            }
+            return aliases;
+        }
+
+        // An empty box in the UI means "no value", not the empty string — otherwise a cleared
+        // FriendlyName would still count as set and shadow the merchant's real name.
+        private static string? NullIfBlank(string? value) =>
+            string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
         // GET: api/merchants
         [HttpGet]
         public IActionResult GetAll([FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
@@ -33,22 +61,23 @@ namespace BankStatementAnalytics.Controllers.Api
                 .FetchMany(x => x.UpiIds)
                 .ToList();
 
-            // Transaction count per merchant, scoped to this user's merchants (not a scan of
-            // every user's transactions).
+            // Transaction count and total spend per merchant, scoped to this user's merchants
+            // (not a scan of every user's transactions). Count and sum come from the same
+            // GroupBy so surfacing spend costs no extra round trip.
             var ownedMerchantIds = merchantEntities.Select(m => m.Id).ToHashSet();
             var txQuery = session.Query<BankTransaction>()
                 .Where(t => t.CounterParty != null && ownedMerchantIds.Contains(t.CounterParty.Id));
             if (filterByAccount)
                 txQuery = txQuery.Where(t => scopeIds.Contains(t.AccountId));
-            var txCounts = txQuery
+            var txStats = txQuery
                 .GroupBy(t => t.CounterParty.Id)
-                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .Select(g => new { Id = g.Key, Count = g.Count(), Spent = g.Sum(t => t.Debit) })
                 .ToList()
-                .ToDictionary(x => x.Id, x => x.Count);
+                .ToDictionary(x => x.Id, x => (x.Count, x.Spent));
 
             var merchants = merchantEntities
                 // Under an account filter a merchant only belongs if it has in-scope transactions.
-                .Where(m => !filterByAccount || txCounts.ContainsKey(m.Id))
+                .Where(m => !filterByAccount || txStats.ContainsKey(m.Id))
                 .Select(merchantEntity => new
                 {
                     Id = merchantEntity.Id,
@@ -58,8 +87,9 @@ namespace BankStatementAnalytics.Controllers.Api
                     SubCategory = merchantEntity.SubCategory,
                     ShiftToNextMonth = merchantEntity.ShiftToNextMonth == true,
                     UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
-                    Aliases = merchantEntity.Aliases.ToList(),
-                    TransactionCount = txCounts.TryGetValue(merchantEntity.Id, out var c) ? c : 0
+                    Aliases = DisplayAliases(merchantEntity),
+                    TransactionCount = txStats.TryGetValue(merchantEntity.Id, out var s) ? s.Count : 0,
+                    TotalSpent = txStats.TryGetValue(merchantEntity.Id, out var t) ? t.Spent : 0m
                 })
                 .OrderByDescending(m => m.TransactionCount)
                 .ThenBy(m => m.FriendlyName ?? m.Name)
@@ -92,9 +122,26 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Where(x => x.CounterParty != null && x.CounterParty.Id == id);
             if (filterByAccount)
                 txQuery = txQuery.Where(x => scopeIds.Contains(x.AccountId));
-            var transactions = txQuery.ToList();
 
-            var allTransactions = transactions
+            // Ordered and projected in SQL: hydrating full entities pulled every column
+            // (including the 2000-char narration/description) plus a merchant join, only
+            // to read nine fields and re-sort them in memory. The merchant's own name and
+            // category are the same for every row, so they're stitched on afterwards
+            // rather than sent through the SQL projection.
+            var allTransactions = txQuery
+                .OrderByDescending(x => x.TransactionDate)
+                .Select(x => new
+                {
+                    x.TransactionDate,
+                    x.UpiReference,
+                    x.Mode,
+                    x.Debit,
+                    x.Credit,
+                    x.Balance,
+                    x.Description,
+                    x.BankType
+                })
+                .ToList()
                 .Select(x => new
                 {
                     TransactionDate = x.TransactionDate,
@@ -108,7 +155,6 @@ namespace BankStatementAnalytics.Controllers.Api
                     Description = x.Description,
                     BankType = x.BankType
                 })
-                .OrderByDescending(t => t.TransactionDate)
                 .ToList();
 
             var dto = new
@@ -122,7 +168,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 BankCode = merchantEntity.BankCode,
                 Notes = merchantEntity.Notes,
                 UpiIds = merchantEntity.UpiIds.Select(u => u.UpiId).ToList(),
-                Aliases = merchantEntity.Aliases.ToList(),
+                Aliases = DisplayAliases(merchantEntity),
                 Transactions = allTransactions
             };
 
@@ -145,6 +191,13 @@ namespace BankStatementAnalytics.Controllers.Api
             merchantEntity.Category = request.Category;
             merchantEntity.SubCategory = request.SubCategory;
             merchantEntity.ShiftToNextMonth = request.ShiftToNextMonth;
+            // Only touched when the caller actually sent the field — the list page's inline
+            // category picker PUTs categorization alone, and must not blank out the rename
+            // or notes as a side effect. See UpdateMerchantRequest for how "sent" is tracked.
+            if (request.FriendlyNameSet)
+                merchantEntity.FriendlyName = NullIfBlank(request.FriendlyName);
+            if (request.NotesSet)
+                merchantEntity.Notes = NullIfBlank(request.Notes);
             merchantEntity.UpdatedOn = DateTime.Now;
 
             await session.UpdateAsync(merchantEntity);
@@ -155,6 +208,40 @@ namespace BankStatementAnalytics.Controllers.Api
             await tx.CommitAsync();
 
             return NoContent();
+        }
+
+        // POST: api/merchants/bulk-category
+        // Assign one category/sub-category to many merchants in a single round trip
+        // (the list page's multi-select). ShiftToNextMonth is deliberately untouched —
+        // it's a per-merchant timing rule, not part of categorization, so no
+        // EffectiveDate recompute is needed here.
+        [HttpPost("bulk-category")]
+        public async Task<IActionResult> BulkCategory([FromBody] BulkCategoryRequest request)
+        {
+            if (request?.Ids == null || !request.Ids.Any())
+                return BadRequest("Invalid request.");
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var ids = request.Ids.Distinct().ToList();
+            // Ownership is enforced in the query rather than per row: ids belonging to
+            // another user simply don't come back, so they're silently skipped.
+            var merchants = session.Query<Merchant>()
+                .Where(m => ids.Contains(m.Id) && m.OwnerUserId == CurrentUserId)
+                .ToList();
+
+            foreach (var merchant in merchants)
+            {
+                merchant.Category = request.Category;
+                merchant.SubCategory = request.SubCategory;
+                merchant.UpdatedOn = DateTime.Now;
+                await session.UpdateAsync(merchant);
+            }
+
+            await tx.CommitAsync();
+
+            return Ok(new { Updated = merchants.Count });
         }
 
         // POST: api/merchants/merge
@@ -335,6 +422,34 @@ namespace BankStatementAnalytics.Controllers.Api
         public string? Category { get; set; }
         public string? SubCategory { get; set; }
         public bool ShiftToNextMonth { get; set; }
+
+        // FriendlyName/Notes are edited only from the detail drawer, while other callers PUT
+        // categorization on its own. System.Text.Json invokes a setter only for properties
+        // present in the payload, so the *Set flags distinguish "sent as empty" (clear it)
+        // from "not sent at all" (leave it alone) — a plain null can't express both.
+        private string? _friendlyName;
+        public string? FriendlyName
+        {
+            get => _friendlyName;
+            set { _friendlyName = value; FriendlyNameSet = true; }
+        }
+
+        private string? _notes;
+        public string? Notes
+        {
+            get => _notes;
+            set { _notes = value; NotesSet = true; }
+        }
+
+        [JsonIgnore] public bool FriendlyNameSet { get; private set; }
+        [JsonIgnore] public bool NotesSet { get; private set; }
+    }
+
+    public class BulkCategoryRequest
+    {
+        public List<int> Ids { get; set; } = new List<int>();
+        public string? Category { get; set; }
+        public string? SubCategory { get; set; }
     }
 
     public class MergeMerchantsRequest

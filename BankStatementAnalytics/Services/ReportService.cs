@@ -4,14 +4,15 @@ using System.Linq;
 using System.Threading.Tasks;
 using NHibernate.Linq;
 using Common.Framework.Data;
+using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
 
 namespace BankStatementAnalytics.Services
 {
     /// <summary>
     /// Composes the monthly / yearly report payload served by <c>api/reports</c>.
-    /// The income/spend/category/merchant sections are scoped to the requested accounts;
-    /// budgets, bills, and deposits are user-level (all owned accounts), matching how their
+    /// The income/spend/category/merchant and deposit sections are scoped to the requested
+    /// accounts; budgets and bills are user-level (all owned accounts), matching how their
     /// own pages behave.
     /// </summary>
     public class ReportService
@@ -25,10 +26,17 @@ namespace BankStatementAnalytics.Services
             _deposits = deposits;
         }
 
-        public async Task<ReportView> BuildAsync(long userId, List<long> accountIds, bool yearly, int year, int month)
+        // Half-open [start, end) bounds for the requested period, shared by the report itself
+        // and the drill-down list so both slice the data identically.
+        private static (DateTime Start, DateTime End) PeriodBounds(bool yearly, int year, int month)
         {
             var start = yearly ? new DateTime(year, 1, 1) : new DateTime(year, month, 1);
-            var end = yearly ? start.AddYears(1) : start.AddMonths(1);
+            return (start, yearly ? start.AddYears(1) : start.AddMonths(1));
+        }
+
+        public async Task<ReportView> BuildAsync(long userId, List<long> accountIds, bool yearly, int year, int month)
+        {
+            var (start, end) = PeriodBounds(yearly, year, month);
 
             using var session = DbHelper.GetSession();
 
@@ -37,6 +45,7 @@ namespace BankStatementAnalytics.Services
             // merchants flagged ShiftToNextMonth to the following month; the month part is
             // extracted in memory to keep the SQL translation trivial.
             var txns = await session.Query<BankTransaction>()
+                .ExcludeOwnMoneyMoves()
                 .Where(t => accountIds.Contains(t.AccountId)
                          && (t.EffectiveDate ?? t.TransactionDate) >= start
                          && (t.EffectiveDate ?? t.TransactionDate) < end)
@@ -66,6 +75,10 @@ namespace BankStatementAnalytics.Services
             };
             report.Summary.Net = report.Summary.TotalIncome - report.Summary.TotalSpends;
 
+            var (opening, closing) = await BuildBalancesAsync(session, accountIds, start, end);
+            report.Summary.OpeningBalance = opening;
+            report.Summary.ClosingBalance = closing;
+
             if (yearly)
             {
                 report.MonthlySeries = Enumerable.Range(1, 12).Select(m => new ReportMonthBucket
@@ -85,19 +98,126 @@ namespace BankStatementAnalytics.Services
                 .OrderByDescending(x => x.Total)
                 .ToList();
 
+            // Full ranked list — the UI scrolls it, the PDF prints all of it.
             report.TopMerchants = debits
                 .Where(t => t.MerchantName != null)
                 .GroupBy(t => t.MerchantName!)
                 .Select(g => new ReportGroupTotal { Name = g.Key, Total = g.Sum(t => t.Debit), Count = g.Count() })
                 .OrderByDescending(x => x.Total)
-                .Take(10)
                 .ToList();
 
             report.Budgets = await BuildBudgetsAsync(session, userId, yearly, year, start, end);
             report.Bills = _bills.GetPaymentsInPeriod(userId, start, end);
-            report.Deposits = _deposits.GetContributionsInPeriod(userId, start, end);
+            report.Deposits = _deposits.GetContributionsInPeriod(userId, start, end, accountIds);
 
             return report;
+        }
+
+        /// <summary>
+        /// The individual transactions behind a summary tile, for the Reports page's drill-down
+        /// drawer. Filtered exactly like <see cref="BuildAsync"/>'s totals — same accounts, same
+        /// effective-date window, own-money moves excluded — so the rows always add up to the
+        /// tile that was clicked. <paramref name="kind"/> is "income", "spend", or anything else
+        /// for both sides.
+        /// </summary>
+        public async Task<List<ReportTransaction>> GetTransactionsAsync(
+            List<long> accountIds, bool yearly, int year, int month, string? kind)
+        {
+            var (start, end) = PeriodBounds(yearly, year, month);
+
+            using var session = DbHelper.GetSession();
+
+            var query = session.Query<BankTransaction>()
+                .ExcludeOwnMoneyMoves()
+                .Where(t => accountIds.Contains(t.AccountId)
+                         && (t.EffectiveDate ?? t.TransactionDate) >= start
+                         && (t.EffectiveDate ?? t.TransactionDate) < end);
+
+            query = kind switch
+            {
+                "income" => query.Where(t => t.Credit > 0),
+                "spend" => query.Where(t => t.Debit > 0),
+                _ => query,
+            };
+
+            return await query
+                .OrderByDescending(t => t.EffectiveDate ?? t.TransactionDate)
+                .Select(t => new ReportTransaction
+                {
+                    Id = t.BankReference,
+                    Date = t.EffectiveDate ?? t.TransactionDate,
+                    AccountId = t.AccountId,
+                    Description = t.Description,
+                    Merchant = t.CounterParty != null ? t.CounterParty.Name : null,
+                    Category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
+                    Debit = t.Debit,
+                    Credit = t.Credit,
+                })
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Bank balance at the first and last instant of the period, summed over the requested
+        /// accounts. Reads the statement's own running balance rather than Σ(credits − debits),
+        /// so it stays right even when history before the first uploaded statement is missing.
+        /// Unlike the income/spend sections this counts <i>every</i> row (own-money moves
+        /// included) and keys off the real <see cref="BankTransaction.TransactionDate"/>, since
+        /// that is what the bank's running balance follows — meaning closing − opening will not
+        /// generally equal <see cref="ReportSummary.Net"/>.
+        /// Credit cards carry no running balance and are skipped; null means no account in the
+        /// selection had usable balance data.
+        /// </summary>
+        private static async Task<(decimal? Opening, decimal? Closing)> BuildBalancesAsync(
+            NHibernate.ISession session, List<long> accountIds, DateTime start, DateTime end)
+        {
+            var balanceAccountIds = await session.Query<Account>()
+                .Where(a => accountIds.Contains(a.Id) && a.BankName != Bank.HDFCCreditCard)
+                .Select(a => a.Id)
+                .ToListAsync();
+
+            decimal? opening = null, closing = null;
+
+            foreach (var id in balanceAccountIds)
+            {
+                var txns = session.Query<BankTransaction>().Where(t => t.AccountId == id);
+
+                // Balance == 0 means the parser captured none, so such rows can't anchor.
+                // No surrogate Id on BankTransaction; ImportedOn breaks same-date ties.
+                var before = await txns
+                    .Where(t => t.TransactionDate < start && t.Balance != 0)
+                    .OrderByDescending(t => t.TransactionDate)
+                    .ThenByDescending(t => t.ImportedOn)
+                    .Select(t => (decimal?)t.Balance)
+                    .FirstOrDefaultAsync();
+
+                // Nothing before the period (statements start mid-history): back the opening
+                // balance out of the first in-period row, whose balance is post-transaction.
+                if (before == null)
+                {
+                    var first = await txns
+                        .Where(t => t.TransactionDate >= start && t.TransactionDate < end && t.Balance != 0)
+                        .OrderBy(t => t.TransactionDate)
+                        .ThenBy(t => t.ImportedOn)
+                        .Select(t => new { t.Balance, t.Credit, t.Debit })
+                        .FirstOrDefaultAsync();
+                    if (first != null)
+                        before = first.Balance - first.Credit + first.Debit;
+                }
+
+                // Falls back to the pre-period balance when the account saw no activity.
+                var last = await txns
+                    .Where(t => t.TransactionDate < end && t.Balance != 0)
+                    .OrderByDescending(t => t.TransactionDate)
+                    .ThenByDescending(t => t.ImportedOn)
+                    .Select(t => (decimal?)t.Balance)
+                    .FirstOrDefaultAsync();
+
+                if (before != null) opening = (opening ?? 0m) + before.Value;
+                if (last != null) closing = (closing ?? 0m) + last.Value;
+                else if (before != null) closing = (closing ?? 0m) + before.Value;
+            }
+
+            return (opening, closing);
         }
 
         // Budget performance is user-level: spend counts every owned account regardless of the
@@ -128,6 +248,7 @@ namespace BankStatementAnalytics.Services
             if (ownedIds.Count > 0)
             {
                 var debits = await session.Query<BankTransaction>()
+                    .ExcludeOwnMoneyMoves() // own-money moves don't consume budgets
                     .Where(t => ownedIds.Contains(t.AccountId) && t.Debit > 0
                              && (t.EffectiveDate ?? t.TransactionDate) >= start
                              && (t.EffectiveDate ?? t.TransactionDate) < end)
@@ -193,6 +314,24 @@ namespace BankStatementAnalytics.Services
         public decimal TotalSpends { get; set; }
         public decimal Net { get; set; }
         public int TransactionCount { get; set; }
+
+        // Running bank balance at the period's edges; null when no selected account carries
+        // one (credit-card-only selection, or statements with no balance column parsed).
+        public decimal? OpeningBalance { get; set; }
+        public decimal? ClosingBalance { get; set; }
+    }
+
+    // One row in the summary-tile drill-down list.
+    public class ReportTransaction
+    {
+        public string Id { get; set; } = string.Empty;
+        public DateTime Date { get; set; }
+        public long AccountId { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public string? Merchant { get; set; }
+        public string? Category { get; set; }
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
     }
 
     public class ReportMonthBucket

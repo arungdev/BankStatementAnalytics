@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import api from "../api/client";
-import { currencyFormatter } from "../utils/format";
+import { currencyFormatter, maskName } from "../utils/format";
 
 // localStorage keys (preferences are client-side; there is no per-user settings table).
 export const REMINDERS_ENABLED_KEY = "bills.remindersEnabled";
@@ -85,7 +85,7 @@ export default function useBillReminders() {
           const when = days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
           showDesktopNotification(
             "Bill due soon",
-            `${bill.name} ${currencyFormatter.format(bill.expectedAmount)} due ${when}`,
+            `${maskName(bill.name)} ${currencyFormatter.format(bill.expectedAmount)} due ${when}`,
             dedupeKey
           ).then((res2) => {
             if (res2.ok) localStorage.setItem(dedupeKey, "1");

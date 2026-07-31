@@ -44,6 +44,10 @@ namespace BankStatementAnalytics.Models
         public virtual string ChequeNumber { get; set; } = string.Empty;
         public virtual string CustomerReference { get; set; } = string.Empty;
         public virtual string? UpiVpa { get; set; }
+        // Links the two legs of a detected own-account transfer (debit in one owned
+        // account, matching credit in another); both rows share the same id. Analytics
+        // exclude linked rows the same way they exclude Mode == "TRANSFER".
+        public virtual Guid? TransferGroupId { get; set; }
         public virtual string? CategoryOverride { get; set; }
         public virtual string? SubCategoryOverride { get; set; }
         public virtual string? Tags { get; set; } // comma-separated e.g. "food,rent,bills"

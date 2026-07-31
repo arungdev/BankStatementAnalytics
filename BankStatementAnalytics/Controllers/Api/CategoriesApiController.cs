@@ -31,6 +31,46 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(categories);
         }
 
+        // Most-used category values for the current user, ranked by how many of their
+        // transactions currently resolve to each one (effective value = per-transaction
+        // override, else the merchant default). Drives the "Frequently used" group at
+        // the top of the category picker. Ranks by the sub-category the user would pick,
+        // falling back to the parent category for transactions that carry only a category.
+        [HttpGet("usage")]
+        public IActionResult GetUsage([FromQuery] int limit = 6)
+        {
+            using var session = DbHelper.GetSession();
+
+            var accountIds = session.Query<Account>()
+                .Where(a => a.OwnerUserId == CurrentUserId)
+                .Select(a => a.Id)
+                .ToList();
+
+            if (accountIds.Count == 0)
+                return Ok(Array.Empty<object>());
+
+            var resolved = session.Query<BankTransaction>()
+                .Where(t => accountIds.Contains(t.AccountId))
+                .Select(t => new
+                {
+                    Sub = t.SubCategoryOverride ?? (t.CounterParty != null ? t.CounterParty.SubCategory : null),
+                    Cat = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null)
+                })
+                .ToList();
+
+            var top = resolved
+                .Select(r => !string.IsNullOrWhiteSpace(r.Sub) ? r.Sub : r.Cat)
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new { Name = g.Key, Count = g.Count() })
+                .OrderByDescending(x => x.Count)
+                .ThenBy(x => x.Name)
+                .Take(limit)
+                .ToList();
+
+            return Ok(top);
+        }
+
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CategoryDto req)
         {

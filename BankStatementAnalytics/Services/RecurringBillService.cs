@@ -10,9 +10,9 @@ using BankStatementAnalytics.Models;
 namespace BankStatementAnalytics.Services
 {
     /// <summary>
-    /// Detects monthly-recurring debits from a user's transaction history and projects when a
-    /// confirmed bill is next due. The app has no live bank feed, so a "due date" is a prediction
-    /// based on the day-of-month a bill has historically posted.
+    /// Detects recurring debits (weekly, monthly, quarterly, yearly) from a user's transaction
+    /// history and projects when a confirmed bill is next due. The app has no live bank feed,
+    /// so a "due date" is a prediction from the pattern the bill has historically posted on.
     /// </summary>
     public class RecurringBillService
     {
@@ -20,8 +20,19 @@ namespace BankStatementAnalytics.Services
         private const decimal AmountTolerance = 0.15m;
         // Minimum distinct months a key must appear in to be considered monthly-recurring.
         private const int MinMonths = 3;
-        // How far back detection looks.
+        // How far back monthly detection looks.
         private const int LookbackMonths = 6;
+        // How far back non-monthly cadence detection looks (yearly needs 2+ occurrences).
+        private const int ExtendedLookbackMonths = 24;
+
+        // Non-monthly cadences: expected gap range in days and minimum occurrences.
+        private static readonly (string Cadence, int MinGap, int MaxGap, int MinOccurrences, int IntervalDays)[]
+            IntervalCadences =
+        {
+            ("Weekly",    5,  10,  4,   7),
+            ("Quarterly", 80, 100, 3,  91),
+            ("Yearly",   330, 400, 2, 365),
+        };
 
         /// <summary>
         /// Auto-detected recurring-bill candidates for the user, excluding keys already
@@ -36,10 +47,13 @@ namespace BankStatementAnalytics.Services
                 return new List<BillCandidate>();
 
             var today = DateTime.Today;
-            var from = new DateTime(today.Year, today.Month, 1).AddMonths(-LookbackMonths);
+            var monthlyFrom = new DateTime(today.Year, today.Month, 1).AddMonths(-LookbackMonths);
+            var extendedFrom = today.AddMonths(-ExtendedLookbackMonths);
 
             var debits = session.Query<BankTransaction>()
-                .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0 && t.TransactionDate >= from)
+                // Own-money moves (CC bill payments, inter-account transfers) aren't bills.
+                .ExcludeOwnMoneyMoves()
+                .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0 && t.TransactionDate >= extendedFrom)
                 .ProjectDetection()
                 .ToList();
 
@@ -57,39 +71,126 @@ namespace BankStatementAnalytics.Services
                 if (existingKeys.Contains(key))
                     continue;
 
-                var occurrences = group.ToList();
+                var occurrences = group.OrderBy(t => t.TransactionDate).ToList();
 
-                var distinctMonths = occurrences
-                    .Select(t => t.TransactionDate.Year * 12 + t.TransactionDate.Month)
-                    .Distinct().Count();
-                if (distinctMonths < MinMonths)
+                var candidate = TryMonthlyCandidate(occurrences, monthlyFrom)
+                             ?? TryIntervalCandidate(occurrences, today);
+                if (candidate == null)
                     continue;
 
-                var amounts = occurrences.Select(t => t.Debit).ToList();
-                var median = DetectionMath.Median(amounts);
-                var withinTolerance = amounts.Count(a =>
-                    median == 0m ? a == 0m : Math.Abs(a - median) / median <= AmountTolerance);
-                // Require most occurrences to cluster around the median, else it's not a fixed bill.
-                if (withinTolerance < Math.Ceiling(occurrences.Count * 0.6))
-                    continue;
-
-                var dueDay = DetectionMath.MedianInt(occurrences.Select(t => t.TransactionDate.Day).ToList());
                 var sample = occurrences[0];
                 var (_, display) = BuildKey(sample);
+                candidate.Name = display;
+                candidate.MatchKey = key;
+                candidate.CounterPartyId = sample.CounterPartyId;
 
-                candidates.Add(new BillCandidate
-                {
-                    Name = display,
-                    MatchKey = key,
-                    CounterPartyId = sample.CounterPartyId,
-                    ExpectedAmount = median,
-                    DueDayOfMonth = dueDay,
-                    LastSeenDate = occurrences.Max(t => t.TransactionDate),
-                    OccurrenceCount = occurrences.Count
-                });
+                candidates.Add(candidate);
             }
 
             return candidates.OrderByDescending(c => c.LastSeenDate).ToList();
+        }
+
+        // Monthly rule: 3+ distinct months within the 6-month window, spaced roughly a month
+        // apart, with amounts clustered around the median.
+        private static BillCandidate? TryMonthlyCandidate(List<DetectionTxn> occurrences, DateTime from)
+        {
+            var recent = occurrences.Where(t => t.TransactionDate >= from).ToList();
+            if (recent.Count == 0)
+                return null;
+
+            var distinctMonths = recent
+                .Select(t => t.TransactionDate.Year * 12 + t.TransactionDate.Month)
+                .Distinct().Count();
+            if (distinctMonths < MinMonths)
+                return null;
+
+            // Distinct months alone would also match a quarterly bill (Jan/Apr/Jul) or a weekly
+            // one spanning three months, so the typical spacing has to look monthly too. The
+            // upper bound stays loose enough to tolerate a skipped month.
+            var medianGap = MedianGapDays(recent);
+            if (medianGap == null || medianGap < 20 || medianGap > 60)
+                return null;
+
+            var median = StableAmount(recent);
+            if (median == null)
+                return null;
+
+            return new BillCandidate
+            {
+                Cadence = "Monthly",
+                ExpectedAmount = median.Value,
+                DueDayOfMonth = DetectionMath.MedianInt(recent.Select(t => t.TransactionDate.Day).ToList()),
+                LastSeenDate = recent.Max(t => t.TransactionDate),
+                OccurrenceCount = recent.Count
+            };
+        }
+
+        // Non-monthly cadences, classified from the median gap between occurrences over the
+        // extended window (e.g. weekly SIPs, quarterly insurance, yearly subscriptions).
+        private static BillCandidate? TryIntervalCandidate(List<DetectionTxn> occurrences, DateTime today)
+        {
+            // Same-day duplicates (retries, split charges) would produce zero-length gaps.
+            var dates = occurrences.Select(t => t.TransactionDate.Date).Distinct().OrderBy(d => d).ToList();
+            if (dates.Count < 2)
+                return null;
+
+            var gaps = GapDays(dates);
+            var medianGap = DetectionMath.MedianInt(gaps);
+
+            foreach (var (cadence, minGap, maxGap, minOccurrences, intervalDays) in IntervalCadences)
+            {
+                if (medianGap < minGap || medianGap > maxGap || dates.Count < minOccurrences)
+                    continue;
+
+                // The rhythm must be steady: most gaps close to the median.
+                var steady = gaps.Count(g => Math.Abs(g - medianGap) <= medianGap * 0.25);
+                if (steady < Math.Ceiling(gaps.Count * 0.6))
+                    return null;
+
+                // A lapsed subscription (nothing recent) shouldn't be suggested.
+                if ((today - dates[^1]).TotalDays > intervalDays * 1.5)
+                    return null;
+
+                var median = StableAmount(occurrences);
+                if (median == null)
+                    return null;
+
+                return new BillCandidate
+                {
+                    Cadence = cadence,
+                    ExpectedAmount = median.Value,
+                    DueDayOfMonth = DetectionMath.MedianInt(occurrences.Select(t => t.TransactionDate.Day).ToList()),
+                    LastSeenDate = occurrences.Max(t => t.TransactionDate),
+                    OccurrenceCount = occurrences.Count
+                };
+            }
+
+            return null;
+        }
+
+        // Typical spacing between occurrences, or null when there aren't two distinct dates.
+        private static int? MedianGapDays(List<DetectionTxn> occurrences)
+        {
+            var dates = occurrences.Select(t => t.TransactionDate.Date).Distinct().OrderBy(d => d).ToList();
+            return dates.Count < 2 ? null : DetectionMath.MedianInt(GapDays(dates));
+        }
+
+        private static List<int> GapDays(List<DateTime> orderedDates)
+        {
+            var gaps = new List<int>();
+            for (int i = 1; i < orderedDates.Count; i++)
+                gaps.Add((orderedDates[i] - orderedDates[i - 1]).Days);
+            return gaps;
+        }
+
+        // Median amount when most occurrences cluster around it, else null (not a fixed bill).
+        private static decimal? StableAmount(List<DetectionTxn> occurrences)
+        {
+            var amounts = occurrences.Select(t => t.Debit).ToList();
+            var median = DetectionMath.Median(amounts);
+            var withinTolerance = amounts.Count(a =>
+                median == 0m ? a == 0m : Math.Abs(a - median) / median <= AmountTolerance);
+            return withinTolerance < Math.Ceiling(amounts.Count * 0.6) ? null : median;
         }
 
         /// <summary>
@@ -110,23 +211,55 @@ namespace BankStatementAnalytics.Services
             var today = DateTime.Today;
             var accountIds = OwnedAccountIds(session, userId);
 
-            // Payments in the current + previous month are enough to decide "paid this cycle".
-            var from = new DateTime(today.Year, today.Month, 1).AddMonths(-1);
-            var paidKeys = accountIds.Count == 0
-                ? new HashSet<string>()
+            // Monthly bills only need the current + previous month to decide "paid this cycle";
+            // interval bills (weekly/quarterly/yearly) anchor their next due date on the last
+            // matching payment, so those need a window covering a full year.
+            var anyInterval = bills.Any(b => CadenceOf(b) != "Monthly");
+            var from = anyInterval
+                ? today.AddMonths(-13)
+                : new DateTime(today.Year, today.Month, 1).AddMonths(-1);
+            var debitsByKey = accountIds.Count == 0
+                ? new Dictionary<string, List<DetectionTxn>>(StringComparer.OrdinalIgnoreCase)
                 : session.Query<BankTransaction>()
                     .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0 && t.TransactionDate >= from)
                     .ProjectDetection()
                     .ToList()
-                    .Select(t => $"{BuildKey(t).Key}|{t.TransactionDate.Year * 12 + t.TransactionDate.Month}")
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    .GroupBy(t => BuildKey(t).Key, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
             var views = new List<BillView>();
             foreach (var bill in bills)
             {
-                var nextDue = ProjectDueDate(bill.DueDayOfMonth, today);
-                var billingMonth = nextDue.Year * 12 + nextDue.Month;
-                var paid = paidKeys.Contains($"{bill.MatchKey}|{billingMonth}");
+                var cadence = CadenceOf(bill);
+                debitsByKey.TryGetValue(bill.MatchKey, out var keyMatches);
+
+                DateTime nextDue;
+                bool paid;
+                if (cadence == "Monthly")
+                {
+                    nextDue = ProjectDueDate(bill.DueDayOfMonth, today);
+                    var billingMonth = nextDue.Year * 12 + nextDue.Month;
+                    // Any same-key debit in the billing month counts (no amount filter, so
+                    // variable bills like electricity still register as paid).
+                    paid = keyMatches?.Any(t =>
+                        t.TransactionDate.Year * 12 + t.TransactionDate.Month == billingMonth) ?? false;
+                }
+                else
+                {
+                    // Amount-close matches only, so a one-off different-sized charge to the
+                    // same merchant doesn't shift the cycle anchor.
+                    var lastPaid = keyMatches?
+                        .Where(t => IsAmountClose(t.Debit, bill.ExpectedAmount))
+                        .Select(t => (DateTime?)t.TransactionDate.Date)
+                        .Max();
+                    var anchor = lastPaid ?? bill.LastSeenDate?.Date ?? today;
+                    nextDue = anchor;
+                    while (nextDue < today)
+                        nextDue = Advance(nextDue, cadence);
+                    // Paid when the payment for the cycle ending at nextDue already posted.
+                    paid = lastPaid.HasValue && lastPaid.Value > Retreat(nextDue, cadence);
+                }
+
                 var daysUntilDue = (nextDue - today).Days;
 
                 if (upcomingOnly && (paid || daysUntilDue > withinDays))
@@ -140,6 +273,7 @@ namespace BankStatementAnalytics.Services
                     CounterPartyId = bill.CounterParty?.Id,
                     ExpectedAmount = bill.ExpectedAmount,
                     DueDayOfMonth = bill.DueDayOfMonth,
+                    Cadence = cadence,
                     LastSeenDate = bill.LastSeenDate,
                     NextDueDate = nextDue,
                     DaysUntilDue = daysUntilDue,
@@ -149,6 +283,36 @@ namespace BankStatementAnalytics.Services
 
             return views.OrderBy(v => v.DaysUntilDue).ToList();
         }
+
+        /// <summary>Effective cadence of a bill; rows from before cadence support are monthly.</summary>
+        public static string CadenceOf(RecurringBill bill) =>
+            NormalizeCadence(bill.Cadence) ?? "Monthly";
+
+        /// <summary>Maps free-form input to a known cadence value, or null when unrecognized.</summary>
+        public static string? NormalizeCadence(string? cadence) => cadence?.Trim().ToLowerInvariant() switch
+        {
+            "weekly" => "Weekly",
+            "monthly" => "Monthly",
+            "quarterly" => "Quarterly",
+            "yearly" => "Yearly",
+            _ => null
+        };
+
+        private static DateTime Advance(DateTime date, string cadence) => cadence switch
+        {
+            "Weekly" => date.AddDays(7),
+            "Quarterly" => date.AddMonths(3),
+            "Yearly" => date.AddYears(1),
+            _ => date.AddMonths(1)
+        };
+
+        private static DateTime Retreat(DateTime date, string cadence) => cadence switch
+        {
+            "Weekly" => date.AddDays(-7),
+            "Quarterly" => date.AddMonths(-3),
+            "Yearly" => date.AddYears(-1),
+            _ => date.AddMonths(-1)
+        };
 
         /// <summary>
         /// The historical debit transactions that make up a bill — every debit whose grouping key
@@ -162,8 +326,22 @@ namespace BankStatementAnalytics.Services
             if (accountIds.Count == 0)
                 return new List<BillTransaction>();
 
-            return session.Query<BankTransaction>()
-                .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0)
+            var query = session.Query<BankTransaction>()
+                .Where(t => accountIds.Contains(t.AccountId) && t.Debit > 0);
+
+            // A merchant-backed bill's key is "M:{id}", so the key match is expressible in
+            // SQL — an index seek on CounterPartyId instead of dragging every debit the user
+            // has ever had through BuildKey in memory. Narration-keyed bills ("N:…") still
+            // need the in-memory pass, since the key is a normalization of the text.
+            var merchantId = bill.CounterParty?.Id;
+            if (merchantId != null)
+                query = query.Where(t => t.CounterParty != null && t.CounterParty.Id == merchantId.Value);
+            else
+                // BuildKey yields "M:{id}" for any row with a merchant, so a narration-keyed
+                // bill can only ever match merchant-less rows — the rest are dead weight.
+                query = query.Where(t => t.CounterParty == null);
+
+            return query
                 .ProjectDetection()
                 .ToList()
                 // Same key AND a similar amount, so one-off payments to the same merchant
@@ -296,6 +474,7 @@ namespace BankStatementAnalytics.Services
         public int? CounterPartyId { get; set; }
         public decimal ExpectedAmount { get; set; }
         public int DueDayOfMonth { get; set; }
+        public string Cadence { get; set; } = "Monthly";
         public DateTime LastSeenDate { get; set; }
         public int OccurrenceCount { get; set; }
     }
@@ -326,6 +505,7 @@ namespace BankStatementAnalytics.Services
         public int? CounterPartyId { get; set; }
         public decimal ExpectedAmount { get; set; }
         public int DueDayOfMonth { get; set; }
+        public string Cadence { get; set; } = "Monthly";
         public DateTime? LastSeenDate { get; set; }
         public DateTime NextDueDate { get; set; }
         public int DaysUntilDue { get; set; }

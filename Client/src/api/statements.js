@@ -6,11 +6,12 @@ export const getAccounts = () => api.get("/statements/accounts");
 // Transactions by account
 export const getAccountTransactions = (id) => api.get(`/statements/${id}`);
 
-// Upload statement
-export const uploadStatement = (accountId, file, onUploadProgress) => {
+// Upload statement (password: optional, for protected PDF statements)
+export const uploadStatement = (accountId, file, onUploadProgress, password) => {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("accountId", accountId);
+  if (password) formData.append("password", password);
 
   const config = {
     headers: {
@@ -33,3 +34,14 @@ export const revertStatement = (id) => {
 
 // Get all uploads
 export const getUploads = () => api.get("/statements/uploads");
+
+// Watch-folder auto-import attempts, including failures (which leave no upload row)
+export const getAutoImports = (accountId) =>
+  api.get("/statements/auto-imports", { params: accountId ? { accountId } : {} });
+
+// Run the watch-folder sweep now instead of waiting for the next interval
+export const triggerAutoImportSweep = () => api.post("/statements/auto-imports/sweep");
+
+// Retry a specific failed auto-import (by its history id), optionally with a PDF password
+export const retryAutoImport = (historyId, password) =>
+  api.post(`/statements/auto-imports/${historyId}/retry`, { password });

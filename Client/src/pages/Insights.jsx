@@ -15,7 +15,7 @@ import Avatar from '../components/ui/Avatar';
 import Drawer from '../components/ui/Drawer';
 import useTheme from '../context/useTheme';
 import { getToken } from '../theme/chartTheme';
-import { currencyFormatter as fmt, currencyFormatterFull as fmtFull, isAmountMasked, MASKED_AMOUNT } from '../utils/format';
+import { currencyFormatter as fmt, currencyFormatterFull as fmtFull, isAmountMasked, MASKED_AMOUNT, maskName } from '../utils/format';
 
 /* ─── Design tokens — mapped to the global CSS variable system. DOM inline
  * styles consume var() directly; recharts SVG colors can't, so they're
@@ -60,15 +60,16 @@ const fmtDate = (d) => {
 const toISODate = (d) => d ? d.toISOString().split('T')[0] : null;
 
 /* ─── Custom bar-chart tooltip — deliberately a dark tile in both themes ─── */
-const ChartTooltip = ({ active, payload }) => {
+const ChartTooltip = ({ active, payload, nameFormatter }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
+  const shownName = nameFormatter ? nameFormatter(d.name) : d.name;
   return (
     <div style={{
       background: '#1e1b4b', borderRadius: '10px',
       padding: '10px 14px', boxShadow: 'var(--shadow-lg)',
     }}>
-      <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '13px' }}>{d.name}</p>
+      <p style={{ margin: 0, fontWeight: 700, color: '#fff', fontSize: '13px' }}>{shownName}</p>
       <p style={{ margin: '4px 0 0', color: '#818cf8', fontWeight: 700, fontSize: '14px' }}>{fmt.format(d.total)}</p>
       {d.count != null && (
         <p style={{ margin: '2px 0 0', color: '#a5b4fc', fontSize: '11px' }}>{d.count} transactions</p>
@@ -171,11 +172,24 @@ export default function Insights() {
   const topSpend      = chartData[0] || null;
   const avgSpend      = chartData.length ? grandTotal / chartData.length : 0;
 
+  // Synthetic "slice" for the Total Spent tile: the drawer treats it like any other
+  // selection, but its rows span every group in the range rather than one of them.
+  const allSpendItem  = useMemo(
+    () => ({ name: 'Total spent', total: grandTotal, count: null, isAll: true }),
+    [grandTotal]
+  );
+
   const activeTab     = GROUP_TABS.find(g => g.key === groupBy);
   const groupLabel    = activeTab?.label    ?? '';
   const groupSingular = activeTab?.singular ?? '';
 
-  const handleSliceClick = useCallback((item) => {
+  // Merchant names are sensitive; category/tag names are not. maskName is a
+  // no-op unless name masking is active (Settings → Privacy + eye toggle on).
+  const maskLabel = (n) => (groupBy === 'byMerchant' ? maskName(n) : n);
+
+  // `groupOverride` is 'all' for the Total Spent tile, whose rows span every group
+  // rather than one slice; everything else drills into the clicked item.
+  const handleSliceClick = useCallback((item, groupOverride) => {
     if (!item) return;
     setSelectedItem(item);
     setTrayOpen(true);
@@ -187,7 +201,7 @@ export default function Insights() {
     p.append('accountIds', accountIdsParam);
     if (range.start) p.append('startDate', toISODate(range.start));
     if (range.end)   p.append('endDate',   toISODate(range.end));
-    p.append('groupBy',    groupBy);
+    p.append('groupBy',    groupOverride ?? groupBy);
     p.append('groupValue', item.name);
 
     api.get(`/dashboard/insights/transactions?${p.toString()}`)
@@ -226,7 +240,13 @@ export default function Insights() {
       transition: 'margin-right 0.28s cubic-bezier(0.4,0,0.2,1)',
       overflow: 'visible',
     },
-    statsRow: { display: 'flex', gap: '16px', marginBottom: '20px' },
+    // Grid rather than a flex row: with the drawer docked the page narrows, and the
+    // tiles reflow 4 → 2 → 1 evenly instead of overflowing (StatCard's own minWidth
+    // is neutralised by the .ins-stat-row rule below).
+    statsRow: {
+      display: 'grid', gap: '16px', marginBottom: '20px',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    },
     chartsGrid: {
       display: 'grid', gridTemplateColumns: '3fr 2fr',
       gap: '20px', marginBottom: '20px', alignItems: 'stretch',
@@ -276,20 +296,28 @@ export default function Insights() {
           @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
           @keyframes spin    { to { transform: rotate(360deg); } }
           .ins-row:hover { background: var(--surface-2) !important; cursor: pointer; }
+          .ins-stat-row .stat-card { min-width: 0; }
         `}</style>
 
-        {/* ── Stat cards ── */}
-        <div style={s.statsRow}>
+        {/* ── Stat cards — each drills into the rows behind it. "Avg per …" has no
+             underlying set of transactions, so it stays a plain tile. ── */}
+        <div className="ins-stat-row" style={s.statsRow}>
           <StatCard
             label="Total Spent"
             value={loading ? '—' : fmt.format(grandTotal)}
             sub={loading ? '' : `Across ${chartData.length} ${groupLabel.toLowerCase()}`}
+            onClick={chartData.length ? () => handleSliceClick(allSpendItem, 'all') : undefined}
+            active={trayOpen && selectedItem?.isAll === true}
+            title="Show every transaction behind this total"
           />
           <StatCard
             label={`Top ${groupSingular}`}
-            value={loading || !topSpend ? '—' : topSpend.name}
+            value={loading || !topSpend ? '—' : maskLabel(topSpend.name)}
             sub={loading || !topSpend ? '' : fmt.format(topSpend.total)}
             accent={T.indigoSoft}
+            onClick={topSpend ? () => handleSliceClick(topSpend) : undefined}
+            active={trayOpen && !!topSpend && selectedItem?.name === topSpend.name}
+            title={`Show the transactions for this ${groupSingular.toLowerCase()}`}
           />
           <StatCard
             label={`Avg per ${groupSingular}`}
@@ -299,8 +327,11 @@ export default function Insights() {
           <StatCard
             label="Highest Transaction Count"
             value={loading || !topSpend ? '—' : (topSpend.count ?? '—')}
-            sub={loading || !topSpend ? '' : `in ${topSpend.name}`}
+            sub={loading || !topSpend ? '' : `in ${maskLabel(topSpend.name)}`}
             accent={T.greenSoft}
+            onClick={topSpend ? () => handleSliceClick(topSpend) : undefined}
+            active={trayOpen && !!topSpend && selectedItem?.name === topSpend.name}
+            title={`Show the transactions for this ${groupSingular.toLowerCase()}`}
           />
         </div>
 
@@ -343,8 +374,8 @@ export default function Insights() {
                     <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 32, top: 4, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={chartC.grid} />
                       <XAxis type="number" tickFormatter={fmtK} tick={{ fontSize: 11, fill: chartC.tick }} axisLine={false} tickLine={false} />
-                      <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11, fill: chartC.muted }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<ChartTooltip />} cursor={{ fill: chartC.cursor }} />
+                      <YAxis type="category" dataKey="name" width={120} tickFormatter={maskLabel} tick={{ fontSize: 11, fill: chartC.muted }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<ChartTooltip nameFormatter={maskLabel} />} cursor={{ fill: chartC.cursor }} />
                       <Bar
                         dataKey="total" radius={[0, 6, 6, 0]} maxBarSize={28}
                         onClick={(data) => handleSliceClick(data)}
@@ -373,7 +404,7 @@ export default function Insights() {
                         {chartData.map((_, i) => <Cell key={i} fill={palette[i % palette.length]} stroke="none" />)}
                       </Pie>
                       <Tooltip
-                        formatter={v => fmt.format(v)}
+                        formatter={(v, n) => [fmt.format(v), maskLabel(n)]}
                         contentStyle={{ borderRadius: '10px', border: `1px solid ${chartC.tooltipBorder}`, background: chartC.tooltipBg, color: chartC.tooltipText, boxShadow: 'var(--shadow-lg)' }}
                         labelStyle={{ color: chartC.tooltipText }}
                         itemStyle={{ color: chartC.tooltipText }}
@@ -396,7 +427,7 @@ export default function Insights() {
                       style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: T.muted, cursor: 'pointer' }}
                     >
                       <span style={s.dot(palette[i % palette.length])} />
-                      {item.name}
+                      {maskLabel(item.name)}
                     </div>
                   ))}
                 </div>
@@ -436,7 +467,7 @@ export default function Insights() {
                           </span>
                         </td>
                         <td style={s.td(false)}>
-                          <span style={{ fontWeight: 700, color: T.text }}>{item.name}</span>
+                          <span style={{ fontWeight: 700, color: T.text }}>{maskLabel(item.name)}</span>
                         </td>
                         <td className="tnum" style={{ ...s.td(true), color: T.muted }}>
                           {item.count != null ? item.count.toLocaleString('en-IN') : '—'}
@@ -482,7 +513,9 @@ export default function Insights() {
       <Drawer
         open={trayOpen}
         onClose={closeTray}
-        title={groupSingular ? `${groupSingular} transactions` : 'Transactions'}
+        title={selectedItem?.isAll
+          ? 'All transactions'
+          : groupSingular ? `${groupSingular} transactions` : 'Transactions'}
         width={drawerWidth}
         onWidthChange={setDrawerWidth}
         modal={false}
@@ -491,13 +524,14 @@ export default function Insights() {
           <>
             {/* Header: identity + totals */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', minWidth: 0 }}>
-              <Avatar name={selectedItem.name || '?'} size={44} />
+              {/* "Total spent" isn't a merchant name, so it's never masked. */}
+              <Avatar name={(selectedItem.isAll ? selectedItem.name : maskLabel(selectedItem.name)) || '?'} size={44} />
               <div style={{ minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  {groupSingular}
+                  {selectedItem.isAll ? `All ${groupLabel.toLowerCase()}` : groupSingular}
                 </p>
                 <h2 style={{ margin: '4px 0 0', fontSize: '18px', fontWeight: 800, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {selectedItem.name}
+                  {selectedItem.isAll ? selectedItem.name : maskLabel(selectedItem.name)}
                 </h2>
               </div>
             </div>
@@ -536,10 +570,10 @@ export default function Insights() {
                       borderBottom: i < txList.length - 1 ? `1px solid ${T.borderSub}` : 'none',
                     }}
                   >
-                    <Avatar name={tx.description || selectedItem.name || '?'} size={36} />
+                    <Avatar name={maskName(tx.description) || maskLabel(selectedItem.name) || '?'} size={36} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {tx.description ?? '—'}
+                        {maskName(tx.description) ?? '—'}
                       </p>
                       <p style={{ margin: '2px 0 0', fontSize: '11px', color: T.muted }}>
                         {fmtDate(tx.date)}

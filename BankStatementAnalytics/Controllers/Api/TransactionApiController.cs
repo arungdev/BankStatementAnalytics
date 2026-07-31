@@ -175,6 +175,107 @@ namespace BankStatementAnalytics.Controllers.Api
                 Note = transaction.Note
             });
         }
+
+        // PATCH: api/transactions/bulk
+        // Applies one action to many transactions of a single account in one round trip —
+        // the single-row endpoints above stay the path for inline edits.
+        [HttpPatch("bulk")]
+        public async Task<IActionResult> BulkUpdate([FromBody] BulkUpdateTransactionsRequest request)
+        {
+            if (request == null || request.BankReferences == null || request.BankReferences.Count == 0)
+                return BadRequest("No transactions selected.");
+
+            var action = (request.Action ?? string.Empty).Trim().ToLowerInvariant();
+            if (action != "category" && action != "addtag" && action != "removetag")
+                return BadRequest("Unknown bulk action.");
+
+            var tagValue = (request.Tag ?? string.Empty).Trim().ToLowerInvariant();
+            if (action != "category" && string.IsNullOrEmpty(tagValue))
+                return BadRequest("Tag is required for this action.");
+
+            var account = DbHelper.GetById<Account>(request.AccountId);
+            if (!Owns(account))
+                return NotFound();
+
+            var refs = request.BankReferences
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Distinct()
+                .ToList();
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            // The selection can span more rows than SQLite's parameter limit allows in a
+            // single IN (...), so fetch in chunks and update within the one transaction.
+            const int chunkSize = 250;
+            var updated = 0;
+
+            foreach (var chunk in refs.Chunk(chunkSize))
+            {
+                var batch = chunk.ToList();
+                var transactions = await session.Query<BankTransaction>()
+                    .Where(t => t.AccountId == request.AccountId
+                             && t.BankType == request.BankType
+                             && batch.Contains(t.BankReference))
+                    .ToListAsync();
+
+                foreach (var transaction in transactions)
+                {
+                    switch (action)
+                    {
+                        case "category":
+                            transaction.CategoryOverride = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category;
+                            transaction.SubCategoryOverride = string.IsNullOrWhiteSpace(request.SubCategory) ? null : request.SubCategory;
+                            break;
+
+                        case "addtag":
+                        {
+                            var tags = SplitTags(transaction.Tags);
+                            if (tags.Contains(tagValue)) continue; // already tagged — leave it untouched
+                            tags.Add(tagValue);
+                            transaction.Tags = string.Join(",", tags);
+                            break;
+                        }
+
+                        case "removetag":
+                        {
+                            var tags = SplitTags(transaction.Tags);
+                            if (!tags.Remove(tagValue)) continue; // wasn't tagged — nothing to do
+                            transaction.Tags = tags.Count > 0 ? string.Join(",", tags) : null;
+                            break;
+                        }
+                    }
+
+                    await session.UpdateAsync(transaction);
+                    updated++;
+                }
+            }
+
+            await tx.CommitAsync();
+
+            return Ok(new { Updated = updated, Requested = refs.Count });
+        }
+
+        /// <summary>Comma-separated Tags column → a normalised, de-duplicated list.</summary>
+        private static List<string> SplitTags(string? tags) =>
+            string.IsNullOrWhiteSpace(tags)
+                ? new List<string>()
+                : tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                      .Select(t => t.ToLowerInvariant())
+                      .Distinct()
+                      .ToList();
+    }
+
+    public class BulkUpdateTransactionsRequest
+    {
+        public long AccountId { get; set; }
+        public string BankType { get; set; } = string.Empty;
+        public List<string> BankReferences { get; set; } = new();
+        /// <summary>"category", "addTag" or "removeTag".</summary>
+        public string Action { get; set; } = string.Empty;
+        public string? Category { get; set; }
+        public string? SubCategory { get; set; }
+        public string? Tag { get; set; }
     }
 
     public class UpdateTransactionNoteRequest

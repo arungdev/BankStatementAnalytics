@@ -82,6 +82,7 @@ namespace BankStatementAnalytics.Services.Parser
                 Log.Error($"Fatal error parsing HDFC CC statement for account {accountId}", ex);
             }
 
+            AssignGeneratedReferences(transactions);
             return transactions;
         }
 
@@ -107,7 +108,7 @@ namespace BankStatementAnalytics.Services.Parser
             var tx = new BankTransaction
             {
                 AccountId = accountId,
-                BankType = Bank.HDFCCreditCard.ToString(),
+                BankType = BankTypeCode.For(Bank.HDFCCreditCard),
                 BankReference = string.Empty, // filled below
                 TransactionDate = txDate,
                 ValueDate = txDate,
@@ -124,20 +125,30 @@ namespace BankStatementAnalytics.Services.Parser
             // Parse description for mode, counterparty, UPI ref etc.
             ParseNarration(desc, tx, out string? counterPartyName);
 
+            // Bill payments are the user's own money arriving from their bank
+            // account — mark TRANSFER (analytics exclude these from income/spend).
+            if (isCredit && desc.Contains("CREDIT CARD PAYMENT", StringComparison.OrdinalIgnoreCase))
+            {
+                tx.Mode = "TRANSFER";
+                counterPartyName = "CREDIT CARD PAYMENT";
+            }
+
             // Record CounterParty name for batch resolution after parsing.
             if (!string.IsNullOrWhiteSpace(counterPartyName))
                 tx.PendingCounterPartyName = counterPartyName;
 
-            // Generate stable reference
+            // Rows without a real UPI reference get a generated one in the
+            // AssignGeneratedReferences post-pass (needs whole-statement order).
             tx.BankReference = string.IsNullOrWhiteSpace(tx.UpiReference)
-                ? GenerateReference(tx)
+                ? string.Empty
                 : $"HDFCCC{tx.UpiReference}";
 
             return tx;
         }
 
         // ── Narration parser ──────────────────────────────────────────────
-        private static void ParseNarration(
+        // internal: also reused by HdfcCreditCardPdfParser.
+        internal static void ParseNarration(
             string narration,
             BankTransaction tx,
             out string? counterPartyName)
@@ -197,14 +208,26 @@ namespace BankStatementAnalytics.Services.Parser
                 return;
             }
 
-            // EMI
-            if (narration.StartsWith("EMI", StringComparison.OrdinalIgnoreCase))
+            // EMI. Two shapes reach this: the export narration
+            // "EMI-<merchant>-<n>-<...>-" and (from the PDF) an "EMI" badge in
+            // front of a plain merchant name. Requiring a separator after "EMI"
+            // keeps merchants like "EMIRATES" from being read as instalments.
+            if (Regex.IsMatch(narration, @"^EMI[-\s]", RegexOptions.IgnoreCase))
             {
                 tx.Mode = "EMI";
                 var m = EmiFtRegex.Match(narration);
+                string rest = narration[3..].Trim();
+                bool dashForm = rest.StartsWith('-');
+                rest = rest.TrimStart('-').Trim();
+
                 counterPartyName = m.Success
                     ? m.Groups[4].Value.Trim()
-                    : narration.Split('-').Skip(1).FirstOrDefault()?.Trim() ?? "EMI";
+                    // Dash form: the merchant is the first segment, the rest is
+                    // the loan/instalment tail. Badge form: it is all merchant.
+                    : dashForm ? rest.Split('-').FirstOrDefault()?.Trim() : rest;
+
+                if (string.IsNullOrWhiteSpace(counterPartyName))
+                    counterPartyName = "EMI";
                 return;
             }
 
@@ -233,13 +256,49 @@ namespace BankStatementAnalytics.Services.Parser
             counterPartyName = narration.Split('-').FirstOrDefault()?.Trim();
         }
 
-        // ── Reference generator (same SHA1 pattern as HdfcTransactionParser) ──
-        private static string GenerateReference(BankTransaction tx)
+        // ── Reference generator ───────────────────────────────────────────
+        // internal: also reused by HdfcCreditCardPdfParser.
+        //
+        // CC statements carry no bank reference, so one is synthesized — and it
+        // must come out IDENTICAL for the CSV export and the PDF e-statement of
+        // the same bill, or importing both creates duplicate transactions. The
+        // formats render the same row differently (CSV has seconds, PDF only
+        // minutes; spacing inside descriptions differs), so the seed keeps only
+        // what both agree on: date without time, fixed-format amount, and the
+        // description stripped of all whitespace, uppercased.
+        internal static string ReferenceSeed(BankTransaction tx) =>
+            $"{tx.AccountId}|{tx.BankType}|{tx.TransactionDate:yyyyMMdd}" +
+            $"|{tx.Amount.ToString("F2", CultureInfo.InvariantCulture)}" +
+            $"|{SeedDescription(tx.Description)}";
+
+        // The seed key for the description. Card/bill payments render differently
+        // across formats — the CSV keeps a "Net Banking (Ref# …)" tail the PDF
+        // drops — so collapse those to a canonical token keyed on date+amount only.
+        // Other rows differ across formats by whitespace at most, so just strip it.
+        private static string SeedDescription(string? description)
         {
-            var raw = $"{tx.AccountId}|{tx.BankType}|{tx.TransactionDate:yyyyMMddHHmmss}|{tx.Amount}|{tx.Description}";
-            var hash = Convert.ToHexString(
-                SHA1.HashData(Encoding.UTF8.GetBytes(raw)))[..12];
-            return $"GEN{hash}";
+            var desc = description ?? string.Empty;
+            if (desc.Contains("CREDIT CARD PAYMENT", StringComparison.OrdinalIgnoreCase))
+                return "CREDITCARDPAYMENT";
+            return Regex.Replace(desc, @"\s+", "").ToUpperInvariant();
+        }
+
+        // Whole-statement post-pass: an occurrence counter (in statement order)
+        // keeps two genuinely identical same-day purchases distinct, in a way
+        // that still matches across formats because both list rows in order.
+        internal static void AssignGeneratedReferences(List<BankTransaction> transactions)
+        {
+            var seen = new Dictionary<string, int>();
+            foreach (var tx in transactions)
+            {
+                if (!string.IsNullOrEmpty(tx.BankReference)) continue; // real HDFCCC<upi-ref>
+
+                var seed = ReferenceSeed(tx);
+                seen[seed] = seen.TryGetValue(seed, out var n) ? n + 1 : 1;
+                var hash = Convert.ToHexString(
+                    SHA1.HashData(Encoding.UTF8.GetBytes($"{seed}#{seen[seed]}")))[..12];
+                tx.BankReference = $"GEN{hash}";
+            }
         }
 
         // ── Date helpers (same as HdfcTransactionParser) ──────────────────

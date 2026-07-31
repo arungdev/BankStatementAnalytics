@@ -93,6 +93,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 MatchKey = matchKey,
                 ExpectedAmount = req.ExpectedAmount,
                 DueDayOfMonth = Math.Clamp(req.DueDayOfMonth, 1, 31),
+                Cadence = RecurringBillService.NormalizeCadence(req.Cadence) ?? "Monthly",
                 Status = "Confirmed",
                 LastSeenDate = req.LastSeenDate,
                 CreatedOn = DateTime.Now,
@@ -159,6 +160,8 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!string.IsNullOrWhiteSpace(req.Name)) bill.Name = req.Name.Trim();
             bill.ExpectedAmount = req.ExpectedAmount;
             bill.DueDayOfMonth = Math.Clamp(req.DueDayOfMonth, 1, 31);
+            var cadence = RecurringBillService.NormalizeCadence(req.Cadence);
+            if (cadence != null) bill.Cadence = cadence;
             bill.UpdatedOn = DateTime.Now;
 
             await session.UpdateAsync(bill);
@@ -191,6 +194,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public int? CounterPartyId { get; set; }
         public decimal ExpectedAmount { get; set; }
         public int DueDayOfMonth { get; set; }
+        public string? Cadence { get; set; }
         public DateTime? LastSeenDate { get; set; }
     }
 }

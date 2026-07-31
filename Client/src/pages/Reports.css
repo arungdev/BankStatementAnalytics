@@ -6,6 +6,151 @@
   display: none;
 }
 
+/* StatCard sizes itself for flex rows; inside the report's stat grid the track
+   width already sets the tile size, so its own floor must not force overflow. */
+.report-stat-row .stat-card {
+  min-width: 0;
+}
+
+/* ─── Top merchants leaderboard ─────────────────────────────────────────
+   Rank badge + name/amount line + a share bar scaled to the leader. The
+   list scrolls inside the card; a fade and a footer count signal more rows. */
+
+.merchant-list {
+  position: relative;
+}
+
+.merchant-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  /* Bleed the hover surface out to the card padding without clipping it */
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+
+.report-scroll::-webkit-scrollbar             { width: 6px; }
+.report-scroll::-webkit-scrollbar-track       { background: transparent; }
+.report-scroll::-webkit-scrollbar-thumb       { background: var(--gray-300); border-radius: 10px; }
+.report-scroll::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
+
+.merchant-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+}
+
+.merchant-row:hover {
+  background: var(--surface-2);
+}
+
+.merchant-rank {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.merchant-rank.is-top {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.merchant-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.merchant-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.merchant-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.merchant-amount {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.merchant-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.merchant-bar {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.merchant-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--primary);
+}
+
+/* Ranks 4+ keep the same hue, dialled back so the leaders read first */
+.merchant-bar > span.is-dim {
+  opacity: 0.45;
+}
+
+.merchant-sub {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+/* Fade the last row under the footer so the list reads as continuing */
+.merchant-list.has-more::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 6px;
+  bottom: 26px;
+  height: 32px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--surface));
+}
+
+.merchant-more {
+  margin: 0;
+  padding-top: 10px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
 @media print {
   @page {
     size: A4;
@@ -23,17 +168,25 @@
      it must become a normal flowing document or only the first page prints. */
   .app,
   .main,
-  .content {
+  .content,
+  .report-shell {
     display: block !important;
     height: auto !important;
     overflow: visible !important;
     padding: 0 !important;
   }
 
+  /* .report-shell is the flex row that docks the drill-down drawer beside the
+     report on screen; both its sizing and the drawer offset must go for print. */
+  .report-shell,
+  .report-page {
+    min-height: 0 !important;
+    margin-right: 0 !important;
+  }
+
   .report-page {
     padding: 0 !important;
     background: #ffffff !important;
-    min-height: 0 !important;
   }
 
   /* Force a light render for the printed report even when the app is in dark
@@ -53,6 +206,17 @@
   .report-print-header {
     display: block !important;
   }
+
+  /* On-screen scroll panes must flow in full, or printing clips them */
+  .report-scroll {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Merchant list: drop the hover bleed and scroll affordances on paper */
+  .merchant-list.has-more::after { display: none; }
+  .merchant-scroll { margin: 0 !important; padding: 0 !important; }
+  .merchant-row { padding: 7px 0; border-bottom: 1px solid var(--border-subtle); }
 
   /* Keep each section on one page where possible */
   .report-card,

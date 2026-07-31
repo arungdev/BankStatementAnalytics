@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -7,10 +7,11 @@ import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
+import CreditCardPanel from '../components/CreditCardPanel';
 import EmptyState from '../components/ui/EmptyState';
 import useTheme from '../context/useTheme';
 import { getToken } from '../theme/chartTheme';
-import { currencyFormatter as fmt, formatDate } from '../utils/format';
+import { currencyFormatter as fmt, formatDate, maskName } from '../utils/format';
 
 /* ─── Design tokens — mapped to the global CSS variable system ───────────── */
 const T = {
@@ -54,6 +55,37 @@ const s = {
     color: T.text,
     letterSpacing: '-0.1px',
   },
+  // The feed card owns its own height so the list scrolls instead of the page.
+  feedCard: { display: 'flex', flexDirection: 'column', position: 'relative', minHeight: 0 },
+};
+
+// Deterministic avatar color per merchant name, so the list scans by color+initials.
+const hueOf = name => {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return h;
+};
+const initialsOf = name =>
+  name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+
+// Rows per activity-feed page — matches RecentPageSize on the server.
+const RECENT_PAGE = 10;
+
+// Feed rows are grouped by day, so the row itself carries no date — the sticky
+// header does. Anything inside the current week reads better as a word.
+const dayLabel = iso => {
+  if (!iso) return 'Undated';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Undated';
+  const midnight = x => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const now = new Date();
+  const diff = Math.round((midnight(now) - midnight(d)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short', day: '2-digit', month: 'short',
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
 };
 
 const fmtK = v => v >= 100000
@@ -73,12 +105,17 @@ const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
 
 export default function Overview() {
   const { selectedAccountId } = useAccount();
-  const { accounts = [] } = useOutletContext() ?? {};
+  const { accounts = [], openSettings } = useOutletContext() ?? {};
   const navigate = useNavigate();
   const { theme } = useTheme();
   const [data, setData] = useState(null);
   const [trend, setTrend] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Activity feed pages in 10 at a time as the user scrolls; the first page
+  // rides along with the dashboard payload.
+  const [recent, setRecent] = useState([]);
+  const [recentHasMore, setRecentHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Resolved chart colors (recharts SVG can't read CSS var()). `theme` is the
   // trigger: getToken() reads resolved values off the DOM, so recompute on flip.
@@ -93,29 +130,42 @@ export default function Overview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [theme]);
 
-  const fetchOverview = useCallback(() => {
-    if (!selectedAccountId) { setData(null); setTrend([]); return; }
-    // "All accounts" aggregates across every owned account; otherwise a single id.
-    const isAll = selectedAccountId === ALL_ACCOUNTS;
+  // "All accounts" aggregates across every owned account; otherwise a single id.
+  // Shared by the overview fetch and the activity feed's paging requests.
+  const scopeQuery = useMemo(() => {
+    if (!selectedAccountId) return null;
+    if (selectedAccountId !== ALL_ACCOUNTS) return `accountId=${selectedAccountId}`;
     const allIds = accounts.map(a => a.id).join(',');
-    if (isAll && !allIds) { setData(null); setTrend([]); return; }
-    const query = isAll ? `accountIds=${allIds}` : `accountId=${selectedAccountId}`;
+    return allIds ? `accountIds=${allIds}` : null;
+  }, [selectedAccountId, accounts]);
+
+  // Latest scope, readable from async callbacks without re-creating them.
+  const scopeRef = useRef(scopeQuery);
+  useEffect(() => { scopeRef.current = scopeQuery; }, [scopeQuery]);
+
+  const fetchOverview = useCallback(() => {
+    if (!scopeQuery) { setData(null); setTrend([]); setRecent([]); setRecentHasMore(false); return; }
     // Cash-flow curve covers the last 6 calendar months, inclusive of this one.
     const now = new Date();
     const trendStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     const startParam = `${trendStart.getFullYear()}-${String(trendStart.getMonth() + 1).padStart(2, '0')}-01`;
     setLoading(true);
     Promise.all([
-      api.get(`/dashboard?${query}`),
-      api.get(`/trends?${query}&period=month&startDate=${startParam}`),
+      api.get(`/dashboard?${scopeQuery}`),
+      api.get(`/trends?${scopeQuery}&period=month&startDate=${startParam}`),
     ])
       .then(([dash, tr]) => {
         setData(dash.data);
         setTrend(Array.isArray(tr.data) ? tr.data : []);
+        setRecent(dash.data?.recentTransactions ?? []);
+        setRecentHasMore(!!dash.data?.recentHasMore);
       })
-      .catch(err => { console.error('Failed to fetch overview', err); setData(null); setTrend([]); })
+      .catch(err => {
+        console.error('Failed to fetch overview', err);
+        setData(null); setTrend([]); setRecent([]); setRecentHasMore(false);
+      })
       .finally(() => setLoading(false));
-  }, [selectedAccountId, accounts]);
+  }, [scopeQuery]);
 
   useEffect(() => { fetchOverview(); }, [fetchOverview]);
 
@@ -124,14 +174,124 @@ export default function Overview() {
   const netFlow     = totalIncome - totalSpends;
   const netPositive = netFlow >= 0;
   const topMerchants = data?.topMerchants ?? [];
-  const recent       = data?.recentTransactions ?? [];
   const maxMerchant  = topMerchants.reduce((m, x) => Math.max(m, x.amount), 0);
 
   const isEmpty = !loading && data && (data.totalTransactions ?? 0) === 0;
 
+  // Recent activity, bucketed by day with a per-day net so the sticky headers
+  // carry information rather than just separating rows.
+  const recentDays = useMemo(() => {
+    const byDay = new Map();
+    for (const tx of recent) {
+      const key = tx.date ? String(tx.date).slice(0, 10) : 'undated';
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key).push(tx);
+    }
+    return [...byDay.entries()].map(([key, items]) => ({
+      key,
+      label: dayLabel(items[0]?.date),
+      net: items.reduce((sum, t) => sum + (t.amount ?? 0), 0),
+      items,
+    }));
+  }, [recent]);
+
+  // Bottom fade is a scroll affordance — hide it once the feed is at the end.
+  const [feedScrollable, setFeedScrollable] = useState(false);
+  const feedNodeRef = useRef(null);
+  const sentinelRef = useRef(null);
+  // Re-runs when the day buckets change (account switch, page appended) —
+  // React 19 ref cleanup detaches the old listener first, so none pile up.
+  const feedRef = useCallback(node => {
+    feedNodeRef.current = node;
+    if (!node) return undefined;
+    const sync = () => {
+      const more = node.scrollHeight - node.clientHeight - node.scrollTop > 8;
+      setFeedScrollable(prev => (prev === more ? prev : more));
+    };
+    sync();
+    node.addEventListener('scroll', sync, { passive: true });
+    return () => node.removeEventListener('scroll', sync);
+    // recentDays isn't read here — it's the trigger that re-measures the feed
+    // after the content changes height.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentDays]);
+
+  const loadMoreRecent = useCallback(() => {
+    if (!scopeQuery || !recentHasMore || loadingMore) return;
+    const requestScope = scopeQuery;
+    setLoadingMore(true);
+    api.get(`/dashboard/recent?${scopeQuery}&skip=${recent.length}&take=${RECENT_PAGE}`)
+      .then(res => {
+        // A page in flight when the account changed belongs to the old feed.
+        if (scopeRef.current !== requestScope) return;
+        setRecent(prev => [...prev, ...(res.data?.items ?? [])]);
+        setRecentHasMore(!!res.data?.hasMore);
+      })
+      .catch(err => { console.error('Failed to load more activity', err); setRecentHasMore(false); })
+      .finally(() => setLoadingMore(false));
+  }, [scopeQuery, recentHasMore, loadingMore, recent.length]);
+
+  // Infinite scroll: fire when the sentinel below the last row nears the
+  // bottom of the feed's own viewport (not the page's).
+  useEffect(() => {
+    const root = feedNodeRef.current;
+    const target = sentinelRef.current;
+    if (!root || !target) return undefined;
+    const io = new IntersectionObserver(
+      entries => { if (entries[0].isIntersecting) loadMoreRecent(); },
+      { root, rootMargin: '120px' },
+    );
+    io.observe(target);
+    return () => io.disconnect();
+  }, [loadMoreRecent]);
+
+  // Credit-card-only panel: statement dues, utilization, cycle spend.
+  const selectedAccount = selectedAccountId !== ALL_ACCOUNTS
+    ? accounts.find(a => a.id === selectedAccountId)
+    : null;
+  const isCreditCard = selectedAccount?.bankName === 'HDFCCreditCard';
+
   return (
     <div style={s.page}>
-      <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
+      <style>{`
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        .ov-row { transition: background .15s ease; }
+        .ov-row:hover { background: var(--gray-50); }
+        .ov-viewall { transition: color .15s ease; }
+        .ov-viewall:hover { color: var(--primary-hover); text-decoration: underline; }
+
+        .ov-feed {
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          scrollbar-width: thin;
+          scrollbar-color: var(--gray-300) transparent;
+          margin: 0 -10px;
+          padding: 0 10px;
+        }
+        .ov-feed::-webkit-scrollbar        { width: 6px; }
+        .ov-feed::-webkit-scrollbar-track  { background: transparent; }
+        .ov-feed::-webkit-scrollbar-thumb  { background: var(--gray-300); border-radius: 10px; }
+        .ov-feed::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
+
+        /* Rows scroll beneath the day header, so it needs an opaque backdrop. */
+        .ov-day {
+          position: sticky; top: 0; z-index: 1;
+          display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          margin: 0 -10px;
+          padding: 7px 10px 6px;
+          background: var(--surface);
+          border-bottom: 1px solid var(--border-subtle);
+          font-size: 10.5px; font-weight: 700; letter-spacing: .5px;
+          text-transform: uppercase; color: var(--text-faint);
+        }
+        .ov-fade {
+          position: absolute; left: 1px; right: 1px; bottom: 1px; height: 44px;
+          border-radius: 0 0 14px 14px; pointer-events: none;
+          background: linear-gradient(to top, var(--surface), transparent);
+          opacity: 0; transition: opacity .18s ease;
+        }
+        .ov-fade[data-show="1"] { opacity: 1; }
+      `}</style>
 
       {/* ── Stat cards ── */}
       <div style={s.statsRow}>
@@ -158,6 +318,10 @@ export default function Overview() {
           accent={T.indigoSoft}
         />
       </div>
+
+      {isCreditCard && (
+        <CreditCardPanel accountId={selectedAccountId} onOpenSettings={openSettings} />
+      )}
 
       {!selectedAccountId ? (
         <div style={s.card}>
@@ -240,7 +404,7 @@ export default function Overview() {
                           fontSize: '13px', fontWeight: 600, color: T.text,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
-                          {m.name}
+                          {maskName(m.name)}
                         </span>
                         <span className="tnum" style={{ fontSize: '13px', fontWeight: 700, color: T.red, flexShrink: 0 }}>
                           {fmt.format(m.amount)}
@@ -260,8 +424,31 @@ export default function Overview() {
           </div>
 
           {/* ── Recent transactions ── */}
-          <div style={s.card}>
-            <p style={s.cardTitle}>Recent Activity</p>
+          <div style={{ ...s.card, ...s.feedCard }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <p style={{ ...s.cardTitle, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                Recent Activity
+                {!loading && recent.length > 0 && (
+                  <span style={{
+                    fontSize: '10.5px', fontWeight: 700, color: T.muted,
+                    padding: '2px 7px', borderRadius: '999px',
+                    background: 'var(--gray-100)',
+                  }}>
+                    {recent.length}
+                  </span>
+                )}
+              </p>
+              <button
+                className="ov-viewall"
+                onClick={() => navigate('/transactions')}
+                style={{
+                  border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+                  fontSize: '12px', fontWeight: 600, color: T.indigo,
+                }}
+              >
+                View all →
+              </button>
+            </div>
             {loading ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {[...Array(5)].map((_, i) => <Skeleton key={i} h={20} />)}
@@ -269,48 +456,108 @@ export default function Overview() {
             ) : recent.length === 0 ? (
               <EmptyState icon="📭" title="No recent transactions" subtitle="Nothing to show yet." compact />
             ) : (
-              <div>
-                {recent.map((tx, i) => {
-                  const income = tx.amount >= 0;
-                  return (
-                    <div
-                      key={tx.id ?? i}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '12px',
-                        padding: '12px 0',
-                        borderBottom: i < recent.length - 1 ? `1px solid ${T.borderSub}` : 'none',
-                      }}
-                    >
-                      <div style={{
-                        width: '38px', height: '38px', borderRadius: '10px',
-                        background: income ? 'var(--success-light)' : T.indigoDim,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0, fontSize: '16px',
+              <div ref={feedRef} className="ov-feed" style={{ maxHeight: '392px' }}>
+                {recentDays.map(day => (
+                  <div key={day.key}>
+                    <div className="ov-day">
+                      <span>{day.label}</span>
+                      <span className="tnum" style={{
+                        letterSpacing: 0,
+                        color: day.net >= 0 ? T.green : T.red,
                       }}>
-                        {income ? '💰' : '💳'}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{
-                          margin: 0, fontSize: '13px', fontWeight: 600, color: T.text,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>
-                          {tx.name || '—'}
-                        </p>
-                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: T.muted }}>
-                          {tx.date ? formatDate(tx.date) : '—'}{tx.mode ? ` · ${tx.mode}` : ''}
-                        </p>
-                      </div>
-                      <p className="tnum" style={{
-                        margin: 0, fontSize: '13px', fontWeight: 700, flexShrink: 0,
-                        color: income ? T.green : T.red,
-                      }}>
-                        {income ? '+' : '−'}{fmt.format(Math.abs(tx.amount))}
-                      </p>
+                        {day.net >= 0 ? '+' : '−'}{fmt.format(Math.abs(day.net))}
+                      </span>
                     </div>
-                  );
-                })}
+                    {day.items.map((tx, i) => {
+                      const income = tx.amount >= 0;
+                      const name = maskName(tx.name) || '—';
+                      const hue = hueOf(name);
+                      const dark = theme === 'dark';
+                      const avatarBg = income
+                        ? 'var(--success-light)'
+                        : dark ? `hsl(${hue} 70% 60% / 0.18)` : `hsl(${hue} 70% 45% / 0.10)`;
+                      const avatarFg = income
+                        ? T.green
+                        : dark ? `hsl(${hue} 75% 72%)` : `hsl(${hue} 55% 38%)`;
+                      return (
+                        <div
+                          key={tx.id ?? `${day.key}-${i}`}
+                          className="ov-row"
+                          onClick={() => navigate('/transactions')}
+                          title="View in Transactions"
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '12px',
+                            padding: '9px 10px', margin: '0 -10px',
+                            borderRadius: '10px', cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{
+                            width: '38px', height: '38px', borderRadius: '12px',
+                            background: avatarBg, color: avatarFg,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0, fontSize: '12px', fontWeight: 700, letterSpacing: '0.3px',
+                          }}>
+                            {income ? '↓' : initialsOf(name)}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{
+                              margin: 0, fontSize: '13px', fontWeight: 600, color: T.text,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              {name}
+                            </p>
+                            <p style={{
+                              margin: '3px 0 0', fontSize: '11px', color: T.muted,
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                            }}>
+                              {tx.mode ? (
+                                <span style={{
+                                  fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.5px',
+                                  padding: '1.5px 7px', borderRadius: '999px',
+                                  background: 'var(--gray-100)', color: T.muted,
+                                }}>
+                                  {tx.mode}
+                                </span>
+                              ) : (
+                                <span>{tx.date ? formatDate(tx.date) : '—'}</span>
+                              )}
+                            </p>
+                          </div>
+                          <p className="tnum" style={{
+                            margin: 0, fontSize: '13px', fontWeight: 700, flexShrink: 0,
+                            color: income ? T.green : T.red,
+                          }}>
+                            {income ? '+' : '−'}{fmt.format(Math.abs(tx.amount))}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+
+                {/* Paging foot: the sentinel trips the observer a little before
+                    it scrolls into view, so the next 10 land without a gap. */}
+                {recentHasMore && (
+                  <div ref={sentinelRef} style={{ padding: '2px 0 6px' }}>
+                    {loadingMore && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '10px 0 4px' }}>
+                        <Skeleton h={20} />
+                        <Skeleton h={20} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!recentHasMore && recent.length > RECENT_PAGE && (
+                  <p style={{
+                    margin: '10px 0 2px', textAlign: 'center',
+                    fontSize: '11px', fontWeight: 600, color: T.muted,
+                  }}>
+                    You're all caught up
+                  </p>
+                )}
               </div>
             )}
+            <div className="ov-fade" data-show={feedScrollable ? '1' : '0'} />
           </div>
         </div>
         </>

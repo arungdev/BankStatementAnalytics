@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FiRefreshCw, FiLock, FiCheckCircle, FiClock, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
@@ -7,6 +7,8 @@ import Drawer from '../components/ui/Drawer';
 import Avatar from '../components/ui/Avatar';
 import { currencyFormatter as fmt } from '../utils/format';
 import { usePrivacy } from '../context/usePrivacy';
+import { useAccount } from '../context/useAccount';
+import { ALL_ACCOUNTS } from '../components/AccountFilter';
 
 /* ─── Design tokens — mapped to the global CSS variable system ─────────────
  * Keys kept stable so the inline styles below read straight from var()s and
@@ -31,8 +33,24 @@ const T = {
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-// ISO datetime → yyyy-mm-dd for <input type="date">.
-const toDateInput = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
+// ISO datetime → yyyy-mm-dd for <input type="date">. Uses local date parts —
+// toISOString() shifts to UTC, which rolls IST midnight back to the previous day.
+const toDateInput = (d) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+};
+
+// FD maturity projection with quarterly compounding (Indian bank convention).
+// Mirrors the server-side formula in DepositService so list and drawer agree.
+const fdProjection = (principal, rate, placedOn, maturityDate) => {
+  if (!(principal > 0) || !(rate > 0) || !placedOn || !maturityDate) return null;
+  const days = Math.round((new Date(maturityDate) - new Date(placedOn)) / 86400000);
+  if (!(days > 0)) return null;
+  const value = Math.round(principal * Math.pow(1 + rate / 400, (4 * days) / 365));
+  return { value, interest: value - principal, days };
+};
 
 const s = {
   page: { padding: '28px 32px', background: T.bg, minHeight: '100vh' },
@@ -61,6 +79,15 @@ export default function Investments() {
   // Router's cached outlet element bails out of re-rendering and the
   // fmt.format() amounts stay stale until the next unrelated render.
   usePrivacy();
+
+  // Account scoping: "All accounts" (or no selection yet) sends no params, which the
+  // API treats as every owned account.
+  const { selectedAccountId } = useAccount();
+  const accountParams = useMemo(
+    () => (!selectedAccountId || selectedAccountId === ALL_ACCOUNTS ? {} : { accountId: selectedAccountId }),
+    [selectedAccountId],
+  );
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -71,12 +98,20 @@ export default function Investments() {
   const [form, setForm] = useState(null);           // editable metadata
   const [saving, setSaving] = useState(false);
 
+  // Reloads on mount and whenever the selected account changes (accountParams is
+  // the dependency behind `load`).
   const load = useCallback(() => {
-    return api.get('/deposits')
-      .then((res) => setData(res.data))
+    return api.get('/deposits', { params: accountParams })
+      .then((res) => {
+        setData(res.data);
+        // Whatever the drawer was showing belonged to the previous account scope.
+        setSelected(null);
+        setForm(null);
+        setTxns([]);
+      })
       .catch((err) => { console.error('Failed to fetch deposits', err); setData(null); })
       .finally(() => setLoading(false));
-  }, []);
+  }, [accountParams]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -91,7 +126,7 @@ export default function Investments() {
     });
     setTxns([]);
     setLoadingTxns(true);
-    api.get('/deposits/transactions', { params: { kind, matchKey: d.matchKey } })
+    api.get('/deposits/transactions', { params: { kind, matchKey: d.matchKey, ...accountParams } })
       .then((res) => setTxns(res.data || []))
       .catch((err) => console.error(err))
       .finally(() => setLoadingTxns(false));
@@ -274,6 +309,19 @@ export default function Investments() {
 
               <label style={s.metaLabel}>Maturity date</label>
               <input className="field-input" type="date" style={{ width: '100%', marginBottom: '12px' }} value={form.maturityDate} onChange={(e) => setForm({ ...form, maturityDate: e.target.value })} />
+
+              {selected.kind === 'FD' && (() => {
+                const proj = fdProjection(selected.principal, Number(form.interestRate), selected.placedOn, form.maturityDate);
+                return proj && (
+                  <div style={{ background: T.indigoDim, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Projected maturity value</div>
+                    <div style={{ fontSize: '22px', fontWeight: 800, letterSpacing: '-0.5px', color: T.indigo }}>{fmt.format(proj.value)}</div>
+                    <div style={{ fontSize: '11px', color: T.muted, marginTop: '3px' }}>
+                      +{fmt.format(proj.interest)} interest @ {form.interestRate}% · {proj.days} days · compounded quarterly
+                    </div>
+                  </div>
+                );
+              })()}
 
               <label style={s.metaLabel}>Note</label>
               <textarea className="field-input" rows={2} style={{ width: '100%', marginBottom: '14px', resize: 'vertical' }} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />

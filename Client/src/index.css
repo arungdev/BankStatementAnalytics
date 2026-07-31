@@ -20,15 +20,16 @@
   --gray-800: #1f2937;
   --gray-900: #111827;
 
-  /* Surfaces */
-  --bg: var(--gray-100);
+  /* Surfaces — bg sits a step below surface-2 so white cards read as raised;
+     text-muted/faint stay ≥4.5:1 on white for small-label legibility. */
+  --bg: #edeff4;
   --surface: #ffffff;
-  --surface-2: var(--gray-50);
-  --border-color: var(--gray-200);
-  --border-subtle: #f0f1f3;
+  --surface-2: #f4f5f9;
+  --border-color: #dcdfe6;
+  --border-subtle: #e7e9ef;
   --text-main: var(--gray-900);
-  --text-muted: var(--gray-500);
-  --text-faint: var(--gray-400);
+  --text-muted: var(--gray-600);
+  --text-faint: var(--gray-500);
   --overlay: rgba(15, 23, 42, 0.45);
 
   /* Legacy aliases kept for existing components */
@@ -57,7 +58,7 @@
   --chart-income: #059669;
   --chart-spend: #dc2626;
   --chart-grid: var(--gray-200);
-  --chart-tick: var(--gray-500);
+  --chart-tick: var(--gray-600);
 
   /* Stat tile (branded KPI card) */
   --stat-tile-bg: linear-gradient(135deg, #1e1b4b, #312e81);
@@ -93,15 +94,17 @@
   --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
   --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.1), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
 
-  /* Type scale */
-  --text-xs: 12px;
-  --text-sm: 13px;
-  --text-base: 14px;
-  --text-md: 15px;
-  --text-lg: 18px;
-  --text-xl: 22px;
-  --text-2xl: 28px;
-  --text-3xl: 32px;
+  /* Type scale — every token multiplies by --font-scale so the Appearance
+     setting can enlarge/shrink all text globally (set on <html> at runtime). */
+  --font-scale: 1;
+  --text-xs: calc(12px * var(--font-scale));
+  --text-sm: calc(13px * var(--font-scale));
+  --text-base: calc(14px * var(--font-scale));
+  --text-md: calc(15px * var(--font-scale));
+  --text-lg: calc(18px * var(--font-scale));
+  --text-xl: calc(22px * var(--font-scale));
+  --text-2xl: calc(28px * var(--font-scale));
+  --text-3xl: calc(32px * var(--font-scale));
 }
 
 /* --- DARK THEME ---
@@ -157,8 +160,9 @@
   --chart-6: #ef4444;
   --chart-7: #ec4899;
   --chart-8: #ea580c;
-  --chart-income: #34d399;
-  --chart-spend: #f87171;
+  /* CVD-validated against --surface #1a1d27 (dataviz six-checks validator) */
+  --chart-income: #12a594;
+  --chart-spend: #e5484d;
   --chart-grid: #2a3040;
   --chart-tick: #9aa3b2;
 
@@ -176,6 +180,9 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* calc(16px * 1) at the default scale — visually unchanged, but lets text
+     without an explicit --text-* token scale with the Appearance setting. */
+  font-size: calc(16px * var(--font-scale));
   background-color: var(--bg-color);
   color: var(--text-main);
   -webkit-font-smoothing: antialiased;
@@ -184,6 +191,13 @@ body {
 
 a {
   text-decoration: none;
+}
+
+/* Native <select> popups ignore the page's color-scheme once the select is
+   author-styled (Chromium/Windows), so options must be painted explicitly. */
+select option {
+  background: var(--surface);
+  color: var(--text-main);
 }
 
 /* --- LAYOUT --- */
@@ -320,6 +334,16 @@ tr:hover td {
 
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* Summary tiles that drill down to their underlying rows (see StatCard). */
+.stat-card.is-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 26px rgba(79, 70, 229, 0.28);
+}
+.stat-card.is-clickable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* --- MODAL --- */
@@ -513,6 +537,29 @@ tr:hover td {
 .loader-text {
   color: var(--text-muted);
   font-weight: 500;
+}
+
+/* --- APP ENTRY / ROUTE TRANSITIONS --- */
+/* .boot-splash itself is styled inline in index.html (it must render before
+   this stylesheet is injected); these classes handle what comes after it. */
+.app-fade {
+  animation: app-fade-in 0.35s ease-out both;
+}
+
+.route-fade {
+  animation: app-fade-in 0.22s ease-out both;
+}
+
+@keyframes app-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-fade,
+  .route-fade {
+    animation: none;
+  }
 }
 
 /* --- Upload Statement Page --- */
@@ -758,4 +805,15 @@ tr:hover td {
 .auth-footer a:hover {
   color: var(--primary-hover);
   text-decoration: underline;
+}
+
+/* Transfers page — the whole pair card is clickable (opens the detail drawer). */
+.transfer-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+}
+
+.transfer-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }

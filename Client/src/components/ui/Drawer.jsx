@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './ui.css';
 
 // All drawers dock to the same right edge, so only one may be open at a time —
@@ -64,7 +65,10 @@ export default function Drawer({ open, onClose, title, children, width = 450, on
 
   if (!open) return null;
 
-  return (
+  // Portal to <body>: pages render inside animated/stacking-context wrappers
+  // (e.g. .route-fade's filling opacity animation), which would otherwise trap
+  // the drawer's z-index below the page header and hide its title/close bar.
+  return createPortal(
     <>
       {modal && <div className="ui-drawer-backdrop" onClick={onClose} />}
       <div className="ui-drawer" style={{ width: `${width}px` }}>
@@ -83,6 +87,7 @@ export default function Drawer({ open, onClose, title, children, width = 450, on
           {children}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

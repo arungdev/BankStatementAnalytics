@@ -27,6 +27,9 @@ function hydrate(stored) {
     };
   }
 
+  // Removed/unknown preset (e.g. from an older build) — reset to default.
+  if (!PRESETS.some(p => p.value === preset)) return { ...DEFAULT };
+
   // Relative preset — recompute from today.
   const { start, end } = resolvePreset(preset);
   return { start, end, preset, label: labelFor(preset) };

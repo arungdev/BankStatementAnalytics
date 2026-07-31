@@ -171,8 +171,10 @@ export default function Budgets() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null); // budget being edited
-  const [form, setForm] = useState({ category: '', monthlyLimit: '' });
+  const [form, setForm] = useState({ category: '', monthlyLimit: '', auto: false });
   const [saving, setSaving] = useState(false);
+  // category → { suggested, avgMonthly, months } from real spending history
+  const [suggestions, setSuggestions] = useState({});
 
   const load = useCallback(() => {
     return Promise.all([
@@ -197,6 +199,17 @@ export default function Budgets() {
       .catch((err) => console.error('Failed to load months', err));
   }, []);
 
+  // Per-category suggested limits, derived from average monthly spend (once).
+  useEffect(() => {
+    api.get('/budgets/suggestions')
+      .then((r) => {
+        const map = {};
+        (r.data || []).forEach((sg) => { map[sg.category] = sg; });
+        setSuggestions(map);
+      })
+      .catch((err) => console.error('Failed to load budget suggestions', err));
+  }, []);
+
   const budgetedCats = new Set(budgets.map((b) => b.category));
   const availableCats = categories.filter((c) => !budgetedCats.has(c));
 
@@ -205,8 +218,21 @@ export default function Budgets() {
   const totalRemaining = totalBudget - totalSpent;
 
   const openAdd = () => {
-    setForm({ category: availableCats[0] || '', monthlyLimit: '' });
+    const category = availableCats[0] || '';
+    const suggested = suggestions[category]?.suggested;
+    setForm({ category, monthlyLimit: suggested ? String(suggested) : '', auto: !!suggested });
     setAdding(true);
+  };
+
+  // Switching category re-applies the suggestion unless the user typed their own amount.
+  const changeCategory = (category) => {
+    setForm((f) => {
+      const keepTyped = !f.auto && f.monthlyLimit !== '';
+      const suggested = suggestions[category]?.suggested;
+      return keepTyped
+        ? { ...f, category }
+        : { category, monthlyLimit: suggested ? String(suggested) : '', auto: !!suggested };
+    });
   };
 
   const saveNew = () => {
@@ -374,7 +400,7 @@ export default function Budgets() {
             className="field-input"
             style={{ width: '100%', marginBottom: '14px' }}
             value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            onChange={(e) => changeCategory(e.target.value)}
           >
             {availableCats.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -389,9 +415,36 @@ export default function Budgets() {
           value={editing ? editing.monthlyLimit : form.monthlyLimit}
           onChange={(e) => editing
             ? setEditing({ ...editing, monthlyLimit: e.target.value })
-            : setForm({ ...form, monthlyLimit: e.target.value })}
+            : setForm({ ...form, monthlyLimit: e.target.value, auto: false })}
           autoFocus
         />
+        {(() => {
+          const sg = suggestions[editing ? editing.category : form.category];
+          if (!sg) return null;
+          const current = editing ? editing.monthlyLimit : form.monthlyLimit;
+          const applied = String(current) === String(sg.suggested);
+          return (
+            <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+              Suggested: <strong className="tnum" style={{ color: 'var(--text-main)' }}>{fmt.format(sg.suggested)}</strong>
+              {' '}— you spend about {fmt.format(sg.avgMonthly)}/month here
+              {' '}({sg.months === 1 ? 'this month so far' : `avg of last ${sg.months} months`}).
+              {!applied && (
+                <button
+                  onClick={() => editing
+                    ? setEditing({ ...editing, monthlyLimit: sg.suggested })
+                    : setForm({ ...form, monthlyLimit: String(sg.suggested), auto: true })}
+                  style={{
+                    marginLeft: '6px', padding: 0, border: 'none', background: 'none',
+                    color: 'var(--primary)', fontWeight: 700, fontSize: '12px',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  Use it
+                </button>
+              )}
+            </p>
+          );
+        })()}
         <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
           This limit repeats every month — set it once and it applies to all months.
         </p>

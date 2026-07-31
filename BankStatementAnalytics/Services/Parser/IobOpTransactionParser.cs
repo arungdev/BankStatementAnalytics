@@ -34,7 +34,7 @@ namespace BankStatementAnalytics.Services.Parser
 
         // Keywords that identify a remarks line
         private static readonly Regex KeywordRegex =
-            new(@"UPI/|CASH|NEFT|ECOM|CHRGS|Int\.Pd", RegexOptions.Compiled);
+            new(@"UPI/|CASH|NEFT|ECOM|CHRGS|Int\.Pd|-ATM-", RegexOptions.Compiled);
 
         // Amount pattern (handles Indian lakh format: 1,80,000.00)
         private static readonly Regex AmountRegex =
@@ -165,7 +165,7 @@ namespace BankStatementAnalytics.Services.Parser
                 ImportedOn = DateTime.Now,
                 Description = description,
                 AccountId = accountId,
-                BankType = Bank.IOB.ToString(),
+                BankType = BankTypeCode.For(Bank.IOB),
                 TransactionDate = DateTime.ParseExact(txDate, "dd/MM/yyyy", CultureInfo.InvariantCulture),
                 ValueDate = DateTime.ParseExact(valDate, "dd/MM/yyyy", CultureInfo.InvariantCulture),
             };
@@ -255,7 +255,8 @@ namespace BankStatementAnalytics.Services.Parser
         /// CounterParty name is returned via out param so the caller can
         /// resolve it against the CounterParties master table.
         /// </summary>
-        private static void ParseRemarks(string remarks, BankTransaction tx, out string? counterPartyName)
+        // internal: also reused by IobPdfParser.
+        internal static void ParseRemarks(string remarks, BankTransaction tx, out string? counterPartyName)
         {
             counterPartyName = null;
 
@@ -266,7 +267,7 @@ namespace BankStatementAnalytics.Services.Parser
                 tx.Mode = "UPI";
 
                 var m = Regex.Match(remarks,
-                    @"UPI/(\d+)/(CR|DR)/\s*([^/]+?)\s*/([A-Za-z]+)(?:/|$|\s)");
+                    @"UPI/(\d+)/(CR|DR)/\s*([^/]+?)\s*/\s*([A-Za-z]+)(?:/|$|\s)");
 
                 if (m.Success)
                 {
@@ -275,6 +276,29 @@ namespace BankStatementAnalytics.Services.Parser
                     counterPartyName = m.Groups[3].Value.Trim();
                     tx.BankCode = m.Groups[4].Value.ToUpper();
                 }
+                else if ((m = Regex.Match(remarks,
+                    // Mandate/autopay remarks omit the CR|DR token:
+                    // "UPI/956101010496/ Google Play/uti/MandateEx"
+                    @"UPI/(\d+)/\s*(?!CR/|DR/)([^/]+?)\s*/([A-Za-z]+)(?:/|$|\s)")).Success)
+                {
+                    tx.UpiReference = m.Groups[1].Value;
+                    counterPartyName = m.Groups[2].Value.Trim();    // type stays column-derived
+                    tx.BankCode = m.Groups[3].Value.ToUpper();
+                }
+                else if ((m = Regex.Match(remarks,
+                    // Bank-side reversal/refund form: "UPI/CR/200901656190/DT171225"
+                    @"UPI/(CR|DR)/(\d+)")).Success)
+                {
+                    tx.TransactionType = m.Groups[1].Value;
+                    tx.UpiReference = m.Groups[2].Value;
+                    counterPartyName = m.Groups[1].Value == "CR" ? "UPI REFUND" : "UPI PAYMENT";
+                }
+            }
+            else if (remarks.Contains("-ATM-"))
+            {
+                tx.Mode = "ATM";
+                tx.TransactionType = "DR";
+                counterPartyName = "ATM";
             }
             else if (remarks.Contains("CASH"))
             {
@@ -294,7 +318,7 @@ namespace BankStatementAnalytics.Services.Parser
                 var m = Regex.Match(remarks, @"ECOM-([A-Z]+)");
                 counterPartyName = m.Success ? m.Groups[1].Value.Trim() : "ECOM";
             }
-            else if (remarks.Contains("CHRGS"))
+            else if (remarks.Contains("CHRGS") || remarks.Contains("SMS ALERT"))
             {
                 tx.Mode = "INTERNAL";
                 tx.TransactionType = "DR";
@@ -320,7 +344,8 @@ namespace BankStatementAnalytics.Services.Parser
         /// Other→ "GEN" + first 12 chars of SHA1 hash of key fields
         ///        (deterministic: re-importing same file won't create duplicates)
         /// </summary>
-        private static string GenerateReference(BankTransaction tx)
+        // internal: also reused by IobPdfParser.
+        internal static string GenerateReference(BankTransaction tx)
         {
             if (!string.IsNullOrWhiteSpace(tx.UpiReference))
                 return $"UPI{tx.UpiReference}";

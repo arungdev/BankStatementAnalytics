@@ -1,10 +1,12 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import api from "./api/client";
 import { useAccount } from "./context/useAccount";
 import { useAuth } from "./context/useAuth";
 import { usePrivacy } from "./context/usePrivacy";
+import { FiHelpCircle } from "react-icons/fi";
 import CreateAccount from "./components/CreateAccount";
+import OnboardingGuide from "./components/OnboardingGuide";
 import Modal from "./components/ui/Modal";
 import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
@@ -26,6 +28,7 @@ import UploadStatement from "./pages/UploadStatement";
 import Trends from "./pages/Trends";
 import Insights from "./pages/Insights";
 import Bills from "./pages/Bills";
+import Transfers from "./pages/Transfers";
 import Budgets from "./pages/Budgets";
 import Investments from "./pages/Investments";
 import Reports from "./pages/Reports";
@@ -44,7 +47,9 @@ export default function App() {
 function AuthGate() {
   const { loading, isAuthenticated, needsSetup } = useAuth();
 
-  if (loading) return null;
+  // Same markup/classes as the pre-mount splash in index.html (styled there),
+  // so the hand-off from static HTML to React is seamless.
+  if (loading) return <div className="boot-splash"><div className="boot-spinner" /></div>;
 
   return (
     <Routes>
@@ -61,12 +66,14 @@ function AuthGate() {
         <Route path="/trends" element={<Trends />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/merchants" element={<Merchants />} />
+        <Route path="/transfers" element={<Transfers />} />
         <Route path="/upload" element={<UploadStatement />} />
         <Route path="/insights" element={<Insights />} />
         <Route path="/bills" element={<Bills />} />
         <Route path="/budgets" element={<Budgets />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>
   );
@@ -77,16 +84,19 @@ const PAGE_META = {
   '/trends': { title: 'Trends', subtitle: 'Income vs. spends over time' },
   '/transactions': { title: 'Transactions' },
   '/merchants': { title: 'Merchants', subtitle: 'Who you transact with, and how they’re categorized' },
+  '/transfers': { title: 'Transfers', subtitle: 'Money moved between your own accounts' },
   '/upload': { title: 'Upload Statement' },
   '/insights': { title: 'Spending Insights', subtitle: 'Where your money goes' },
   '/bills': { title: 'Bills & Reminders', subtitle: 'Upcoming recurring bills' },
   '/budgets': { title: 'Budgets', subtitle: 'Monthly limits by category' },
   '/investments': { title: 'Investments', subtitle: 'Recurring & fixed deposits' },
   '/reports': { title: 'Reports', subtitle: 'Monthly & yearly summary' },
+  '/settings': { title: 'Settings', subtitle: 'Accounts, categories, and preferences' },
 };
 
 function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { selectedAccountId, setSelectedAccountId } = useAccount();
   // Consuming the privacy flag here re-renders Layout (and, via the fresh
   // outlet context object, every page that reads useOutletContext) on toggle.
@@ -94,13 +104,28 @@ function Layout() {
   // don't re-render from this alone — React Router bails out on the cached
   // outlet element — so those pages call usePrivacy() themselves.
   const { maskAmounts, setMaskAmounts } = usePrivacy();
+  const { username } = useAuth();
+
+  // ── First-login onboarding guide ──────────────────────────────────────
+  // Auto-opens once per user (flag kept in localStorage, keyed by username);
+  // the header ? button reopens it anytime.
+  const guideSeenKey = username ? `guideSeen:${username}` : null;
+  const [guideOpen, setGuideOpen] = useState(false);
+  useEffect(() => {
+    if (guideSeenKey && !localStorage.getItem(guideSeenKey)) setGuideOpen(true);
+  }, [guideSeenKey]);
+  const closeGuide = () => {
+    setGuideOpen(false);
+    if (guideSeenKey) localStorage.setItem(guideSeenKey, "1");
+  };
 
   // Fire desktop reminders for bills due soon (opt-in; see Settings → Reminders).
   useBillReminders();
 
   const [accounts, setAccounts] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [isSettingsOpen, setIsSettings] = useState(false);
+  // Settings is a routed page (/settings) rather than a modal.
+  const goSettings = () => navigate('/settings');
   // Width occupied by the docked Reminders drawer (0 when closed) so the
   // page content shifts beside it, like the per-page RHS detail drawers.
   const [remindersDock, setRemindersDock] = useState(0);
@@ -131,18 +156,23 @@ function Layout() {
   // Sidebar accounts
   useEffect(() => {
     api.get('/statements/accounts')
-      .then(res => {
-        setAccounts(res.data);
-        if (res.data.length > 0) {
-          // "All accounts" is a valid selection even though no account has that id.
-          const stillExists = selectedAccountId === ALL_ACCOUNTS
-            || res.data.some(a => a.id === selectedAccountId);
-          if (!selectedAccountId || !stillExists)
-            setSelectedAccountId(res.data[0].id);
-        }
-      })
+      .then(res => setAccounts(res.data))
       .catch(() => setAccounts([]));
-  }, [selectedAccountId, setSelectedAccountId]);
+  }, []);
+
+  // Keep the global selection pointing at a real account. Watching `accounts`
+  // (not just the selection) means the first created account gets selected
+  // immediately instead of only after a full page reload. Optimistic temp
+  // entries (string ids) are never auto-selected.
+  useEffect(() => {
+    const real = accounts.filter(a => typeof a.id === 'number');
+    if (real.length === 0) return;
+    // "All accounts" is a valid selection even though no account has that id.
+    const stillExists = selectedAccountId === ALL_ACCOUNTS
+      || real.some(a => a.id === selectedAccountId);
+    if (!selectedAccountId || !stillExists)
+      setSelectedAccountId(real[0].id);
+  }, [accounts, selectedAccountId, setSelectedAccountId]);
 
   const meta = PAGE_META[location.pathname] ?? { title: '' };
   const isOverview = location.pathname === '/';
@@ -151,6 +181,7 @@ function Layout() {
   const isTransactions = location.pathname === '/transactions';
   const isReports = location.pathname === '/reports';
   const isMerchants = location.pathname === '/merchants';
+  const isInvestments = location.pathname === '/investments';
 
   // Opens the Create Account modal directly, skipping the Settings detour.
   const goAddAccount = () => setShowCreate(true);
@@ -201,12 +232,12 @@ function Layout() {
               setReportPeriod={setReportPeriod}
             />
           </>
-          : isMerchants
+          : (isMerchants || isInvestments)
             ? <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
             : undefined;
 
   return (
-    <div className="app">
+    <div className="app app-fade">
       <Sidebar />
 
       <main className="main">
@@ -215,10 +246,25 @@ function Layout() {
           subtitle={meta.subtitle}
           filters={filters}
           actions={<>
+            <button
+              onClick={() => setGuideOpen(true)}
+              className="btn icon"
+              style={{ borderRadius: '50%', width: '36px', height: '36px', color: 'var(--text-muted)', flexShrink: 0 }}
+              title="How to use this app"
+              aria-label="Open the getting-started guide"
+            >
+              <FiHelpCircle size={17} />
+            </button>
             <PrivacyToggle masked={maskAmounts} onToggle={() => setMaskAmounts(m => !m)} />
-            <NotificationBell onDockChange={setRemindersDock} />
+            <NotificationBell onDockChange={setRemindersDock} accounts={accounts} />
           </>}
-          onSettings={() => setIsSettings(true)}
+        />
+
+        <OnboardingGuide
+          open={guideOpen}
+          onClose={closeGuide}
+          hasAccounts={accounts.some(a => typeof a.id === 'number')}
+          onAddAccount={() => setShowCreate(true)}
         />
 
         <Modal
@@ -257,17 +303,13 @@ function Layout() {
           />
         </Modal>
 
-        <Settings
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettings(false)}
-          onAddAccount={() => setShowCreate(true)}
-          onAccountCreated={fetchAccounts}
-          accounts={accounts}
-          setAccounts={setAccounts}
-        />
-        <section className="content" style={{ marginRight: remindersDock, transition: "margin-right 0.2s ease" }}>
+        <section key={location.pathname} className="content route-fade" style={{ marginRight: remindersDock, transition: "margin-right 0.2s ease" }}>
           <Outlet context={{
             accounts,
+            setAccounts,
+            openAddAccount: () => setShowCreate(true),
+            onAccountCreated: fetchAccounts,
+            openSettings: goSettings,
             insightRange,
             insightGroupBy,
             trendsPeriod,
