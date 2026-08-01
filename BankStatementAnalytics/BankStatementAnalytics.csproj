@@ -22,6 +22,19 @@
     <Content Remove="log4net.config" />
   </ItemGroup>
 
+  <!-- In Release the React client is rebuilt into wwwroot mid-build (see BuildReactClient below),
+       and Vite empties the folder and re-emits bundles under NEW content-hashed names. The SDK's
+       default `Content Include="wwwroot\**"` glob is expanded at project EVALUATION - before any
+       target runs - so it would capture the PREVIOUS build's filenames, and DefineStaticWebAssets
+       would then fail on files Vite had just deleted:
+         error : No file exists for the asset at either location '...\wwwroot\assets\index-XXXX.js'
+       So: keep wwwroot out of the evaluation-time item list entirely in Release, and let
+       BuildReactClient add the real files after it has written them. (Debug leaves the default
+       glob alone - nothing rewrites wwwroot there.) -->
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <Content Remove="wwwroot\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="NHibernate" Version="5.6.1" />
     <PackageReference Include="PDFsharp-MigraDoc" Version="6.2.4" />
@@ -83,14 +96,23 @@
 -->
   <!-- Automatically build the React client and output to wwwroot only in Release (production) mode.
        Must run BEFORE static-web-assets discovery (ResolveProjectStaticWebAssets), not just before
-       Build: Vite empties wwwroot and re-emits hashed filenames on every build, so if discovery runs
-       first it caches the OLD hashes in obj\, and the publish copy step then chases files that no
-       longer exist ("MSB3030 ... could not be copied because it was not found"). Ordering the client
-       build ahead of discovery guarantees the manifest is built from the freshly-emitted hashes. -->
+       Build: Vite empties wwwroot and re-emits hashed filenames on every build, so discovery has to
+       see the freshly-emitted files. Ordering alone is not enough though - the item list wwwroot
+       feeds is fixed at evaluation time, hence the `Content Remove` above and the re-Include below.
+       Note a plain `<Content Remove="wwwroot\**"/>` INSIDE this target does not work as a reset:
+       inside a target a wildcard Remove is expanded against the file system, so entries whose files
+       Vite just deleted match nothing and survive. -->
   <Target Name="BuildReactClient" BeforeTargets="Build;ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release'">
     <Message Importance="high" Text="Installing npm dependencies and building React client..." />
     <Exec Command="npm install" WorkingDirectory="..\Client" />
     <Exec Command="npm run build" WorkingDirectory="..\Client" />
+    <!-- Glob wwwroot only now that Vite has written it (the evaluation-time glob was suppressed
+         above). Item operations inside a target run at execution time, so this sees exactly the
+         files on disk. Metadata mirrors the SDK's own default wwwroot Content item
+         (Sdk.StaticWebAssets.StaticAssets.ProjectSystem.props). -->
+    <ItemGroup>
+      <Content Include="wwwroot\**" ExcludeFromSingleFile="true" CopyToPublishDirectory="PreserveNewest" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder)" />
+    </ItemGroup>
   </Target>
 
   <!-- Copies the bundled embedded-PostgreSQL binaries (Common.Framework/Installer/PgBundle) into
