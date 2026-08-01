@@ -10,13 +10,6 @@ using Common.Framework.Logging;
 
 namespace BankStatementAnalytics
 {
-    /// <summary>
-    /// Resolved database location, as seen from outside NHibernate. <paramref name="AppDir"/> is the
-    /// install directory holding the bundled Postgres binaries (appDir\pgsql\bin);
-    /// <paramref name="ConnectionString"/> is null when the app is running on the SQLite fallback.
-    /// </summary>
-    public sealed record DatabaseInfo(bool IsPostgres, bool IsEmbedded, string AppDir, string? ConnectionString);
-
     public static class NHibernateHelper
     {
         public static ISessionFactory SessionFactory
@@ -107,8 +100,9 @@ namespace BankStatementAnalytics
 
         /// <summary>
         /// Where the database physically lives, for the tools that have to reach it outside
-        /// NHibernate — <see cref="Services.BackupService"/> shells out to pg_dump/pg_restore and
-        /// needs the host/port/credentials plus the folder holding the bundled Postgres binaries.
+        /// NHibernate — <see cref="BackupService"/> shells out to pg_dump/pg_restore and needs the
+        /// host/port/credentials plus the folder holding the bundled Postgres binaries (it takes
+        /// this method as <see cref="BackupOptions.DescribeDatabase"/>; see Program.cs).
         /// Re-reads the same layered config rather than caching what
         /// <see cref="SessionFactory"/> resolved, so it doesn't depend on init order.
         /// </summary>
