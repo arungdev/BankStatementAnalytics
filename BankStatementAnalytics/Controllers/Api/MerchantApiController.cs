@@ -244,6 +244,62 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(new { Updated = merchants.Count });
         }
 
+        // GET: api/merchants/category-suggestions
+        // Proposed categories for the user's uncategorized merchants (keyword rules +
+        // similarity to already-categorized merchants). Review-only: nothing is applied
+        // until the client POSTs the accepted rows back to /category-suggestions/apply.
+        [HttpGet("category-suggestions")]
+        public IActionResult CategorySuggestions()
+        {
+            using var session = DbHelper.GetSession();
+
+            var merchants = session.Query<Merchant>()
+                .Where(m => m.OwnerUserId == CurrentUserId)
+                .FetchMany(m => m.UpiIds)
+                .ToList();
+            var categories = session.Query<Category>()
+                .Where(c => c.OwnerUserId == CurrentUserId)
+                .FetchMany(c => c.SubCategories)
+                .ToList();
+
+            return Ok(MerchantCategorySuggester.Suggest(merchants, categories));
+        }
+
+        // POST: api/merchants/category-suggestions/apply
+        // Each row carries its own category/sub pair (unlike bulk-category's single pair).
+        [HttpPost("category-suggestions/apply")]
+        public async Task<IActionResult> ApplyCategorySuggestions([FromBody] ApplyCategorySuggestionsRequest request)
+        {
+            if (request?.Items == null || !request.Items.Any())
+                return BadRequest("Invalid request.");
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var byId = request.Items
+                .Where(i => !string.IsNullOrWhiteSpace(i.Category))
+                .GroupBy(i => i.Id)
+                .ToDictionary(g => g.Key, g => g.First());
+            // Ownership enforced in the query — foreign ids just don't come back.
+            var ids = byId.Keys.ToList();
+            var merchants = session.Query<Merchant>()
+                .Where(m => ids.Contains(m.Id) && m.OwnerUserId == CurrentUserId)
+                .ToList();
+
+            foreach (var merchant in merchants)
+            {
+                var item = byId[merchant.Id];
+                merchant.Category = item.Category;
+                merchant.SubCategory = NullIfBlank(item.SubCategory);
+                merchant.UpdatedOn = DateTime.Now;
+                await session.UpdateAsync(merchant);
+            }
+
+            await tx.CommitAsync();
+
+            return Ok(new { Updated = merchants.Count });
+        }
+
         // POST: api/merchants/merge
         [HttpPost("merge")]
         public async Task<IActionResult> Merge([FromBody] MergeMerchantsRequest request)
@@ -450,6 +506,18 @@ namespace BankStatementAnalytics.Controllers.Api
         public List<int> Ids { get; set; } = new List<int>();
         public string? Category { get; set; }
         public string? SubCategory { get; set; }
+    }
+
+    public class ApplyCategorySuggestionsRequest
+    {
+        public List<Item> Items { get; set; } = new List<Item>();
+
+        public class Item
+        {
+            public int Id { get; set; }
+            public string? Category { get; set; }
+            public string? SubCategory { get; set; }
+        }
     }
 
     public class MergeMerchantsRequest
