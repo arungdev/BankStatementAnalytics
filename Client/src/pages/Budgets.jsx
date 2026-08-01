@@ -222,29 +222,22 @@ export default function Budgets() {
       .catch((err) => console.error('Failed to load budget suggestions', err));
   }, []);
 
-  // The open drawer follows the month picker: re-fetch instead of closing when the
-  // selected month changes, so the list always reconciles with the card behind it.
-  useEffect(() => {
-    if (!drill) return;
-    let cancelled = false;
+  const fetchDrill = useCallback((budgetId, ago) => {
     setDrillLoading(true);
     setDrillError(null);
-    api.get(`/budgets/${drill.id}/transactions?monthsAgo=${monthsAgo}`)
+    api.get(`/budgets/${budgetId}/transactions?monthsAgo=${ago}`)
       .then((r) => {
-        if (cancelled) return;
         setDrillRows(r.data?.transactions || []);
         setDrillTotal(r.data?.total || 0);
       })
       .catch((err) => {
-        if (cancelled) return;
         console.error('Failed to load budget transactions', err);
         setDrillError('Could not load transactions. Please try again.');
         setDrillRows([]);
         setDrillTotal(0);
       })
-      .finally(() => { if (!cancelled) setDrillLoading(false); });
-    return () => { cancelled = true; };
-  }, [drill, monthsAgo]);
+      .finally(() => setDrillLoading(false));
+  }, []);
 
   const closeDrill = useCallback(() => {
     setDrill(null);
@@ -259,6 +252,14 @@ export default function Budgets() {
     setDrill({ id: b.id, category: b.category });
     setDrillRows([]);
     setDrillTotal(0);
+    fetchDrill(b.id, monthsAgo);
+  };
+
+  // The open drawer follows the month picker: re-fetch instead of closing, so the
+  // list always reconciles with the card behind it.
+  const changeMonth = (ago) => {
+    setMonthsAgo(ago);
+    if (drill) fetchDrill(drill.id, ago);
   };
 
   const budgetedCats = new Set(budgets.map((b) => b.category));
@@ -351,7 +352,7 @@ export default function Budgets() {
           {/* Calendar month picker — bounded to months with transaction history */}
           <MonthPicker
             monthsAgo={monthsAgo}
-            setMonthsAgo={setMonthsAgo}
+            setMonthsAgo={changeMonth}
             maxAgo={monthOptions.reduce((m, o) => Math.max(m, o.monthsAgo), 0)}
           />
         </div>
@@ -530,6 +531,102 @@ export default function Budgets() {
           This limit repeats every month — set it once and it applies to all months.
         </p>
       </Modal>
+    </div>
+
+      {/* ── Drill-down drawer — the transactions behind one budget's spend.
+           Docked (modal={false}) so the cards behind stay clickable, letting you
+           move from one budget to the next without closing it first. ── */}
+      <Drawer
+        open={!!drill}
+        onClose={closeDrill}
+        title={drill?.category || 'Transactions'}
+        width={drillWidth}
+        onWidthChange={setDrillWidth}
+        modal={false}
+      >
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+          Spending in {month}
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+          {[
+            { label: 'Transactions', value: drillRows.length.toLocaleString('en-IN') },
+            { label: 'Spent', value: fmt.format(drillTotal), color: 'var(--danger)' },
+            drillBudget && {
+              label: drillBudget.overBudget ? 'Over' : 'Left',
+              value: fmt.format(Math.abs(drillBudget.remaining)),
+              color: drillBudget.overBudget ? 'var(--danger)' : 'var(--success)',
+            },
+          ].filter(Boolean).map((stat) => (
+            <div key={stat.label} style={{
+              flex: 1, background: 'var(--surface-2)', borderRadius: '8px',
+              padding: '10px 12px', border: '1px solid var(--border-color)',
+            }}>
+              <p style={{
+                margin: 0, fontSize: '10px', fontWeight: 700, color: 'var(--text-faint)',
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+              }}>
+                {stat.label}
+              </p>
+              <p className="tnum" style={{ margin: '3px 0 0', fontSize: '14px', fontWeight: 800, color: stat.color || 'var(--text-main)' }}>
+                {stat.value}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {drillLoading ? (
+          <div style={{ padding: '48px 20px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
+            Loading transactions…
+          </div>
+        ) : drillError ? (
+          <div style={{ padding: '40px 20px', textAlign: 'center', fontSize: '13px', color: 'var(--danger)' }}>
+            {drillError}
+          </div>
+        ) : drillRows.length === 0 ? (
+          <EmptyState
+            icon="📭"
+            title="No transactions"
+            subtitle={`Nothing was spent on ${drill?.category ?? 'this category'} in ${month}.`}
+            compact
+          />
+        ) : (
+          <div style={{ margin: '0 -8px' }}>
+            {drillRows.map((t, i) => {
+              const label = t.merchant || t.description || '—';
+              return (
+                <div
+                  key={t.id || i}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px',
+                    borderBottom: i < drillRows.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                  }}
+                >
+                  <Avatar name={maskName(label)} size={34} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{
+                      margin: 0, fontSize: '13px', fontWeight: 600, color: 'var(--text-main)',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {maskName(label)}
+                    </p>
+                    <p style={{
+                      margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {fmtDate(t.date)}
+                      {t.merchant && t.description ? ` · ${maskName(t.description)}` : ''}
+                    </p>
+                  </div>
+                  <p className="tnum" style={{ margin: 0, fontSize: '13px', fontWeight: 700, flexShrink: 0, color: 'var(--danger)' }}>
+                    −{fmt.format(t.debit)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }
