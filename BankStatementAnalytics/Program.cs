@@ -100,6 +100,7 @@ builder.Services.AddScoped<TransferDetectionService>();
 builder.Services.AddScoped<DepositService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<ReportPdfService>();
+builder.Services.AddScoped<BackupService>();
 // ── Auto-register all parsers from registry ──────────────────────────────
 foreach (var config in BankParserRegistry.Parsers)
 {
