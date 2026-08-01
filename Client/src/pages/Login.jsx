@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/useAuth';
-import { AuthShell, AuthField, AuthPasswordField, AuthError, AuthSubmit } from '../components/AuthShell';
+import { AuthError, AuthField, AuthPasswordField, AuthShell, AuthSubmit, useAuth } from "@common/client";
 
 export default function Login() {
   const { login } = useAuth();
@@ -32,6 +31,7 @@ export default function Login() {
     <AuthShell
       title="Welcome back"
       subtitle="Sign in to BankStatementAnalytics"
+      logo={<img src="/icon-192.png" alt="Bank Analytics" />}
       onSubmit={submit}
     >
       <AuthField

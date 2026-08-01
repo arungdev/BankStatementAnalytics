@@ -4,20 +4,13 @@ import {
 } from "recharts";
 import { FiFilter } from "react-icons/fi";
 import api from "../api/client";
-import Button from "../components/ui/Button";
+import { Avatar, avatarColors, Button, Drawer, EmptyState, Modal, useAuth, useTheme } from "@common/client";
+import { getToken } from "../theme/chartTheme";
 import { currencyFormatter, isAmountMasked, MASKED_AMOUNT, maskName } from "../utils/format";
-import EmptyState from "../components/ui/EmptyState";
-import Drawer from "../components/ui/Drawer";
-import Avatar from "../components/ui/Avatar";
-import Modal from "../components/ui/Modal";
 import CategoryPicker from "../components/CategoryPicker";
-import { avatarColors } from "../utils/avatar";
-import { useAuth } from "../context/useAuth";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { usePrivacy } from "../context/usePrivacy";
-import useTheme from "../context/useTheme";
-import { getToken } from "../theme/chartTheme";
 
 /* ─── Design tokens — mapped to the global CSS variable system so DOM inline
  * styles pick up light/dark automatically. (SVG chart colors can't use var()
@@ -101,14 +94,32 @@ export default function Merchants() {
   const [suggestPrimary, setSuggestPrimary] = useState({});
   const [mergingKey, setMergingKey] = useState(null);
 
+  // Auto-categorization suggestions (keyword rules + similarity to already-
+  // categorized merchants, computed server-side). catExcluded holds unticked
+  // rows so the modal defaults to everything selected.
+  const [catSuggestions, setCatSuggestions] = useState([]);
+  const [showCatModal, setShowCatModal] = useState(false);
+  const [catExcluded, setCatExcluded] = useState(() => new Set());
+  const [applyingCats, setApplyingCats] = useState(false);
+
   // Account scoping: "All accounts" (or no selection yet) sends no params, which the
   // API treats as unfiltered — identical to the pre-filter behavior.
   const { selectedAccountId } = useAccount();
   const isAllAccounts = !selectedAccountId || selectedAccountId === ALL_ACCOUNTS;
   const accountQuery = isAllAccounts ? '' : `?accountId=${selectedAccountId}`;
 
+  // Suggestions refresh together with the list: merging or categorizing changes
+  // what's left to suggest. The endpoint isn't account-scoped (categorization is
+  // global); scoping happens at render via visibleCatSuggestions.
   const fetchMerchants = () =>
-    api.get(`/merchants${accountQuery}`).then(res => setData(res.data || []));
+    Promise.all([
+      api.get(`/merchants${accountQuery}`).then(res => setData(res.data || [])),
+      isAdmin
+        ? api.get('/merchants/category-suggestions')
+            .then(res => setCatSuggestions(res.data || []))
+            .catch(() => setCatSuggestions([]))
+        : Promise.resolve(),
+    ]);
 
   useEffect(() => {
     api.get("/categories")
@@ -133,6 +144,15 @@ export default function Merchants() {
         console.error(err);
         setLoadingDetails(false);
       });
+  };
+
+  // Declared above the account-change effect below, which calls it: as a const arrow
+  // function it is in the temporal dead zone until this line runs.
+  const closeSidebar = () => {
+    setSelectedMerchantId(null);
+    setMerchantDetails(null);
+    setIsEditing(false);
+    setTxFilterName('ALL');
   };
 
   useEffect(() => {
@@ -187,13 +207,6 @@ export default function Merchants() {
       console.error(err);
       alert("Failed to unmerge merchant.");
     });
-  };
-
-  const closeSidebar = () => {
-    setSelectedMerchantId(null);
-    setMerchantDetails(null);
-    setIsEditing(false);
-    setTxFilterName('ALL');
   };
 
   const handleEditClick = () => {
@@ -407,30 +420,129 @@ export default function Merchants() {
     return { totalSpent, count, avg, first, last, monthly };
   }, [merchantDetails]);
 
-  // ── Auto-suggested merges: group merchants whose names normalize to the same
-  // key (case/whitespace/punctuation-insensitive). Also folds a merchant into a
-  // group when its name matches another merchant's alias or friendly name.
+  // ── Auto-suggested merges: union-find over several conservative signals, so a
+  // merchant linked to a group by any one of them joins that group:
+  //  • identical normalized name / friendly name (case/space/punctuation-insensitive)
+  //  • its name matching a name previously merged into another merchant (alias)
+  //  • the same name apart from a month/year stamp ("RD JUL 2026" vs "RD JUN 2026")
+  //  • the same name apart from a trailing number ("…TILL 30" vs "…TILL 31")
+  //  • one name being a long (≥10 chars normalized) prefix of another — statement
+  //    columns truncate payee names at different widths per format
+  //  • the same UPI id recorded on two different merchants
+  // Each group carries the reasons that formed it, shown in the review modal.
   const mergeSuggestions = useMemo(() => {
     const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const groups = new Map();
+    // Month is only stripped when a year follows it, so real words like "May"
+    // in an ordinary merchant name don't trigger false groupings.
+    const MONTHS = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+    const dateStampRe = new RegExp(String.raw`\b(?:${MONTHS})[\s\-/.,']*\d{2,4}\b|\b\d{1,2}[-/]\d{4}\b|\b\d{4}[-/]\d{1,2}\b|\b(?:19|20)\d{2}\b`, 'gi');
+    const dateless = (s) => norm((s || '').replace(dateStampRe, ' '));
+
+    const parent = new Map(data.map(m => [m.id, m.id]));
+    const find = (id) => {
+      let root = id;
+      while (parent.get(root) !== root) root = parent.get(root);
+      while (parent.get(id) !== root) { const next = parent.get(id); parent.set(id, root); id = next; }
+      return root;
+    };
+    const reasons = new Map(); // root id -> Set of reason labels
+    const addReason = (root, reason) => {
+      if (!reasons.has(root)) reasons.set(root, new Set());
+      reasons.get(root).add(reason);
+    };
+    const union = (a, b, reason) => {
+      const ra = find(a), rb = find(b);
+      if (ra !== rb) {
+        parent.set(ra, rb);
+        (reasons.get(ra) || []).forEach(r => addReason(rb, r));
+        reasons.delete(ra);
+      }
+      addReason(find(b), reason);
+    };
+
+    // 1. Shared normalized identity. One map for all key kinds so a date-stripped
+    // key can also meet a plain name ("RD JUL 2026" ↔ "RD"). Plain-name kinds are
+    // listed first so a merchant whose dateless key equals its own name key
+    // registers under the 'name' kind.
+    const byKey = new Map(); // key -> { id, kind } of the first merchant seen with it
     data.forEach(m => {
-      // A merchant can be reachable by its raw name or its friendly name —
-      // group on whichever keys it exposes so renamed rows still cluster.
-      const keys = new Set([norm(m.name), norm(m.friendlyName)].filter(Boolean));
-      keys.forEach(key => {
-        if (!groups.has(key)) groups.set(key, new Set());
-        groups.get(key).add(m);
+      const seen = new Set();
+      const entries = [
+        [norm(m.name), 'name'],
+        [norm(m.friendlyName), 'name'],
+        ...(m.aliases || []).map(a => [norm(a), 'alias']),
+        [dateless(m.name), 'date'],
+        [dateless(m.friendlyName), 'date'],
+      ];
+      entries.forEach(([key, kind]) => {
+        if (!key || key.length < 3 || seen.has(key)) return;
+        seen.add(key);
+        const first = byKey.get(key);
+        if (!first) { byKey.set(key, { id: m.id, kind }); return; }
+        if (first.id === m.id) return;
+        const reason =
+          first.kind === 'date' || kind === 'date' ? 'same name apart from a date'
+          : first.kind === 'alias' || kind === 'alias' ? 'matches a merged alias'
+          : 'same name';
+        union(first.id, m.id, reason);
       });
     });
-    return [...groups.entries()]
-      .filter(([, set]) => set.size > 1)
-      .map(([key, set]) => {
+
+    // 2. Same name apart from a trailing number (only when digits were stripped).
+    const byStem = new Map();
+    data.forEach(m => {
+      const key = norm(m.name);
+      const stem = key.replace(/\d+$/, '');
+      if (stem === key || stem.length < 6) return;
+      const prev = byStem.get(stem);
+      if (prev && prev !== m.id) union(prev, m.id, 'same name apart from a number');
+      else byStem.set(stem, m.id);
+    });
+
+    // 3. Same UPI id on two merchants — strongest signal of the lot.
+    const byUpi = new Map();
+    data.forEach(m => (m.upiIds || []).forEach(u => {
+      const key = (u || '').toLowerCase();
+      if (!key) return;
+      const prev = byUpi.get(key);
+      if (prev && prev !== m.id) union(prev, m.id, 'shared UPI ID');
+      else byUpi.set(key, m.id);
+    }));
+
+    // 4. Long-prefix containment (truncated names). Sorted order puts every
+    // extension somewhere after its prefix; the stack links non-adjacent ones too.
+    const prefixKeys = data
+      .map(m => ({ key: norm(m.name), id: m.id }))
+      .filter(x => x.key.length >= 10)
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    const stack = [];
+    for (const item of prefixKeys) {
+      while (stack.length && !item.key.startsWith(stack[stack.length - 1].key)) stack.pop();
+      if (stack.length && stack[stack.length - 1].key !== item.key)
+        union(stack[stack.length - 1].id, item.id, 'one name truncates the other');
+      stack.push(item);
+    }
+
+    const groupsByRoot = new Map();
+    data.forEach(m => {
+      const root = find(m.id);
+      if (!groupsByRoot.has(root)) groupsByRoot.set(root, []);
+      groupsByRoot.get(root).push(m);
+    });
+    return [...groupsByRoot.entries()]
+      .filter(([, members]) => members.length > 1)
+      .map(([root, members]) => {
         // Default primary: prefer a categorized merchant, then most transactions.
-        const members = [...set].sort((a, b) =>
+        members.sort((a, b) =>
           (b.category ? 1 : 0) - (a.category ? 1 : 0) ||
           (b.transactionCount ?? 0) - (a.transactionCount ?? 0) ||
           a.id - b.id);
-        return { key, members, defaultPrimaryId: members[0].id };
+        return {
+          key: `g${root}`,
+          members,
+          defaultPrimaryId: members[0].id,
+          reasons: [...(reasons.get(root) || [])],
+        };
       })
       .sort((a, b) => b.members.length - a.members.length);
   }, [data]);
@@ -472,6 +584,38 @@ export default function Merchants() {
     } finally {
       setMergingKey(null);
     }
+  };
+
+  // Only offer suggestions for merchants that are still uncategorized *and* in the
+  // current account scope — an inline categorization drops its row immediately
+  // without waiting for a refetch.
+  const visibleCatSuggestions = useMemo(() => {
+    const uncategorized = new Set(data.filter(m => !m.category).map(m => m.id));
+    return catSuggestions.filter(s => uncategorized.has(s.merchantId));
+  }, [data, catSuggestions]);
+
+  const toggleCatSuggestion = (id) => {
+    setCatExcluded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const applyCatSuggestions = () => {
+    const items = visibleCatSuggestions
+      .filter(s => !catExcluded.has(s.merchantId))
+      .map(s => ({ id: s.merchantId, category: s.category, subCategory: s.subCategory }));
+    if (items.length === 0 || applyingCats) return;
+    setApplyingCats(true);
+    api.post('/merchants/category-suggestions/apply', { items })
+      .then(() => fetchMerchants())
+      .then(() => setShowCatModal(false))
+      .catch(err => {
+        console.error(err);
+        alert('Failed to apply category suggestions.');
+      })
+      .finally(() => setApplyingCats(false));
   };
 
   if (loading) {
@@ -683,6 +827,16 @@ export default function Merchants() {
             ✨ {mergeSuggestions.length} suggested merge{mergeSuggestions.length > 1 ? 's' : ''}
           </Button>
         )}
+        {isAdmin && visibleCatSuggestions.length > 0 && (
+          <Button
+            variant="secondary"
+            onClick={() => { setCatExcluded(new Set()); setShowCatModal(true); }}
+            title="Auto-detected categories for uncategorized merchants"
+            style={{ fontSize: 'var(--text-sm)' }}
+          >
+            🏷️ {visibleCatSuggestions.length} category suggestion{visibleCatSuggestions.length > 1 ? 's' : ''}
+          </Button>
+        )}
       </div>
 
       {/* ── List ── */}
@@ -877,14 +1031,24 @@ export default function Merchants() {
         ) : (
           <>
             <p style={{ color: T.muted, fontSize: '13px', margin: '0 0 16px' }}>
-              These merchants have matching names and look like duplicates. Pick which one
-              to keep in each group — the rest fold into it as aliases (you can unmerge later).
+              These merchants look like duplicates — matching or similar names, truncated
+              variants, or a shared UPI ID. Pick which one to keep in each group — the rest
+              fold into it as aliases (you can unmerge later).
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '55vh', overflowY: 'auto', paddingRight: '4px' }}>
               {mergeSuggestions.map(group => {
                 const primaryId = suggestPrimary[group.key] ?? group.defaultPrimaryId;
                 return (
                   <div key={group.key} style={{ border: `1px solid ${T.border}`, borderRadius: '12px', overflow: 'hidden', flexShrink: 0 }}>
+                    {group.reasons?.length > 0 && (
+                      <div style={{
+                        padding: '6px 14px', fontSize: '10px', fontWeight: 700, color: T.faint,
+                        background: T.bg, borderBottom: `1px solid ${T.borderSub}`,
+                        textTransform: 'uppercase', letterSpacing: '0.05em',
+                      }}>
+                        {group.reasons.join(' · ')}
+                      </div>
+                    )}
                     {group.members.map((m, idx) => (
                       <label
                         key={m.id}
@@ -928,6 +1092,85 @@ export default function Merchants() {
                       </button>
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </Modal>
+
+      {/* Category suggestions modal — review & bulk-apply auto-categorization */}
+      <Modal
+        open={showCatModal}
+        onClose={() => setShowCatModal(false)}
+        title="Suggested categories"
+        width={640}
+        footer={(() => {
+          const selectedCount = visibleCatSuggestions.filter(s => !catExcluded.has(s.merchantId)).length;
+          return (
+            <>
+              <button className="btn" onClick={() => setShowCatModal(false)}>Close</button>
+              <button
+                className="btn primary"
+                disabled={applyingCats || selectedCount === 0}
+                onClick={applyCatSuggestions}
+              >
+                {applyingCats ? 'Applying…' : `Apply ${selectedCount} suggestion${selectedCount === 1 ? '' : 's'}`}
+              </button>
+            </>
+          );
+        })()}
+      >
+        {visibleCatSuggestions.length === 0 ? (
+          <p style={{ color: T.muted, fontSize: '13px', margin: 0 }}>
+            Nothing left to suggest — every matching merchant is categorized. 🎉
+          </p>
+        ) : (
+          <>
+            <p style={{ color: T.muted, fontSize: '13px', margin: '0 0 16px' }}>
+              Based on well-known merchant keywords and merchants you've already categorized.
+              Untick anything that looks wrong — you can always change a category later.
+            </p>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: '12px', overflow: 'hidden auto', maxHeight: '55vh' }}>
+              {visibleCatSuggestions.map((s, idx) => {
+                const checked = !catExcluded.has(s.merchantId);
+                const display = maskName(s.friendlyName || s.name) || '-';
+                return (
+                  <label
+                    key={s.merchantId}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 14px', cursor: 'pointer',
+                      borderTop: idx > 0 ? `1px solid ${T.borderSub}` : 'none',
+                      opacity: checked ? 1 : 0.55, transition: 'opacity 0.12s',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCatSuggestion(s.merchantId)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <Avatar name={display} size={28} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {display}
+                      </div>
+                      <div style={{ fontSize: '11px', color: T.faint, marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {s.source === 'similar'
+                          ? <>Similar to “{maskName(s.matchedOn)}”</>
+                          : <>Name matches “{s.matchedOn}”</>}
+                      </div>
+                    </div>
+                    <span style={{
+                      flexShrink: 0, fontSize: '12px', fontWeight: 600, color: avatarColors(s.category)[1],
+                      background: avatarColors(s.category)[0],
+                      padding: '3px 10px', borderRadius: '999px', maxWidth: '220px',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {s.category}{s.subCategory ? ` › ${s.subCategory}` : ''}
+                    </span>
+                  </label>
                 );
               })}
             </div>

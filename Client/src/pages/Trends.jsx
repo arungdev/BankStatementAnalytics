@@ -17,9 +17,8 @@ import {
 import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/ui/EmptyState';
-import Drawer from '../components/ui/Drawer';
-import { useChartTheme } from '../theme/chartTheme';
+import { Drawer, EmptyState } from "@common/client";
+import { useChartTheme } from "../theme/chartTheme";
 import { currencyFormatter, isAmountMasked, isNameMasked, maskName } from '../utils/format';
 import './Trends.css';
 

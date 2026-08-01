@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import api from "../api/client";
-import usePersistedState from "../hooks/usePersistedState";
+import { Avatar, Badge, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState } from "@common/client";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
-import { useAuth } from "../context/useAuth";
 import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
 import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "../api/statements";
@@ -12,13 +11,6 @@ import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "..
 import DateRangePicker from "../components/Daterangepicker";
 import { FilterGroup } from "../components/PageHeader";
 import Pagination from "../components/Pagination";
-import Button from "../components/ui/Button";
-import Badge from "../components/ui/Badge";
-import EmptyState from "../components/ui/EmptyState";
-import Drawer from "../components/ui/Drawer";
-import Avatar from "../components/ui/Avatar";
-import Modal from "../components/ui/Modal";
-import Tabs from "../components/ui/Tabs";
 import CategoryPicker from "../components/CategoryPicker";
 import { currencyFormatter, maskName } from "../utils/format";
 
@@ -70,6 +62,7 @@ export default function Transactions() {
   // here, so fall back to the first account rather than a dead-end state.
   const effectiveAccountId =
     selectedAccountId === ALL_ACCOUNTS ? (accounts[0]?.id ?? null) : selectedAccountId;
+  const shownAccount = accounts.find(a => a.id === effectiveAccountId);
 
   const [tx, setTx] = useState([]);
   const [loading, setLoading] = useState(!effectiveAccountId);
@@ -812,6 +805,15 @@ export default function Transactions() {
             >
               ×
             </span>
+          </Badge>
+        )}
+
+        {/* The header's account chip is global and can read "All accounts", but
+            this page loads one account at a time — say which one it settled on
+            so the count below never looks like it covers everything. */}
+        {selectedAccountId === ALL_ACCOUNTS && shownAccount && (
+          <Badge variant="amber" title="Transactions are shown one account at a time">
+            {shownAccount.bankName} ···· {shownAccount.accountNumber?.slice(-4) || '****'} only
           </Badge>
         )}
 

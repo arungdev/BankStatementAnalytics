@@ -8,9 +8,8 @@ import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
 import CreditCardPanel from '../components/CreditCardPanel';
-import EmptyState from '../components/ui/EmptyState';
-import useTheme from '../context/useTheme';
-import { getToken } from '../theme/chartTheme';
+import { EmptyState, useTheme } from "@common/client";
+import { getToken } from "../theme/chartTheme";
 import { currencyFormatter as fmt, formatDate, maskName } from '../utils/format';
 
 /* ─── Design tokens — mapped to the global CSS variable system ───────────── */

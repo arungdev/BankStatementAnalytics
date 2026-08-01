@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/useAuth';
-import { AuthShell, AuthField, AuthPasswordField, AuthError, AuthSubmit } from '../components/AuthShell';
+import { AuthError, AuthField, AuthPasswordField, AuthShell, AuthSubmit, useAuth } from "@common/client";
 
 export default function Setup() {
   const { needsSetup, register } = useAuth();
@@ -36,6 +35,7 @@ export default function Setup() {
       subtitle={needsSetup
         ? 'Create the first admin account to get started'
         : 'Sign up to start tracking your finances'}
+      logo={<img src="/icon-192.png" alt="Bank Analytics" />}
       onSubmit={submit}
     >
       <AuthField

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import './ui/ui.css';
+import './filter-chip.css';
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];

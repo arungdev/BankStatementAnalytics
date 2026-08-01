@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
-  FiCompass, FiCreditCard, FiUploadCloud, FiRepeat, FiTrendingUp, FiTarget,
+  FiCompass, FiCreditCard, FiUploadCloud, FiRepeat, FiTrendingUp, FiTarget, FiSettings,
 } from 'react-icons/fi';
-import Modal from './ui/Modal';
-import Button from './ui/Button';
+import { Button, Modal } from '@common/client';
 import './OnboardingGuide.css';
 
 const STEPS = [
@@ -19,26 +18,28 @@ const STEPS = [
     points: [
       'Use the “+ Add” button in the account filter, or Settings → Accounts.',
       'Supported banks: HDFC, HDFC Credit Card, and IOB.',
-      'For credit cards you can also set the credit limit and statement day.',
+      'Credit cards get a limit and statement day, plus their own utilization and billing-cycle view.',
     ],
   },
   {
     icon: FiUploadCloud,
-    title: '2 · Upload a statement',
+    title: '2 · Bring in your statements',
     text: 'Download a statement from your bank and drop it on the Upload page.',
     points: [
       'PDF, CSV, or TXT — the page shows which formats your bank supports.',
       'Password-protected PDFs work; you’ll be asked for the password.',
       'Duplicates are skipped automatically, so re-uploading is always safe.',
+      'Prefer hands-off? Settings → Accounts can watch a folder and import new statements for you.',
     ],
   },
   {
     icon: FiRepeat,
-    title: '3 · Review transactions',
+    title: '3 · Review and categorize',
     text: 'Imported transactions are categorized automatically by merchant.',
     points: [
       'Transactions — filter by date, re-categorize, add tags and notes.',
-      'Merchants — rename, merge duplicates, set default categories.',
+      'Merchants — rename, merge duplicates, bulk-categorize, set default categories.',
+      'Transfers — confirm money moved between your own accounts so it stays out of your spending.',
       'A category set on a transaction wins over the merchant’s default.',
     ],
   },
@@ -47,9 +48,10 @@ const STEPS = [
     title: '4 · Explore your money',
     text: 'The dashboard pages fill in as soon as data is imported.',
     points: [
-      'Overview — your finances at a glance.',
+      'Overview — income, spends, net flow, top merchants and recent activity.',
       'Trends & Insights — income vs. spends, category and merchant breakdowns.',
-      'Reports — monthly / yearly summaries, exportable as PDF.',
+      'Click any summary tile to drill into the transactions behind it.',
+      'Reports — monthly / yearly summaries with opening and closing balance, exportable as PDF.',
     ],
   },
   {
@@ -59,7 +61,19 @@ const STEPS = [
     points: [
       'Budgets — monthly limits per category, with suggested amounts.',
       'Bills — recurring bills and due reminders, including credit-card bills.',
+      'The bell in the header collects what’s due, plus anything an auto-import failed on.',
       'Investments — track deposits and maturity dates.',
+    ],
+  },
+  {
+    icon: FiSettings,
+    title: '6 · Make it yours',
+    text: 'Settings tailors the app to the way you work.',
+    points: [
+      'Categories — add your own categories, sub-categories and tags.',
+      'Privacy — the eye button in the header hides amounts, and names too if you want.',
+      'Appearance — light, dark, or follow your device, plus text size.',
+      'Reminders & Profile — desktop notifications, your password, and other users.',
     ],
   },
 ];
@@ -69,32 +83,41 @@ const STEPS = [
  * Shown automatically on a user's first login (see Layout in App.jsx) and
  * reopenable from the header help button.
  *
+ * The dialog is deliberately not dismissible — Escape, a backdrop click and the
+ * × are all off, so it closes only through "Skip tour" / the final CTA. That
+ * keeps a stray click from burning the one automatic first-login showing.
+ *
  * Props:
  *   open         — modal visibility
- *   onClose      — called on skip / finish / ×; caller persists the seen flag
+ *   onClose      — called on skip / finish; caller persists the seen flag
  *   hasAccounts  — when false, the final CTA opens the Add Account modal
  *   onAddAccount — opens the Add Account modal (used by the final CTA)
  */
 export default function OnboardingGuide({ open, onClose, hasAccounts, onAddAccount }) {
   const [step, setStep] = useState(0);
 
-  // Restart from the first step whenever the guide is reopened.
-  useEffect(() => { if (open) setStep(0); }, [open]);
+  // Rewind on the way out, so reopening from the ? button starts at step 1.
+  // Done here rather than in an effect on `open`: every close path runs through
+  // this, and it avoids a setState-in-effect cascading render.
+  const close = () => {
+    setStep(0);
+    onClose();
+  };
 
   const current = STEPS[step];
   const Icon = current.icon;
   const isLast = step === STEPS.length - 1;
 
   const finish = () => {
-    onClose();
+    close();
     if (!hasAccounts) onAddAccount?.();
   };
 
   return (
-    <Modal open={open} onClose={onClose} width={520} footer={
+    <Modal open={open} onClose={close} dismissible={false} width={520} footer={
       <div className="og-footer">
         {!isLast
-          ? <button className="btn ghost small" onClick={onClose}>Skip tour</button>
+          ? <button className="btn ghost small" onClick={close}>Skip tour</button>
           : <span />}
         <div className="og-dots" role="tablist" aria-label="Guide steps">
           {STEPS.map((s, i) => (

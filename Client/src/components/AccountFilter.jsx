@@ -19,17 +19,23 @@ const monogram = (name = '') => {
 const last4 = (acc) => acc.accountNumber?.slice(-4) || '****';
 
 /**
- * Account selector for the shared page-header filter row — a self-labeled
- * "chip" (muted Account prefix + value + caret) opening a custom dropdown so
- * it matches the DateRangePicker trigger. Reads the globally selected account.
+ * Account selector — a self-labeled "chip" (muted Account prefix + value +
+ * caret) opening a custom dropdown so it matches the DateRangePicker trigger.
+ * Reads the globally selected account.
+ *
+ * Rendered once per app in the PageHeader title row (see Layout in App.jsx),
+ * where it acts as the global account scope rather than a per-page filter.
+ * `align="right"` flips the menu to hang off the chip's right edge, which is
+ * what that top-right placement needs; the default hangs off the left.
+ *
  * Includes an "All accounts" option so analytics pages can aggregate across
- * every account — pass `includeAll={false}` on pages that only work one
- * account at a time (e.g. Transactions).
+ * every account — pass `includeAll={false}` for a placement that only works
+ * one account at a time.
  *
  * When there are no accounts yet, renders an "Add account" button (via `onAdd`)
  * that opens the account creation modal directly instead of a dead select.
  */
-export default function AccountFilter({ accounts = [], value, onChange, includeAll = true, onAdd }) {
+export default function AccountFilter({ accounts = [], value, onChange, includeAll = true, onAdd, align = 'left' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -134,7 +140,11 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
         </button>
 
         {open && (
-          <div className="filter-chip-menu" role="listbox">
+          <div
+            className="filter-chip-menu"
+            role="listbox"
+            style={align === 'right' ? { left: 'auto', right: 0 } : undefined}
+          >
             {includeAll && (
               <button
                 className={`filter-chip-option${isAll ? ' active' : ''}`}

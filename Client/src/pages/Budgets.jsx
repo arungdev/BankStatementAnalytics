@@ -2,9 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { FiPlus, FiEdit2, FiTrash2, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/ui/EmptyState';
-import Modal from '../components/ui/Modal';
-import { currencyFormatter as fmt } from '../utils/format';
+import { Avatar, Drawer, EmptyState, Modal } from "@common/client";
+import { currencyFormatter as fmt, maskName } from '../utils/format';
 import { usePrivacy } from '../context/usePrivacy';
 
 // Meter colour by burn-down: comfortable → warning → over.
@@ -38,6 +37,12 @@ const s = {
     justifyContent: 'center', cursor: 'pointer', color: 'var(--text-muted)',
   },
   label: { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' },
+};
+
+const fmtDate = (d) => {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return isNaN(dt) ? d : dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -175,6 +180,13 @@ export default function Budgets() {
   const [saving, setSaving] = useState(false);
   // category → { suggested, avgMonthly, months } from real spending history
   const [suggestions, setSuggestions] = useState({});
+  // Drill-down: which budget card is open, and the transactions behind its spend.
+  const [drill, setDrill] = useState(null); // { id, category }
+  const [drillRows, setDrillRows] = useState([]);
+  const [drillTotal, setDrillTotal] = useState(0);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillError, setDrillError] = useState(null);
+  const [drillWidth, setDrillWidth] = useState(440);
 
   const load = useCallback(() => {
     return Promise.all([
@@ -209,6 +221,45 @@ export default function Budgets() {
       })
       .catch((err) => console.error('Failed to load budget suggestions', err));
   }, []);
+
+  // The open drawer follows the month picker: re-fetch instead of closing when the
+  // selected month changes, so the list always reconciles with the card behind it.
+  useEffect(() => {
+    if (!drill) return;
+    let cancelled = false;
+    setDrillLoading(true);
+    setDrillError(null);
+    api.get(`/budgets/${drill.id}/transactions?monthsAgo=${monthsAgo}`)
+      .then((r) => {
+        if (cancelled) return;
+        setDrillRows(r.data?.transactions || []);
+        setDrillTotal(r.data?.total || 0);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Failed to load budget transactions', err);
+        setDrillError('Could not load transactions. Please try again.');
+        setDrillRows([]);
+        setDrillTotal(0);
+      })
+      .finally(() => { if (!cancelled) setDrillLoading(false); });
+    return () => { cancelled = true; };
+  }, [drill, monthsAgo]);
+
+  const closeDrill = useCallback(() => {
+    setDrill(null);
+    setDrillRows([]);
+    setDrillTotal(0);
+    setDrillError(null);
+  }, []);
+
+  // Clicking the card that's already open closes the drawer.
+  const openDrill = (b) => {
+    if (drill?.id === b.id) { closeDrill(); return; }
+    setDrill({ id: b.id, category: b.category });
+    setDrillRows([]);
+    setDrillTotal(0);
+  };
 
   const budgetedCats = new Set(budgets.map((b) => b.category));
   const availableCats = categories.filter((c) => !budgetedCats.has(c));
@@ -260,6 +311,7 @@ export default function Budgets() {
 
   const remove = (b) => {
     if (!window.confirm(`Remove the budget for "${b.category}"?`)) return;
+    if (drill?.id === b.id) closeDrill();
     api.delete(`/budgets/${b.id}`).then(load).catch((err) => console.error(err));
   };
 
@@ -271,8 +323,11 @@ export default function Budgets() {
     );
   }
 
+  const drillBudget = budgets.find((b) => b.id === drill?.id);
+
   return (
-    <div style={s.page}>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={{ ...s.page, flex: 1, minWidth: 0, marginRight: drill ? drillWidth : 0, transition: 'margin-right 0.2s ease' }}>
       {/* ── Summary ── */}
       <div style={s.statsRow}>
         <StatCard label="Monthly budget" value={fmt.format(totalBudget)} sub="Repeats every month" />
@@ -331,8 +386,23 @@ export default function Budgets() {
           {budgets.map((b) => {
             const pct = Math.min(b.percent, 100);
             const color = meterColor(b.percent, b.overBudget);
+            const open = drill?.id === b.id;
             return (
-              <div key={b.id} style={s.card}>
+              <div
+                key={b.id}
+                role="button"
+                tabIndex={0}
+                title={`See the transactions behind ${b.category}`}
+                onClick={() => openDrill(b)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDrill(b); } }}
+                style={{
+                  ...s.card,
+                  cursor: 'pointer',
+                  borderColor: open ? 'var(--primary)' : 'var(--border-color)',
+                  boxShadow: open ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+                  transition: 'border-color 0.15s, box-shadow 0.15s',
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{
@@ -345,11 +415,12 @@ export default function Budgets() {
                       {fmt.format(b.spent)} of {fmt.format(b.monthlyLimit)}
                     </div>
                   </div>
+                  {/* The card itself is the drill-down trigger, so these must not bubble. */}
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    <button style={s.iconBtn} title="Edit limit" onClick={() => setEditing({ ...b })}>
+                    <button style={s.iconBtn} title="Edit limit" onClick={(e) => { e.stopPropagation(); setEditing({ ...b }); }}>
                       <FiEdit2 size={14} />
                     </button>
-                    <button style={{ ...s.iconBtn, color: 'var(--danger)' }} title="Remove" onClick={() => remove(b)}>
+                    <button style={{ ...s.iconBtn, color: 'var(--danger)' }} title="Remove" onClick={(e) => { e.stopPropagation(); remove(b); }}>
                       <FiTrash2 size={14} />
                     </button>
                   </div>
@@ -370,6 +441,16 @@ export default function Budgets() {
                       ? `${fmt.format(b.spent - b.monthlyLimit)} over`
                       : `${fmt.format(b.remaining)} left`}
                   </span>
+                </div>
+
+                {/* Drill-down affordance — the whole card is the trigger. */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '3px', marginTop: '12px',
+                  fontSize: '11.5px', fontWeight: 700,
+                  color: open ? 'var(--primary)' : 'var(--text-faint)',
+                }}>
+                  {open ? 'Hide transactions' : 'View transactions'}
+                  <FiChevronRight size={13} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                 </div>
               </div>
             );

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { FiSettings, FiChevronDown, FiCheck } from 'react-icons/fi';
-import './ui/ui.css';
+import './filter-chip.css';
 
 /**
  * PageHeader — reusable two-row header

@@ -1,0 +1,22 @@
+{
+  "name": "@common/client",
+  "version": "0.1.0",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "main": "./dist/common-client.js",
+  "module": "./dist/common-client.js",
+  "exports": {
+    ".": "./dist/common-client.js",
+    "./styles.css": "./dist/common-client.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "peerDependencies": {
+    "axios": ">=1.7",
+    "react": ">=19",
+    "react-dom": ">=19",
+    "react-icons": ">=5"
+  }
+}

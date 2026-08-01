@@ -6,7 +6,7 @@
   align-items: center;
   text-align: center;
   padding: 4px 8px 4px;
-  min-height: 250px; /* keeps the modal height stable across steps */
+  min-height: 330px; /* keeps the modal height stable across steps (tallest = 4 points) */
 }
 
 .og-icon {

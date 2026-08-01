@@ -5,8 +5,7 @@ import api from "../api/client";
 import { getAutoImports } from "../api/statements";
 import { useAccount } from "../context/useAccount";
 import { currencyFormatter, maskName } from "../utils/format";
-import Drawer from "./ui/Drawer";
-import EmptyState from "./ui/EmptyState";
+import { Drawer, EmptyState } from "@common/client";
 
 const READ_KEY = "bills.readReminders";
 

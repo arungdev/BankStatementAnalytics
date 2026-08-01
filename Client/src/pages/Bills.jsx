@@ -5,12 +5,7 @@ import api from "../api/client";
 import { getCardReminders } from "../api/cards";
 import { currencyFormatter, maskName } from "../utils/format";
 import { usePrivacy } from "../context/usePrivacy";
-import EmptyState from "../components/ui/EmptyState";
-import Badge from "../components/ui/Badge";
-import Drawer from "../components/ui/Drawer";
-import Avatar from "../components/ui/Avatar";
-import Modal from "../components/ui/Modal";
-import Tabs from "../components/ui/Tabs";
+import { Avatar, Badge, Drawer, EmptyState, Modal, Tabs } from "@common/client";
 import StatCard from "../components/StatCard";
 
 const fmtDate = (d) =>

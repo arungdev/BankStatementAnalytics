@@ -4,8 +4,8 @@ import {
 } from 'recharts';
 import { FiCreditCard } from 'react-icons/fi';
 import { getCardSummary, getCardCycles } from '../api/cards';
-import useTheme from '../context/useTheme';
-import { getToken } from '../theme/chartTheme';
+import { useTheme } from "@common/client";
+import { getToken } from "../theme/chartTheme";
 import { currencyFormatter as fmt, formatDate } from '../utils/format';
 
 const fmtK = v => v >= 100000

@@ -17,9 +17,12 @@ Client/node_modules/
 /server.err.log
 # Real bank statements used for tuning PDF extraction - never commit (contain account numbers)
 /samples/
-# Private shared library - kept locally to rebuild the vendored lib/Common.Framework.dll,
-# but never published (referenced as a prebuilt DLL instead of source). See README.
+# Private shared libraries - kept locally to rebuild the vendored artifacts, but
+# never published (referenced as prebuilt output instead of source). See README.
+#   Common.Framework -> BankStatementAnalytics/lib/Common.Framework.dll
+#   Common.Client    -> Client/vendor/common-client/ (that vendored copy IS committed)
 /Common.Framework/
+/Common.Client/
 # Local verification tooling only (playwright, used to drive the UI while testing).
 # The app's own Node project lives in Client/ - nothing here belongs to the build.
 /node_modules/

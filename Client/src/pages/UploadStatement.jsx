@@ -1,11 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
-import { useAuth } from "../context/useAuth";
+import { Badge, useAuth } from "@common/client";
 import { uploadStatement, revertStatement, getUploads } from "../api/statements";
 import api from "../api/client";
 import { FiUploadCloud, FiFileText, FiTrash2, FiCheckCircle, FiAlertCircle, FiRotateCcw, FiHelpCircle } from "react-icons/fi";
-import Badge from "../components/ui/Badge";
 
 export default function UploadStatement({ onUploaded, showHistory = true } = {}) {
   const { isAdmin } = useAuth();

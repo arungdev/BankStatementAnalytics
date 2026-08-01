@@ -2,12 +2,11 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigat
 import { useEffect, useState } from "react";
 import api from "./api/client";
 import { useAccount } from "./context/useAccount";
-import { useAuth } from "./context/useAuth";
+import { Modal, useAuth, usePersistedState } from "@common/client";
 import { usePrivacy } from "./context/usePrivacy";
 import { FiHelpCircle } from "react-icons/fi";
 import CreateAccount from "./components/CreateAccount";
 import OnboardingGuide from "./components/OnboardingGuide";
-import Modal from "./components/ui/Modal";
 import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
@@ -33,7 +32,6 @@ import Budgets from "./pages/Budgets";
 import Investments from "./pages/Investments";
 import Reports from "./pages/Reports";
 import useBillReminders from "./hooks/useBillReminders";
-import usePersistedState from "./hooks/usePersistedState";
 import usePersistedRange from "./hooks/usePersistedRange";
 
 export default function App() {
@@ -175,66 +173,58 @@ function Layout() {
   }, [accounts, selectedAccountId, setSelectedAccountId]);
 
   const meta = PAGE_META[location.pathname] ?? { title: '' };
-  const isOverview = location.pathname === '/';
   const isInsights = location.pathname === '/insights';
   const isTrends = location.pathname === '/trends';
   const isTransactions = location.pathname === '/transactions';
   const isReports = location.pathname === '/reports';
-  const isMerchants = location.pathname === '/merchants';
-  const isInvestments = location.pathname === '/investments';
 
   // Opens the Create Account modal directly, skipping the Settings detour.
   const goAddAccount = () => setShowCreate(true);
 
-  const filters = isOverview
-    ? <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
-    : isInsights
-    ? <>
-      <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
-      <InsightsFilters
-        range={insightRange}
-        setRange={setInsightRange}
-        groupBy={insightGroupBy}
-        setGroupBy={setInsightGroupBy}
-      />
-    </>
+  // The account selector is app-level, not per-page: it lives in the header's
+  // title row (beside the privacy/notification controls) so it stays in one
+  // place on every route instead of being repeated in each page's filter row.
+  // Pages that can't aggregate (Transactions, Upload) narrow "All accounts"
+  // down to a single account themselves.
+  const accountSelector = (
+    <AccountFilter
+      accounts={accounts}
+      value={selectedAccountId}
+      onChange={setSelectedAccountId}
+      onAdd={goAddAccount}
+      align="right"
+    />
+  );
+
+  // Row 2 now carries only the genuinely page-scoped filters; pages with none
+  // (Overview, Merchants, Investments, …) leave it undefined so it isn't drawn.
+  const filters = isInsights
+    ? <InsightsFilters
+      range={insightRange}
+      setRange={setInsightRange}
+      groupBy={insightGroupBy}
+      setGroupBy={setInsightGroupBy}
+    />
     : isTrends
-      ? <>
-        <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
-        <TrendsFilters
-          period={trendsPeriod}
-          setPeriod={setTrendsPeriod}
-          dateRange={trendsRange}
-          setDateRange={setTrendsRange}
-        />
-      </>
+      ? <TrendsFilters
+        period={trendsPeriod}
+        setPeriod={setTrendsPeriod}
+        dateRange={trendsRange}
+        setDateRange={setTrendsRange}
+      />
       : isTransactions
-        ? <>
-          <AccountFilter
-            accounts={accounts}
-            value={selectedAccountId === ALL_ACCOUNTS ? (accounts[0]?.id ?? ALL_ACCOUNTS) : selectedAccountId}
-            onChange={setSelectedAccountId}
-            includeAll={false}
-            onAdd={goAddAccount}
-          />
-          <TransactionsFilters
-            dateRange={transactionsRange}
-            setDateRange={setTransactionsRange}
-          />
-        </>
+        ? <TransactionsFilters
+          dateRange={transactionsRange}
+          setDateRange={setTransactionsRange}
+        />
         : isReports
-          ? <>
-            <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
-            <ReportsFilters
-              reportType={reportType}
-              setReportType={setReportType}
-              reportPeriod={reportPeriod}
-              setReportPeriod={setReportPeriod}
-            />
-          </>
-          : (isMerchants || isInvestments)
-            ? <AccountFilter accounts={accounts} value={selectedAccountId} onChange={setSelectedAccountId} onAdd={goAddAccount} />
-            : undefined;
+          ? <ReportsFilters
+            reportType={reportType}
+            setReportType={setReportType}
+            reportPeriod={reportPeriod}
+            setReportPeriod={setReportPeriod}
+          />
+          : undefined;
 
   return (
     <div className="app app-fade">
@@ -246,6 +236,9 @@ function Layout() {
           subtitle={meta.subtitle}
           filters={filters}
           actions={<>
+            {accountSelector}
+            {/* Separates the account scope from the action buttons beside it. */}
+            <span style={{ width: '1px', height: '22px', background: 'var(--border-color)', flexShrink: 0 }} />
             <button
               onClick={() => setGuideOpen(true)}
               className="btn icon"
