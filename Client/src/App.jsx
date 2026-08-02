@@ -31,7 +31,7 @@ import Transfers from "./pages/Transfers";
 import Budgets from "./pages/Budgets";
 import Investments from "./pages/Investments";
 import Reports from "./pages/Reports";
-import useBillReminders from "./hooks/useBillReminders";
+import useBillReminders, { useImportFailureNotifications } from "./hooks/useBillReminders";
 import usePersistedRange from "./hooks/usePersistedRange";
 
 export default function App() {
@@ -117,8 +117,10 @@ function Layout() {
     if (guideSeenKey) localStorage.setItem(guideSeenKey, "1");
   };
 
-  // Fire desktop reminders for bills due soon (opt-in; see Settings → Reminders).
+  // Fire desktop reminders for bills due soon and for failed auto-imports
+  // (opt-in; see Settings → Reminders).
   useBillReminders();
+  useImportFailureNotifications();
 
   const [accounts, setAccounts] = useState([]);
   const [showCreate, setShowCreate] = useState(false);

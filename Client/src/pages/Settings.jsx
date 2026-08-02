@@ -737,14 +737,14 @@ export default function Settings() {
         icon={<FiBell size={18} />}
         title="Desktop notifications"
         status={remEnabled ? <Badge variant="green">On</Badge> : null}
-        description="Pops up a notification when a confirmed bill is due within your reminder window. Reminders fire while the app is open."
+        description="Pops up a notification when a confirmed bill is due within your reminder window, and when a watch-folder statement fails to import. Notifications fire while the app is open."
         control={
           <>
             <button className="btn small" onClick={handleTestNotification}>Send test</button>
             <Switch
               checked={remEnabled}
               onChange={toggleReminders}
-              label="Enable desktop bill reminders"
+              label="Enable desktop notifications"
             />
           </>
         }
