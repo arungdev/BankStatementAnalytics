@@ -83,6 +83,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     Id = merchantEntity.Id,
                     Name = merchantEntity.Name,
                     FriendlyName = merchantEntity.FriendlyName,
+                    Notes = merchantEntity.Notes,
                     Category = merchantEntity.Category,
                     SubCategory = merchantEntity.SubCategory,
                     ShiftToNextMonth = merchantEntity.ShiftToNextMonth == true,
