@@ -86,6 +86,11 @@ catch (UnauthorizedAccessException ex)
 // MVC
 builder.Services.AddControllersWithViews();
 
+// NHibernate + embedded PostgreSQL init. Registered as a hosted service (and first, so it runs
+// before the watch-folder sweeps) instead of being done inline after builder.Build() - see
+// DatabaseStartupInitializer for why the Windows service start would otherwise time out.
+builder.Services.AddHostedService<DatabaseStartupInitializer>();
+
 // Services
 builder.Services.AddSingleton<PdfStatementReader>(); // stateless
 builder.Services.AddScoped<TextService>();
@@ -161,9 +166,6 @@ app.UseSecurityHeaders();
 
 // Global exception handling: logs unhandled exceptions and returns a 500 response.
 app.UseApiExceptionHandling();
-
-// Initialize NHibernate
-_ = NHibernateHelper.SessionFactory;
 
 // Gracefully stop the embedded PostgreSQL process (if it was started) on shutdown.
 app.Lifetime.ApplicationStopping.Register(() => Common.Framework.Data.EmbeddedPostgresManager.Stop());
