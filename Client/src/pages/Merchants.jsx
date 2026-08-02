@@ -71,8 +71,11 @@ export default function Merchants() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  // Quick filter: show only merchants with no category yet
-  const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
+  // Quick filter, driven by both the "Uncategorized" button and the summary
+  // tiles: 'all' | 'uncategorized' | 'categorized'.
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  // Quick filter: show only merchants that have merged aliases (from the "Merged groups" tile).
+  const [mergedOnly, setMergedOnly] = useState(false);
 
   // Sidebar state
   const [selectedMerchantId, setSelectedMerchantId] = useState(null);
@@ -80,8 +83,17 @@ export default function Merchants() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ friendlyName: '', notes: '', category: '', subCategory: '', shiftToNextMonth: false });
-  // Spend column sort: null keeps the API's own order (transaction count desc).
-  const [spentSort, setSpentSort] = useState(null);
+  // Column sort: null keeps the API's own order (transaction count desc).
+  // Clicking a header cycles default direction → reversed → back to API order.
+  const [listSort, setListSort] = useState(null); // { col, dir } | null
+  const toggleListSort = (col) => {
+    setListSort(prev => {
+      const defaultDir = (col === 'merchant' || col === 'category') ? 'asc' : 'desc';
+      if (!prev || prev.col !== col) return { col, dir: defaultDir };
+      const next = prev.dir === 'asc' ? 'desc' : 'asc';
+      return next === defaultDir ? null : { col, dir: next };
+    });
+  };
   // Row whose inline note input is open (same inline-edit UX as the Transactions page).
   const [noteEditRowId, setNoteEditRowId] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(460);
@@ -697,7 +709,9 @@ export default function Merchants() {
 
   const term = searchQuery.toLowerCase();
   const filteredData = data.filter(merchant => {
-    if (uncategorizedOnly && merchant.category) return false;
+    if (categoryFilter === 'uncategorized' && merchant.category) return false;
+    if (categoryFilter === 'categorized' && !merchant.category) return false;
+    if (mergedOnly && !(merchant.aliases?.length > 0)) return false;
     return merchant.friendlyName?.toLowerCase().includes(term) ||
            merchant.name?.toLowerCase().includes(term) ||
            merchant.category?.toLowerCase().includes(term) ||
@@ -705,9 +719,27 @@ export default function Merchants() {
            merchant.aliases?.some(alias => alias?.toLowerCase().includes(term));
   });
 
-  if (spentSort) {
-    const dir = spentSort === 'desc' ? -1 : 1;
-    filteredData.sort((a, b) => ((a.totalSpent ?? 0) - (b.totalSpent ?? 0)) * dir);
+  if (listSort) {
+    const dir = listSort.dir === 'asc' ? 1 : -1;
+    const displayName = (m) => (m.friendlyName || m.name || '').toLowerCase();
+    const idCount = (m) => (m.upiIds?.length || 0) + (m.aliases?.length || 0);
+    filteredData.sort((a, b) => {
+      let cmp;
+      switch (listSort.col) {
+        case 'merchant': cmp = displayName(a).localeCompare(displayName(b)); break;
+        case 'category': {
+          // Uncategorized rows stay at the bottom in either direction.
+          const ca = a.category || '', cb = b.category || '';
+          if (!ca || !cb) return ca === cb ? 0 : (ca ? -1 : 1);
+          cmp = ca.localeCompare(cb);
+          break;
+        }
+        case 'identifiers': cmp = idCount(a) - idCount(b); break;
+        case 'transactions': cmp = (a.transactionCount ?? 0) - (b.transactionCount ?? 0); break;
+        default: cmp = (a.totalSpent ?? 0) - (b.totalSpent ?? 0);
+      }
+      return cmp * dir;
+    });
   }
 
   const categorizedCount = data.filter(m => m.category).length;
@@ -772,7 +804,7 @@ export default function Merchants() {
           display: inline-flex; align-items: center; gap: 4px;
           background: none; border: none; padding: 0; cursor: pointer;
           font: inherit; color: inherit; letter-spacing: inherit;
-          text-transform: inherit; margin-left: auto;
+          text-transform: inherit;
         }
         .mrc-sort:hover { color: ${T.text}; }
         .mrc-sort.active { color: ${T.indigo}; }
@@ -821,6 +853,10 @@ export default function Merchants() {
           outline: none; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
         }
         .mrc-cat-select:focus { border-color: ${T.indigo}; box-shadow: 0 0 0 3px ${T.indigoDim}; }
+        .mrc-stat { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s; }
+        .mrc-stat:hover { border-color: ${T.indigo}; }
+        .mrc-stat:active { transform: scale(0.98); }
+        .mrc-stat:focus-visible { outline: 2px solid ${T.indigo}; outline-offset: 2px; }
         @media (max-width: 720px) {
           .mrc-row, .mrc-head { grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 88px 20px; }
           /* Spend survives the squeeze — it's the column worth scanning on a phone. */
@@ -866,17 +902,43 @@ export default function Merchants() {
         </div>
       )}
 
-      {/* ── Summary strip ── */}
+      {/* ── Summary strip — tiles double as quick filters for the list below ── */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
         {[
-          { label: 'Total merchants', value: data.length, accent: T.indigo },
-          { label: 'Categorized', value: `${categorizedCount} / ${data.length}`, accent: T.green },
-          { label: 'Merged groups', value: linkedCount, accent: T.faint },
+          {
+            label: 'Total merchants', value: data.length, accent: T.indigo,
+            active: categoryFilter === 'all' && !mergedOnly,
+            title: 'Show all merchants',
+            onClick: () => { setCategoryFilter('all'); setMergedOnly(false); },
+          },
+          {
+            label: 'Categorized', value: `${categorizedCount} / ${data.length}`, accent: T.green,
+            active: categoryFilter === 'categorized',
+            title: 'Show only categorized merchants',
+            onClick: () => setCategoryFilter(v => v === 'categorized' ? 'all' : 'categorized'),
+          },
+          {
+            label: 'Merged groups', value: linkedCount, accent: T.faint,
+            active: mergedOnly,
+            title: 'Show only merchants with merged aliases',
+            onClick: () => setMergedOnly(v => !v),
+          },
         ].map((stat) => (
-          <div key={stat.label} style={{
-            flex: '1 1 160px', background: T.surface, border: `1px solid ${T.border}`,
-            borderRadius: '14px', padding: '16px 18px', boxShadow: 'var(--shadow-sm)',
-          }}>
+          <div
+            key={stat.label}
+            className="mrc-stat"
+            role="button"
+            tabIndex={0}
+            title={stat.title}
+            onClick={stat.onClick}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stat.onClick(); } }}
+            style={{
+              flex: '1 1 160px', background: T.surface,
+              border: `1px solid ${stat.active ? T.indigo : T.border}`,
+              borderRadius: '14px', padding: '16px 18px',
+              boxShadow: stat.active ? `0 0 0 3px ${T.indigoDim}` : 'var(--shadow-sm)',
+            }}
+          >
             <div style={{ fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {stat.label}
             </div>
@@ -902,8 +964,8 @@ export default function Merchants() {
           />
         </div>
         <Button
-          variant={uncategorizedOnly ? 'primary' : 'secondary'}
-          onClick={() => setUncategorizedOnly(v => !v)}
+          variant={categoryFilter === 'uncategorized' ? 'primary' : 'secondary'}
+          onClick={() => setCategoryFilter(v => v === 'uncategorized' ? 'all' : 'uncategorized')}
           title="Show only merchants without a category"
           style={{ fontSize: 'var(--text-sm)' }}
         >
@@ -952,20 +1014,24 @@ export default function Merchants() {
               style={{ cursor: 'pointer' }}
             />
           )}
-          <span>Merchant</span>
-          <span className="mrc-col-cat">Category</span>
-          <span className="mrc-col-meta">Identifiers</span>
-          <span className="mrc-col-count" style={{ textAlign: 'right' }}>Transactions</span>
-          <span style={{ display: 'flex' }}>
-            <button
-              type="button"
-              className={`mrc-sort${spentSort ? ' active' : ''}`}
-              onClick={() => setSpentSort(s => (s === null ? 'desc' : s === 'desc' ? 'asc' : null))}
-              title="Sort by amount spent"
-            >
-              Spent {spentSort === 'desc' ? '▾' : spentSort === 'asc' ? '▴' : '⇅'}
-            </button>
-          </span>
+          {[
+            { col: 'merchant', label: 'Merchant' },
+            { col: 'category', label: 'Category', className: 'mrc-col-cat' },
+            { col: 'identifiers', label: 'Identifiers', className: 'mrc-col-meta' },
+            { col: 'transactions', label: 'Transactions', className: 'mrc-col-count', right: true },
+            { col: 'spent', label: 'Spent', right: true },
+          ].map(({ col, label, className, right }) => (
+            <span key={col} className={className} style={right ? { textAlign: 'right' } : undefined}>
+              <button
+                type="button"
+                className={`mrc-sort${listSort?.col === col ? ' active' : ''}`}
+                onClick={() => toggleListSort(col)}
+                title={`Sort by ${label.toLowerCase()}`}
+              >
+                {label} {listSort?.col === col ? (listSort.dir === 'desc' ? '▾' : '▴') : '⇅'}
+              </button>
+            </span>
+          ))}
           <span />
         </div>
 
@@ -976,7 +1042,9 @@ export default function Merchants() {
               title={data.length === 0 ? "No merchants yet" : "No matches"}
               message={
                 data.length === 0 ? "Upload a statement and merchants will appear here."
-                : uncategorizedOnly ? "No uncategorized merchants match the current filters."
+                : categoryFilter === 'uncategorized' ? "No uncategorized merchants match the current filters."
+                : categoryFilter === 'categorized' ? "No categorized merchants match the current filters."
+                : mergedOnly ? "No merged merchants match the current filters."
                 : "No merchants match your search."
               }
             />
