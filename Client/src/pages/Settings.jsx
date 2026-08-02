@@ -10,6 +10,7 @@ import { useAccount } from "../context/useAccount";
 import { Badge, Drawer, FONT_SIZE_OPTIONS, Switch, useAuth, useTheme } from "@common/client";
 import { usePrivacy } from "../context/usePrivacy";
 import ProfileSettings from "../components/ProfileSettings";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { getBackupStatus, downloadBackup, restoreBackup, readApiError } from "../api/backup";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
 import { currencyFormatterFull, formatDate } from "../utils/format";
@@ -170,13 +171,34 @@ export default function Settings() {
   const [highlight, setHighlight] = useState(null);
   const navRef = useRef(null);
 
+  // Shared confirm dialog (replaces window.confirm) — { title, message, confirmLabel,
+  // danger, onConfirm } or null when closed. `onConfirm` may be async; the dialog
+  // shows a busy state and stays open until it resolves.
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
+  const closeConfirm = () => { if (!confirmBusy) setConfirmDialog(null); };
+  const runConfirm = async () => {
+    if (!confirmDialog) return;
+    setConfirmBusy(true);
+    try {
+      await confirmDialog.onConfirm();
+      setConfirmDialog(null);
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
   // Category states
   const [newCatName, setNewCatName] = useState("");
+  const [newCatNameError, setNewCatNameError] = useState("");
   const [editingCatId, setEditingCatId] = useState(null);
   const [editCatName, setEditCatName] = useState("");
+  const [editCatNameError, setEditCatNameError] = useState("");
 
   // Sub-category states
   const [newSubCatName, setNewSubCatName] = useState("");
+  const [newSubCatNameError, setNewSubCatNameError] = useState("");
   const [activeSubCatInputId, setActiveSubCatInputId] = useState(null);
 
   // Account states
@@ -422,57 +444,67 @@ export default function Settings() {
 
   const handleAddCategory = async () => {
     const { name, error } = validateCategoryName(newCatName);
-    if (error) { alert(error); return; }
+    if (error) { setNewCatNameError(error); return; }
     if (findExistingName(categories.map(c => c.name), name)) {
-      alert(`A category named "${name}" already exists.`);
+      setNewCatNameError(`A category named "${name}" already exists.`);
       return;
     }
+    setNewCatNameError("");
     try {
       const res = await api.post("/categories", { name });
       setCategories([...categories, res.data]);
       setNewCatName("");
     } catch (err) {
       console.error(err);
-      alert(err.response?.data || "Failed to add category. Please try again.");
+      setNewCatNameError(err.response?.data || "Failed to add category. Please try again.");
     }
   };
 
-  const handleDeleteCategory = async (id, name) => {
-    if (!window.confirm(`Delete category "${name}"? Transactions using it will become uncategorized.`)) return;
-    try {
-      await api.delete(`/categories/${id}`);
-      setCategories(categories.filter(c => c.id !== id));
-    } catch (err) {
-      console.error(err);
-      alert("Failed to delete category. Please try again.");
-    }
+  const handleDeleteCategory = (id, name) => {
+    setConfirmDialog({
+      title: "Delete category?",
+      message: `Delete category "${name}"? Transactions using it will become uncategorized.`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/categories/${id}`);
+          setCategories(categories.filter(c => c.id !== id));
+        } catch (err) {
+          console.error(err);
+          alert("Failed to delete category. Please try again.");
+        }
+      },
+    });
   };
 
   const handleUpdateCategory = async (id) => {
     const { name, error } = validateCategoryName(editCatName);
-    if (error) { alert(error); return; }
+    if (error) { setEditCatNameError(error); return; }
     if (findExistingName(categories.filter(c => c.id !== id).map(c => c.name), name)) {
-      alert(`A category named "${name}" already exists.`);
+      setEditCatNameError(`A category named "${name}" already exists.`);
       return;
     }
+    setEditCatNameError("");
     try {
       await api.put(`/categories/${id}`, { name });
       setCategories(categories.map(c => c.id === id ? { ...c, name } : c));
       setEditingCatId(null);
     } catch (err) {
       console.error(err);
-      alert(err.response?.data || "Failed to update category. Please try again.");
+      setEditCatNameError(err.response?.data || "Failed to update category. Please try again.");
     }
   };
 
   const handleAddSubCategory = async (catId) => {
     const { name, error } = validateCategoryName(newSubCatName, "Sub-category");
-    if (error) { alert(error); return; }
+    if (error) { setNewSubCatNameError(error); return; }
     const category = categories.find(c => c.id === catId);
     if (findExistingName(category?.subCategories, name)) {
-      alert(`"${category.name}" already has a sub-category named "${name}".`);
+      setNewSubCatNameError(`"${category.name}" already has a sub-category named "${name}".`);
       return;
     }
+    setNewSubCatNameError("");
     try {
       await api.post(`/categories/${catId}/subcategories`, { name });
       setCategories(categories.map(c =>
@@ -482,24 +514,31 @@ export default function Settings() {
       setActiveSubCatInputId(null);
     } catch (err) {
       console.error(err);
-      alert(err.response?.data || "Failed to add sub-category. Please try again.");
+      setNewSubCatNameError(err.response?.data || "Failed to add sub-category. Please try again.");
     }
   };
 
   // Deletes by name, not by index — the server identifies sub-categories by name,
   // so removing the matching name keeps the local list in step with what it did.
-  const handleDeleteSubCategory = async (catId, subCatName) => {
-    if (!window.confirm(`Delete sub-category "${subCatName}"?`)) return;
-    try {
-      await api.delete(`/categories/${catId}/subcategories/${encodeURIComponent(subCatName)}`);
-      setCategories(categories.map(c => c.id === catId
-        ? { ...c, subCategories: (c.subCategories || []).filter(s => s.toLowerCase() !== subCatName.toLowerCase()) }
-        : c
-      ));
-    } catch (err) {
-      console.error(err);
-      alert(err.response?.data || "Failed to delete sub-category. Please try again.");
-    }
+  const handleDeleteSubCategory = (catId, subCatName) => {
+    setConfirmDialog({
+      title: "Delete sub-category?",
+      message: `Delete sub-category "${subCatName}"?`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/categories/${catId}/subcategories/${encodeURIComponent(subCatName)}`);
+          setCategories(categories.map(c => c.id === catId
+            ? { ...c, subCategories: (c.subCategories || []).filter(s => s.toLowerCase() !== subCatName.toLowerCase()) }
+            : c
+          ));
+        } catch (err) {
+          console.error(err);
+          alert(err.response?.data || "Failed to delete sub-category. Please try again.");
+        }
+      },
+    });
   };
 
   const handleUpdateAccount = async (id) => {
@@ -515,17 +554,24 @@ export default function Settings() {
     }
   };
 
-  const handleDeleteAccount = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this account? All associated transactions will be removed permanently.")) return;
-    try {
-      await api.delete(`/accounts/${id}`);
-      setAccounts(accounts.filter(a => a.id !== id));
-      if (selectedAccountId === id) setSelectedAccountId(null);
-      onAccountCreated?.();
-    } catch (err) {
-      console.error("Failed to delete account", err);
-      alert("Failed to delete account. Please try again.");
-    }
+  const handleDeleteAccount = (id) => {
+    setConfirmDialog({
+      title: "Delete account?",
+      message: "Are you sure you want to delete this account? All associated transactions will be removed permanently.",
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/accounts/${id}`);
+          setAccounts(accounts.filter(a => a.id !== id));
+          if (selectedAccountId === id) setSelectedAccountId(null);
+          onAccountCreated?.();
+        } catch (err) {
+          console.error("Failed to delete account", err);
+          alert("Failed to delete account. Please try again.");
+        }
+      },
+    });
   };
 
   /* ---- Backup & restore ---- */
@@ -560,31 +606,35 @@ export default function Settings() {
     }
   };
 
-  const handleRestore = async () => {
+  const handleRestore = () => {
     if (!restoreFile) return;
-    if (!window.confirm(
-      `Restore from "${restoreFile.name}"?\n\n` +
-      'This REPLACES every account, transaction, budget, bill and statement file in this app — ' +
-      'for all users — with the contents of that backup. Anything added since it was taken is lost.\n\n' +
-      'A copy of the current data is saved first, so this can be undone from the server if needed.'
-    )) return;
-
-    setRestoring(true);
-    setRestoreProgress(0);
-    setBackupError(null);
-    try {
-      await restoreBackup(restoreFile, (e) => {
-        if (e.total) setRestoreProgress(Math.round((e.loaded / e.total) * 100));
-      });
-      // Everything on screen — accounts, categories, the selected account — came from the
-      // database that was just replaced, so reload rather than try to re-sync it piecemeal.
-      alert('Restore complete. The app will now reload.');
-      window.location.reload();
-    } catch (err) {
-      console.error('Failed to restore backup', err);
-      setBackupError(await readApiError(err, 'The restore failed. Your existing data was left in place.'));
-      setRestoring(false);
-    }
+    setConfirmDialog({
+      title: "Restore from backup?",
+      message:
+        `Restore from "${restoreFile.name}"?\n\n` +
+        'This REPLACES every account, transaction, budget, bill and statement file in this app — ' +
+        'for all users — with the contents of that backup. Anything added since it was taken is lost.\n\n' +
+        'A copy of the current data is saved first, so this can be undone from the server if needed.',
+      confirmLabel: "Restore",
+      danger: true,
+      onConfirm: async () => {
+        setRestoring(true);
+        setRestoreProgress(0);
+        setBackupError(null);
+        try {
+          await restoreBackup(restoreFile, (e) => {
+            if (e.total) setRestoreProgress(Math.round((e.loaded / e.total) * 100));
+          });
+          // Everything on screen — accounts, categories, the selected account — came from the
+          // database that was just replaced, so reload rather than try to re-sync it piecemeal.
+          window.location.reload();
+        } catch (err) {
+          console.error('Failed to restore backup', err);
+          setBackupError(await readApiError(err, 'The restore failed. Your existing data was left in place.'));
+          setRestoring(false);
+        }
+      },
+    });
   };
 
   /* ---- Search ---- */
@@ -1299,7 +1349,7 @@ export default function Settings() {
               type="text"
               placeholder="e.g. Groceries, Rent, Travel…"
               value={newCatName}
-              onChange={(e) => setNewCatName(e.target.value)}
+              onChange={(e) => { setNewCatName(e.target.value); setNewCatNameError(""); }}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategory(); }}
               maxLength={CATEGORY_NAME_MAX}
               className="field-input"
@@ -1309,6 +1359,7 @@ export default function Settings() {
               <FiPlus size={15} /> Add
             </button>
           </div>
+          {newCatNameError && <p className="settings-field-error">{newCatNameError}</p>}
         </div>
       )}
 
@@ -1326,23 +1377,26 @@ export default function Settings() {
             <section key={cat.id} className="setting-card">
               <div className="setting-card-head">
                 {editingCatId === cat.id ? (
-                  <div className="settings-inline-edit">
-                    <input
-                      type="text"
-                      value={editCatName}
-                      onChange={(e) => setEditCatName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleUpdateCategory(cat.id);
-                        if (e.key === 'Escape') { e.stopPropagation(); setEditingCatId(null); }
-                      }}
-                      maxLength={CATEGORY_NAME_MAX}
-                      autoFocus
-                      className="field-input"
-                      style={{ flex: 1 }}
-                      aria-label="Category name"
-                    />
-                    <button className="btn primary small" onClick={() => handleUpdateCategory(cat.id)}>Save</button>
-                    <button className="btn small" onClick={() => setEditingCatId(null)}>Cancel</button>
+                  <div style={{ flex: 1 }}>
+                    <div className="settings-inline-edit">
+                      <input
+                        type="text"
+                        value={editCatName}
+                        onChange={(e) => { setEditCatName(e.target.value); setEditCatNameError(""); }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleUpdateCategory(cat.id);
+                          if (e.key === 'Escape') { e.stopPropagation(); setEditingCatId(null); setEditCatNameError(""); }
+                        }}
+                        maxLength={CATEGORY_NAME_MAX}
+                        autoFocus
+                        className="field-input"
+                        style={{ flex: 1 }}
+                        aria-label="Category name"
+                      />
+                      <button className="btn primary small" onClick={() => handleUpdateCategory(cat.id)}>Save</button>
+                      <button className="btn small" onClick={() => { setEditingCatId(null); setEditCatNameError(""); }}>Cancel</button>
+                    </div>
+                    {editCatNameError && <p className="settings-field-error">{editCatNameError}</p>}
                   </div>
                 ) : (
                   <>
@@ -1354,7 +1408,7 @@ export default function Settings() {
                             className="settings-edit-link"
                             title="Rename category"
                             aria-label={`Rename ${cat.name}`}
-                            onClick={() => { setEditingCatId(cat.id); setEditCatName(cat.name); }}
+                            onClick={() => { setEditingCatId(cat.id); setEditCatName(cat.name); setEditCatNameError(""); }}
                           >
                             <FiEdit2 size={14} />
                           </button>
@@ -1398,10 +1452,10 @@ export default function Settings() {
                         type="text"
                         placeholder="New sub-category"
                         value={newSubCatName}
-                        onChange={(e) => setNewSubCatName(e.target.value)}
+                        onChange={(e) => { setNewSubCatName(e.target.value); setNewSubCatNameError(""); }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleAddSubCategory(cat.id);
-                          if (e.key === 'Escape') { e.stopPropagation(); setActiveSubCatInputId(null); }
+                          if (e.key === 'Escape') { e.stopPropagation(); setActiveSubCatInputId(null); setNewSubCatNameError(""); }
                         }}
                         maxLength={CATEGORY_NAME_MAX}
                         autoFocus
@@ -1409,12 +1463,12 @@ export default function Settings() {
                         aria-label="New sub-category"
                       />
                       <button className="btn primary small" onClick={() => handleAddSubCategory(cat.id)}>Add</button>
-                      <button className="btn small" onClick={() => setActiveSubCatInputId(null)}>Cancel</button>
+                      <button className="btn small" onClick={() => { setActiveSubCatInputId(null); setNewSubCatNameError(""); }}>Cancel</button>
                     </span>
                   ) : (
                     <button
                       className="subcat-add-btn"
-                      onClick={() => { setActiveSubCatInputId(cat.id); setNewSubCatName(""); }}
+                      onClick={() => { setActiveSubCatInputId(cat.id); setNewSubCatName(""); setNewSubCatNameError(""); }}
                     >
                       <FiPlus size={13} /> Add sub-category
                     </button>
@@ -1424,6 +1478,9 @@ export default function Settings() {
                     <span className="subcat-empty">None yet</span>
                   )}
                 </div>
+                {activeSubCatInputId === cat.id && newSubCatNameError && (
+                  <p className="settings-field-error">{newSubCatNameError}</p>
+                )}
               </div>
             </section>
           ))}
@@ -1641,6 +1698,17 @@ export default function Settings() {
           </div>
         )}
       </Drawer>
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        title={confirmDialog?.title}
+        message={confirmDialog?.message}
+        confirmLabel={confirmDialog?.confirmLabel}
+        danger={confirmDialog?.danger}
+        busy={confirmBusy}
+        onConfirm={runConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 }

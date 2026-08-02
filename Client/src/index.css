@@ -197,6 +197,17 @@ tr:hover td {
   font-variant-numeric: tabular-nums;
 }
 
+.confirm-dialog-text {
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.confirm-dialog-text:last-child {
+  margin-bottom: 0;
+}
+
 /* StatCard's default sizing for the flex stat rows most pages use. Kept here
    rather than inline on the component so a page can override it (e.g. a grid
    layout setting min-width: 0) — inline styles would win over any rule. */

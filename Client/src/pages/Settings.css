@@ -661,6 +661,12 @@
   flex: 1;
 }
 
+.settings-field-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  margin: var(--space-2) 0 0;
+}
+
 /* ---- Add-new card ---- */
 .settings-add-card {
   background: var(--surface-2);
