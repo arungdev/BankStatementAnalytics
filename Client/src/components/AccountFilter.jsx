@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FiPlus, FiCheck, FiChevronDown, FiCreditCard, FiLayers } from 'react-icons/fi';
 import { FilterGroup } from './PageHeader';
 
@@ -34,14 +35,27 @@ const last4 = (acc) => acc.accountNumber?.slice(-4) || '****';
  *
  * When there are no accounts yet, renders an "Add account" button (via `onAdd`)
  * that opens the account creation modal directly instead of a dead select.
+ *
+ * The menu is portalled to `document.body` and positioned from the trigger's
+ * rect (same trick as `Select` in @common/client). It has to be: PageHeader
+ * gives the header `z-index: var(--z-header)`, which opens a stacking context,
+ * so an in-flow menu is capped at 100 no matter what `--z-dropdown` says and
+ * disappears behind any open right-hand drawer (`--z-drawer`) — which is
+ * exactly where this chip sits.
  */
 export default function AccountFilter({ accounts = [], value, onChange, includeAll = true, onAdd, align = 'left' }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
   const ref = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    // The menu lives outside `ref`'s subtree, so test both before dismissing.
+    const onDown = (e) => {
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -50,6 +64,25 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  // Keep the fixed-position menu pinned to the trigger while it's open.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      setPos(align === 'right'
+        ? { top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) }
+        : { top: r.bottom + 6, left: Math.max(8, r.left) });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, align]);
 
   // No accounts linked yet — offer a shortcut to add one rather than a dead control.
   if (accounts.length === 0 && onAdd) {
@@ -125,6 +158,52 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
     );
   }
 
+  const menu = open && pos && createPortal(
+    <div
+      ref={menuRef}
+      className="filter-chip-menu floating"
+      role="listbox"
+      style={pos}
+    >
+      {includeAll && (
+        <button
+          className={`filter-chip-option${isAll ? ' active' : ''}`}
+          onClick={() => pick(ALL_ACCOUNTS)}
+          role="option"
+          aria-selected={isAll}
+        >
+          <span className="filter-chip-avatar"><FiLayers size={12} /></span>
+          <span style={{ flex: 1 }}>All accounts</span>
+          {isAll && <FiCheck size={14} style={{ flexShrink: 0 }} />}
+        </button>
+      )}
+      {accounts.map((acc) => {
+        const active = acc.id === value;
+        return (
+          <button
+            key={acc.id}
+            className={`filter-chip-option${active ? ' active' : ''}`}
+            onClick={() => pick(acc.id)}
+            role="option"
+            aria-selected={active}
+          >
+            <span className="filter-chip-avatar">{monogram(acc.bankName)}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {acc.accountHolderName || acc.bankName}
+              </span>
+              <span className="filter-chip-option-sub">
+                {acc.bankName} · •••• {last4(acc)}
+              </span>
+            </span>
+            {active && <FiCheck size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />}
+          </button>
+        );
+      })}
+    </div>,
+    document.body,
+  );
+
   return (
     <FilterGroup style={{ position: 'relative', zIndex: 'var(--z-dropdown)' }}>
       <div ref={ref} style={{ position: 'relative' }}>
@@ -138,51 +217,8 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
           {trigger}
           <FiChevronDown size={13} className="filter-chip-caret" />
         </button>
-
-        {open && (
-          <div
-            className="filter-chip-menu"
-            role="listbox"
-            style={align === 'right' ? { left: 'auto', right: 0 } : undefined}
-          >
-            {includeAll && (
-              <button
-                className={`filter-chip-option${isAll ? ' active' : ''}`}
-                onClick={() => pick(ALL_ACCOUNTS)}
-                role="option"
-                aria-selected={isAll}
-              >
-                <span className="filter-chip-avatar"><FiLayers size={12} /></span>
-                <span style={{ flex: 1 }}>All accounts</span>
-                {isAll && <FiCheck size={14} style={{ flexShrink: 0 }} />}
-              </button>
-            )}
-            {accounts.map((acc) => {
-              const active = acc.id === value;
-              return (
-                <button
-                  key={acc.id}
-                  className={`filter-chip-option${active ? ' active' : ''}`}
-                  onClick={() => pick(acc.id)}
-                  role="option"
-                  aria-selected={active}
-                >
-                  <span className="filter-chip-avatar">{monogram(acc.bankName)}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {acc.accountHolderName || acc.bankName}
-                    </span>
-                    <span className="filter-chip-option-sub">
-                      {acc.bankName} · •••• {last4(acc)}
-                    </span>
-                  </span>
-                  {active && <FiCheck size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
+      {menu}
     </FilterGroup>
   );
 }

@@ -69,6 +69,17 @@
   scrollbar-color: var(--gray-300) transparent;
 }
 
+/* Portalled to <body> and pinned to the trigger's rect — escapes the page
+   header's stacking context so the menu can sit above an open drawer.
+   Offsets come from the component as inline styles. */
+.filter-chip-menu.floating {
+  position: fixed;
+  top: auto;
+  left: auto;
+  right: auto;
+  z-index: var(--z-modal-top);
+}
+
 @keyframes filter-chip-menu-pop {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: none; }
