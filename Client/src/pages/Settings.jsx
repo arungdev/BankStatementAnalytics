@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle, FiSearch, FiCornerDownLeft, FiType, FiLock, FiRefreshCw, FiDatabase, FiDownload, FiUploadCloud } from "react-icons/fi";
+import { FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle, FiSearch, FiCornerDownLeft, FiType, FiLock, FiRefreshCw, FiDatabase, FiDownload, FiUploadCloud, FiHelpCircle, FiGithub, FiZap, FiExternalLink } from "react-icons/fi";
 import api from "../api/client";
 import { updateCardSettings } from "../api/cards";
 import { updateAutoImport, browseFolders } from "../api/accounts";
+import { CATEGORY_NAME_MAX, validateCategoryName, findExistingName } from "../utils/categoryName";
 import { triggerAutoImportSweep, getAutoImports, retryAutoImport } from "../api/statements";
 import { useAccount } from "../context/useAccount";
 import { Badge, Drawer, FONT_SIZE_OPTIONS, Switch, useAuth, useTheme } from "@common/client";
@@ -25,6 +26,7 @@ const SECTIONS = [
   { id: 'appearance', label: 'Appearance', hint: 'Theme & text size', icon: <FiSun size={17} />, title: 'Appearance', subtitle: 'Choose how the app looks on this device.' },
   { id: 'profile', label: 'Profile', hint: 'Login & users', icon: <FiUser size={17} />, title: 'Profile', subtitle: 'Manage your login and, as an admin, the other users on this app.' },
   { id: 'backup', label: 'Backup', hint: 'Save & restore everything', icon: <FiDatabase size={17} />, title: 'Backup & restore', subtitle: 'Save a copy of everything in this app, and put it back later or on another machine.' },
+  { id: 'help', label: 'Help', hint: 'Report a problem', icon: <FiHelpCircle size={17} />, title: 'Help & feedback', subtitle: 'Hit a bug, or want something the app does not do yet? Raise it on GitHub — every link here opens in a new tab.' },
 ];
 
 /* Flat index of every individual setting, so the search box can take you
@@ -48,6 +50,9 @@ const SETTINGS_INDEX = [
   { section: 'profile', anchor: 'profile-users', title: 'Users', desc: 'Add, disable, or delete other users', keywords: 'user users add create disable delete role admin permission access' },
   { section: 'backup', anchor: 'backup-download', title: 'Download a backup', desc: 'Save every account, transaction and statement file to one zip', keywords: 'backup download save export zip copy archive data safety disaster move machine' },
   { section: 'backup', anchor: 'backup-restore', title: 'Restore from a backup', desc: 'Replace everything in this app with the contents of a backup', keywords: 'restore import upload recover revert replace rollback zip backup migrate' },
+  { section: 'help', anchor: 'issue-bug', title: 'Report a problem', desc: 'Raise a bug on GitHub with the details already laid out', keywords: 'issue bug report problem raise complaint broken error crash wrong parse support help feedback github' },
+  { section: 'help', anchor: 'issue-feature', title: 'Suggest a feature', desc: 'Ask for a new bank, chart, or anything else missing', keywords: 'feature request suggest idea enhancement wish missing bank add support help feedback github' },
+  { section: 'help', anchor: 'issue-browse', title: 'Browse existing issues', desc: 'See what is already reported before opening a new one', keywords: 'issues list open known existing browse github track status' },
 ];
 
 const THEME_OPTIONS = [
@@ -57,6 +62,55 @@ const THEME_OPTIONS = [
 ];
 
 const REMINDER_PRESETS = [3, 7, 14, 30];
+
+/* The app keeps no issue tracker of its own — "raise an issue" is a deep link
+   into the repo's new-issue form with the title, label and boilerplate already
+   filled in, so the report arrives with the questions worth answering visible. */
+const GITHUB_REPO = "https://github.com/arungdev/BankStatementAnalytics";
+
+const ISSUE_TEMPLATES = {
+  bug: {
+    label: 'bug',
+    title: '[Bug] ',
+    body: [
+      '**What happened**',
+      '',
+      '',
+      '**What you expected instead**',
+      '',
+      '',
+      '**Steps to reproduce**',
+      '1. ',
+      '2. ',
+      '',
+      '**Bank / statement involved** (if it is an import or parsing problem)',
+      '',
+    ],
+  },
+  feature: {
+    label: 'enhancement',
+    title: '[Feature] ',
+    body: [
+      '**What would you like to be able to do?**',
+      '',
+      '',
+      '**Why it would help**',
+      '',
+    ],
+  },
+};
+
+const newIssueUrl = (kind) => {
+  const tpl = ISSUE_TEMPLATES[kind];
+  const params = new URLSearchParams({
+    labels: tpl.label,
+    title: tpl.title,
+    // Browser string goes in because import bugs are often renderer-specific;
+    // nothing account-related is added — see the warning on the card.
+    body: [...tpl.body, '', '---', `Browser: ${navigator.userAgent}`].join('\n'),
+  });
+  return `${GITHUB_REPO}/issues/new?${params}`;
+};
 
 /* Backup sizes come back as raw byte counts — shown in whatever unit keeps them readable. */
 const formatBytes = (bytes) => {
@@ -367,9 +421,9 @@ export default function Settings() {
   }, []);
 
   const handleAddCategory = async () => {
-    const name = newCatName.trim();
-    if (!name) return;
-    if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+    const { name, error } = validateCategoryName(newCatName);
+    if (error) { alert(error); return; }
+    if (findExistingName(categories.map(c => c.name), name)) {
       alert(`A category named "${name}" already exists.`);
       return;
     }
@@ -379,7 +433,7 @@ export default function Settings() {
       setNewCatName("");
     } catch (err) {
       console.error(err);
-      alert("Failed to add category. Please try again.");
+      alert(err.response?.data || "Failed to add category. Please try again.");
     }
   };
 
@@ -395,20 +449,30 @@ export default function Settings() {
   };
 
   const handleUpdateCategory = async (id) => {
-    if (!editCatName.trim()) return;
+    const { name, error } = validateCategoryName(editCatName);
+    if (error) { alert(error); return; }
+    if (findExistingName(categories.filter(c => c.id !== id).map(c => c.name), name)) {
+      alert(`A category named "${name}" already exists.`);
+      return;
+    }
     try {
-      await api.put(`/categories/${id}`, { name: editCatName.trim() });
-      setCategories(categories.map(c => c.id === id ? { ...c, name: editCatName.trim() } : c));
+      await api.put(`/categories/${id}`, { name });
+      setCategories(categories.map(c => c.id === id ? { ...c, name } : c));
       setEditingCatId(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to update category. Please try again.");
+      alert(err.response?.data || "Failed to update category. Please try again.");
     }
   };
 
   const handleAddSubCategory = async (catId) => {
-    const name = newSubCatName.trim();
-    if (!name) return;
+    const { name, error } = validateCategoryName(newSubCatName, "Sub-category");
+    if (error) { alert(error); return; }
+    const category = categories.find(c => c.id === catId);
+    if (findExistingName(category?.subCategories, name)) {
+      alert(`"${category.name}" already has a sub-category named "${name}".`);
+      return;
+    }
     try {
       await api.post(`/categories/${catId}/subcategories`, { name });
       setCategories(categories.map(c =>
@@ -418,25 +482,23 @@ export default function Settings() {
       setActiveSubCatInputId(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to add sub-category. Please try again.");
+      alert(err.response?.data || "Failed to add sub-category. Please try again.");
     }
   };
 
-  const handleDeleteSubCategory = async (catId, subCatIndex, subCatName) => {
+  // Deletes by name, not by index — the server identifies sub-categories by name,
+  // so removing the matching name keeps the local list in step with what it did.
+  const handleDeleteSubCategory = async (catId, subCatName) => {
     if (!window.confirm(`Delete sub-category "${subCatName}"?`)) return;
     try {
       await api.delete(`/categories/${catId}/subcategories/${encodeURIComponent(subCatName)}`);
-      setCategories(categories.map(c => {
-        if (c.id === catId) {
-          const newSub = [...(c.subCategories || [])];
-          newSub.splice(subCatIndex, 1);
-          return { ...c, subCategories: newSub };
-        }
-        return c;
-      }));
+      setCategories(categories.map(c => c.id === catId
+        ? { ...c, subCategories: (c.subCategories || []).filter(s => s.toLowerCase() !== subCatName.toLowerCase()) }
+        : c
+      ));
     } catch (err) {
       console.error(err);
-      alert("Failed to delete sub-category. Please try again.");
+      alert(err.response?.data || "Failed to delete sub-category. Please try again.");
     }
   };
 
@@ -611,6 +673,7 @@ export default function Settings() {
     appearance: THEME_OPTIONS.find(t => t.id === preference)?.label,
     profile: null,
     backup: isAdmin ? null : 'Admin',
+    help: null,
   };
 
   const section = SECTIONS.find(s => s.id === activeTab) ?? SECTIONS[0];
@@ -759,6 +822,52 @@ export default function Settings() {
           <p className="setting-note">Takes effect as soon as “Hide amounts” is on.</p>
         )}
       </SettingCard>
+    </div>
+  );
+
+  const renderHelp = () => (
+    <div className="settings-stack">
+      <SettingCard
+        anchor="issue-bug"
+        icon={<FiAlertCircle size={18} />}
+        title="Report a problem"
+        description="A statement that parsed wrong, a page that errored, a number that looks off — this opens a bug report with the details already laid out."
+        control={
+          <a className="btn primary small" href={newIssueUrl('bug')} target="_blank" rel="noopener noreferrer">
+            <FiGithub size={15} /> Report a bug <FiExternalLink size={13} />
+          </a>
+        }
+      >
+        <p className="setting-note danger">
+          <FiLock size={14} />
+          Issues on GitHub are public. Strip account numbers, balances and merchant names out of
+          anything you paste or screenshot — a redacted example still shows the problem.
+        </p>
+      </SettingCard>
+
+      <SettingCard
+        anchor="issue-feature"
+        icon={<FiZap size={18} />}
+        title="Suggest a feature"
+        description="Missing a bank, a chart, or a way to slice your spending? Ask for it — feature requests go in the same place."
+        control={
+          <a className="btn small" href={newIssueUrl('feature')} target="_blank" rel="noopener noreferrer">
+            <FiGithub size={15} /> Request a feature <FiExternalLink size={13} />
+          </a>
+        }
+      />
+
+      <SettingCard
+        anchor="issue-browse"
+        icon={<FiGithub size={18} />}
+        title="Browse existing issues"
+        description="Worth a look first — your problem may already be reported, and you can follow that one for updates instead of opening a duplicate."
+        control={
+          <a className="btn small" href={`${GITHUB_REPO}/issues`} target="_blank" rel="noopener noreferrer">
+            Open on GitHub <FiExternalLink size={13} />
+          </a>
+        }
+      />
     </div>
   );
 
@@ -1192,7 +1301,7 @@ export default function Settings() {
               value={newCatName}
               onChange={(e) => setNewCatName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategory(); }}
-              maxLength={50}
+              maxLength={CATEGORY_NAME_MAX}
               className="field-input"
               style={{ flex: 1 }}
             />
@@ -1226,7 +1335,7 @@ export default function Settings() {
                         if (e.key === 'Enter') handleUpdateCategory(cat.id);
                         if (e.key === 'Escape') { e.stopPropagation(); setEditingCatId(null); }
                       }}
-                      maxLength={50}
+                      maxLength={CATEGORY_NAME_MAX}
                       autoFocus
                       className="field-input"
                       style={{ flex: 1 }}
@@ -1273,7 +1382,7 @@ export default function Settings() {
                       {isAdmin && (
                         <button
                           className="subcat-chip-remove"
-                          onClick={() => handleDeleteSubCategory(cat.id, idx, sub)}
+                          onClick={() => handleDeleteSubCategory(cat.id, sub)}
                           title={`Remove ${sub}`}
                           aria-label={`Remove ${sub}`}
                         >
@@ -1294,7 +1403,7 @@ export default function Settings() {
                           if (e.key === 'Enter') handleAddSubCategory(cat.id);
                           if (e.key === 'Escape') { e.stopPropagation(); setActiveSubCatInputId(null); }
                         }}
-                        maxLength={50}
+                        maxLength={CATEGORY_NAME_MAX}
                         autoFocus
                         className="field-input"
                         aria-label="New sub-category"
@@ -1457,6 +1566,7 @@ export default function Settings() {
                 {activeTab === 'appearance' && renderAppearance()}
                 {activeTab === 'profile' && <div id="set-profile-account"><ProfileSettings /></div>}
                 {activeTab === 'backup' && renderBackup()}
+                {activeTab === 'help' && renderHelp()}
               </div>
             </>
           )}

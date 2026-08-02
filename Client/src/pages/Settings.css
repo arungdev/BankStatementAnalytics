@@ -302,6 +302,12 @@
 .setting-note svg { flex-shrink: 0; margin-top: 1px; }
 .setting-note.danger { color: var(--danger); }
 
+/* Help section links wear the button shape, but they are anchors — the global
+   `a` rule paints them accent-coloured, which would make them read as a
+   different control from every other button on the page. */
+.settings-panel a.btn { color: var(--text-main); white-space: nowrap; }
+.settings-panel a.btn.primary { color: #fff; }
+
 /* Flash applied to the card you jumped to from a search result. */
 @keyframes setting-flash {
   0%, 100% { box-shadow: 0 0 0 0 transparent; }
