@@ -148,9 +148,13 @@ try {
         Write-Warning "PostgreSQL bundle not found ($PgBundleDir) - the portable ZIP will need an external server (Database:Embedded=false)."
     }
 
+    # Normalize to CRLF (via String.Replace/Split, not -replace: the regex replacement
+    # string would take \r\n literally) so Notepad renders the file as written, whatever
+    # line endings this script happens to be stored with. No BOM - it's a plain .txt.
+    $readmeCrLf = [string]::Join("`r`n", $readme.Replace("`r`n", "`n").Split("`n"))
     $entry = $archive.CreateEntry("$rootName/README.txt", $level)
-    $writer = New-Object System.IO.StreamWriter($entry.Open(), [System.Text.UTF8Encoding]::new($false))
-    try { $writer.Write(($readme -replace "`r`n", "`n") -replace "`n", "`r`n") }
+    $writer = New-Object System.IO.StreamWriter($entry.Open(), (New-Object System.Text.UTF8Encoding($false)))
+    try { $writer.Write($readmeCrLf) }
     finally { $writer.Dispose() }
 }
 finally {
