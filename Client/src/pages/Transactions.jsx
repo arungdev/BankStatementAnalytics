@@ -13,6 +13,7 @@ import { FilterGroup } from "../components/PageHeader";
 import Pagination from "../components/Pagination";
 import CategoryPicker from "../components/CategoryPicker";
 import { currencyFormatter, maskName } from "../utils/format";
+import { validateCategoryName, findExistingName } from "../utils/categoryName";
 
 /* ─── Design tokens — mapped to the global CSS variable system so both the
  * inline styles and the injected <style> block below pick up light/dark. */
@@ -470,9 +471,17 @@ export default function Transactions() {
     });
   };
 
-  // Inline "Create category" from the picker: persist the new top-level
-  // category, add it to the local list, then assign it to the transaction.
-  const handleCreateCategory = (t, name) => {
+  // Inline "Create category" from the picker: reuse an existing match if one
+  // exists, otherwise persist the new top-level category, add it to the local
+  // list, then assign it to the transaction.
+  const handleCreateCategory = (t, raw) => {
+    const { name, error } = validateCategoryName(raw);
+    if (error) { alert(error); return; }
+    const existing = findExistingName(categories.map(c => c.name), name);
+    if (existing) {
+      handleCategoryChange(t, existing);
+      return;
+    }
     api.post('/categories', { name })
       .then(res => {
         const created = res.data;
@@ -484,7 +493,7 @@ export default function Transactions() {
       })
       .catch(err => {
         console.error("Failed to create category", err);
-        alert("Failed to create category.");
+        alert(err.response?.data || "Failed to create category.");
       });
   };
 

@@ -5,6 +5,7 @@ using Common.Framework.Web;
 using BankStatementAnalytics.Models;
 using System;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace BankStatementAnalytics.Controllers.Api
@@ -13,6 +14,32 @@ namespace BankStatementAnalytics.Controllers.Api
     [Route("api/categories")]
     public class CategoriesApiController : TenantControllerBase
     {
+        // Names are typed by hand in Settings and inline from the category pickers, then
+        // copied verbatim onto merchants and transactions — where the column is only
+        // varchar(100) (see MerchantMap). 50 is the cap the Settings inputs already
+        // enforce; keeping the server on the same number means no UI can create a name
+        // another one refuses to rename.
+        private const int MaxNameLength = 50;
+
+        // The single gate every write path goes through. Collapses whitespace so
+        // "Food  Delivery" and "Food Delivery" can't coexist as two categories that look
+        // identical in every list, then rejects what can't be stored or displayed.
+        // `what` names the thing in the message ("Category" / "Sub-category").
+        private static bool TryNormalizeName(string raw, string what, out string name, out string error)
+        {
+            name = Regex.Replace((raw ?? string.Empty).Trim(), @"\s+", " ");
+            error = null;
+
+            if (name.Length == 0)
+                error = $"{what} name is required.";
+            else if (name.Length > MaxNameLength)
+                error = $"{what} name can be at most {MaxNameLength} characters.";
+            else if (name.Any(char.IsControl))
+                error = $"{what} name can't contain control characters.";
+
+            return error == null;
+        }
+
         [HttpGet]
         public IActionResult GetAll()
         {
@@ -39,6 +66,10 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("usage")]
         public IActionResult GetUsage([FromQuery] int limit = 6)
         {
+            // Take() throws on a negative count, and nothing sensible asks for hundreds
+            // of "frequently used" chips — clamp rather than 500 on a hand-edited URL.
+            limit = Math.Clamp(limit, 1, 50);
+
             using var session = DbHelper.GetSession();
 
             var accountIds = session.Query<Account>()
@@ -74,10 +105,16 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CategoryDto req)
         {
+            if (!TryNormalizeName(req?.Name, "Category", out var name, out var error))
+                return BadRequest(error);
+
             using var session = DbHelper.GetSession();
             using var tx = session.BeginTransaction();
 
-            var category = new Category { Name = req.Name, OwnerUserId = CurrentUserId };
+            if (NameTaken(session, name))
+                return Conflict($"A category named \"{name}\" already exists.");
+
+            var category = new Category { Name = name, OwnerUserId = CurrentUserId };
             await session.SaveAsync(category);
             await tx.CommitAsync();
 
@@ -87,17 +124,35 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] CategoryDto req)
         {
+            if (!TryNormalizeName(req?.Name, "Category", out var name, out var error))
+                return BadRequest(error);
+
             using var session = DbHelper.GetSession();
             using var tx = session.BeginTransaction();
 
             var category = session.Get<Category>(id);
             if (!Owns(category)) return NotFound();
 
-            category.Name = req.Name;
+            if (NameTaken(session, name, exceptId: id))
+                return Conflict($"A category named \"{name}\" already exists.");
+
+            category.Name = name;
             await session.UpdateAsync(category);
             await tx.CommitAsync();
 
             return NoContent();
+        }
+
+        // Category names are unique per user, case-insensitively. There's no DB
+        // constraint expressing that (mapping-by-code can't, and the comparison is
+        // case-insensitive), so every write path checks here.
+        private bool NameTaken(NHibernate.ISession session, string name, int? exceptId = null)
+        {
+            return session.Query<Category>()
+                .Where(c => c.OwnerUserId == CurrentUserId)
+                .Select(c => new { c.Id, c.Name })
+                .ToList()
+                .Any(c => c.Id != exceptId && string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         }
 
         [HttpDelete("{id}")]
@@ -118,36 +173,60 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPost("{id}/subcategories")]
         public async Task<IActionResult> AddSubCategory(int id, [FromBody] CategoryDto req)
         {
+            if (!TryNormalizeName(req?.Name, "Sub-category", out var name, out var error))
+                return BadRequest(error);
+
             using var session = DbHelper.GetSession();
             using var tx = session.BeginTransaction();
 
             var category = session.Get<Category>(id);
             if (!Owns(category)) return NotFound();
 
-            var sub = new SubCategory { Name = req.Name, Category = category };
+            if (category.SubCategories.Any(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)))
+                return Conflict($"\"{category.Name}\" already has a sub-category named \"{name}\".");
+
+            var sub = new SubCategory { Name = name, Category = category };
             category.SubCategories.Add(sub);
 
             await session.SaveAsync(sub);
             await session.UpdateAsync(category);
             await tx.CommitAsync();
 
-            return Ok();
+            return Ok(new { Id = sub.Id, Name = sub.Name });
         }
 
         [HttpDelete("{id}/subcategories/{subName}")]
         public async Task<IActionResult> DeleteSubCategory(int id, string subName)
         {
+            // Routing has already URL-decoded the segment, so the client's single
+            // encodeURIComponent is accounted for. Do not unescape again: a second pass
+            // throws UriFormatException on a legitimate name containing '%' ("50% off")
+            // and silently mangles one containing a "%20"-shaped substring.
+            var target = (subName ?? string.Empty).Trim();
+            if (target.Length == 0)
+                return BadRequest("Sub-category name is required.");
+
             using var session = DbHelper.GetSession();
             using var tx = session.BeginTransaction();
 
             var category = session.Get<Category>(id);
             if (!Owns(category)) return NotFound();
 
-            var sub = category.SubCategories.FirstOrDefault(s => s.Name.Equals(Uri.UnescapeDataString(subName), StringComparison.OrdinalIgnoreCase));
-            if (sub != null)
+            // Sub-categories are identified by name everywhere else (transactions and
+            // merchants store the name, not the id), so a delete removes every row with
+            // that name — which also clears out duplicates created before names were
+            // enforced unique.
+            var subs = category.SubCategories
+                .Where(s => s.Name.Equals(target, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (subs.Count > 0)
             {
-                category.SubCategories.Remove(sub);
-                await session.DeleteAsync(sub);
+                foreach (var sub in subs)
+                {
+                    category.SubCategories.Remove(sub);
+                    await session.DeleteAsync(sub);
+                }
                 await session.UpdateAsync(category);
                 await tx.CommitAsync();
             }
