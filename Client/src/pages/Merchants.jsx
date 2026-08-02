@@ -4,20 +4,14 @@ import {
 } from "recharts";
 import { FiFilter } from "react-icons/fi";
 import api from "../api/client";
-import Button from "../components/ui/Button";
+import { Avatar, avatarColors, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState, useTheme } from "@common/client";
+import { getToken } from "../theme/chartTheme";
 import { currencyFormatter, isAmountMasked, MASKED_AMOUNT, maskName } from "../utils/format";
-import EmptyState from "../components/ui/EmptyState";
-import Drawer from "../components/ui/Drawer";
-import Avatar from "../components/ui/Avatar";
-import Modal from "../components/ui/Modal";
+import { validateCategoryName, findExistingName } from "../utils/categoryName";
 import CategoryPicker from "../components/CategoryPicker";
-import { avatarColors } from "../utils/avatar";
-import { useAuth } from "../context/useAuth";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { usePrivacy } from "../context/usePrivacy";
-import useTheme from "../context/useTheme";
-import { getToken } from "../theme/chartTheme";
 
 /* ─── Design tokens — mapped to the global CSS variable system so DOM inline
  * styles pick up light/dark automatically. (SVG chart colors can't use var()
@@ -36,6 +30,12 @@ const T = {
   red:        'var(--danger)',
   green:      'var(--success)',
 };
+
+/* Identity of a suggested-merge group, stable across reloads and independent of
+ * which merchant union-find happened to pick as the root. Used to remember the
+ * groups the user marked instead of merging. */
+const groupSignature = (members) =>
+  members.map(m => m.id).sort((a, b) => a - b).join('-');
 
 /* Small label/value block reused across the detail drawer. */
 function Field({ label, children }) {
@@ -82,6 +82,8 @@ export default function Merchants() {
   const [editForm, setEditForm] = useState({ friendlyName: '', notes: '', category: '', subCategory: '', shiftToNextMonth: false });
   // Spend column sort: null keeps the API's own order (transaction count desc).
   const [spentSort, setSpentSort] = useState(null);
+  // Row whose inline note input is open (same inline-edit UX as the Transactions page).
+  const [noteEditRowId, setNoteEditRowId] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(460);
   const [categoriesList, setCategoriesList] = useState([]);
   // Most-used category values (names), ranked by usage — drives the CategoryPicker
@@ -96,10 +98,24 @@ export default function Merchants() {
   // In-flight guard for the bulk "set category on all selected" action
   const [bulkSaving, setBulkSaving] = useState(false);
 
-  // Auto-suggested merges (duplicate detection)
+  // Auto-suggested merges (duplicate detection). A group the user isn't ready to
+  // merge can be marked instead — it moves to the second tab and stops counting
+  // towards the badge, but stays mergeable from there. Marks are keyed by the
+  // group's member ids (see groupSignature) and persist locally, so a group that
+  // gains a new duplicate resurfaces as a fresh suggestion.
   const [showSuggestModal, setShowSuggestModal] = useState(false);
   const [suggestPrimary, setSuggestPrimary] = useState({});
   const [mergingKey, setMergingKey] = useState(null);
+  const [suggestTab, setSuggestTab] = useState('pending');
+  const [markedGroups, setMarkedGroups] = usePersistedState('merchantMergeMarked', []);
+
+  // Auto-categorization suggestions (keyword rules + similarity to already-
+  // categorized merchants, computed server-side). catExcluded holds unticked
+  // rows so the modal defaults to everything selected.
+  const [catSuggestions, setCatSuggestions] = useState([]);
+  const [showCatModal, setShowCatModal] = useState(false);
+  const [catExcluded, setCatExcluded] = useState(() => new Set());
+  const [applyingCats, setApplyingCats] = useState(false);
 
   // Account scoping: "All accounts" (or no selection yet) sends no params, which the
   // API treats as unfiltered — identical to the pre-filter behavior.
@@ -107,8 +123,18 @@ export default function Merchants() {
   const isAllAccounts = !selectedAccountId || selectedAccountId === ALL_ACCOUNTS;
   const accountQuery = isAllAccounts ? '' : `?accountId=${selectedAccountId}`;
 
+  // Suggestions refresh together with the list: merging or categorizing changes
+  // what's left to suggest. The endpoint isn't account-scoped (categorization is
+  // global); scoping happens at render via visibleCatSuggestions.
   const fetchMerchants = () =>
-    api.get(`/merchants${accountQuery}`).then(res => setData(res.data || []));
+    Promise.all([
+      api.get(`/merchants${accountQuery}`).then(res => setData(res.data || [])),
+      isAdmin
+        ? api.get('/merchants/category-suggestions')
+            .then(res => setCatSuggestions(res.data || []))
+            .catch(() => setCatSuggestions([]))
+        : Promise.resolve(),
+    ]);
 
   useEffect(() => {
     api.get("/categories")
@@ -135,6 +161,15 @@ export default function Merchants() {
       });
   };
 
+  // Declared above the account-change effect below, which calls it: as a const arrow
+  // function it is in the temporal dead zone until this line runs.
+  const closeSidebar = () => {
+    setSelectedMerchantId(null);
+    setMerchantDetails(null);
+    setIsEditing(false);
+    setTxFilterName('ALL');
+  };
+
   useEffect(() => {
     setLoading(true);
     fetchMerchants()
@@ -144,6 +179,7 @@ export default function Merchants() {
     // the selected merchant id won't belong to the newly chosen account, so
     // reset both rather than refetching a merchant from the old scope.
     setSelectedIds([]);
+    setNoteEditRowId(null);
     closeSidebar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountQuery]);
@@ -189,13 +225,6 @@ export default function Merchants() {
     });
   };
 
-  const closeSidebar = () => {
-    setSelectedMerchantId(null);
-    setMerchantDetails(null);
-    setIsEditing(false);
-    setTxFilterName('ALL');
-  };
-
   const handleEditClick = () => {
     setEditForm({
       friendlyName: merchantDetails.friendlyName || '',
@@ -212,11 +241,13 @@ export default function Merchants() {
   const NEW_SUBCATEGORY = '__new_subcategory__';
 
   const handleAddCategory = () => {
-    const name = window.prompt('New category name')?.trim();
-    if (!name) return;
-    const existing = categoriesList.find(c => c.name.toLowerCase() === name.toLowerCase());
+    const input = window.prompt('New category name');
+    if (input === null) return;
+    const { name, error } = validateCategoryName(input);
+    if (error) { alert(error); return; }
+    const existing = findExistingName(categoriesList.map(c => c.name), name);
     if (existing) {
-      setEditForm(prev => ({ ...prev, category: existing.name, subCategory: '' }));
+      setEditForm(prev => ({ ...prev, category: existing, subCategory: '' }));
       return;
     }
     api.post('/categories', { name })
@@ -226,16 +257,18 @@ export default function Merchants() {
       })
       .catch(err => {
         console.error('Failed to create category', err);
-        alert('Failed to create category.');
+        alert(err.response?.data || 'Failed to create category.');
       });
   };
 
   const handleAddSubCategory = () => {
     const category = categoriesList.find(c => c.name === editForm.category);
     if (!category) return;
-    const name = window.prompt(`New sub-category under "${category.name}"`)?.trim();
-    if (!name) return;
-    const existing = category.subCategories?.find(s => s.toLowerCase() === name.toLowerCase());
+    const input = window.prompt(`New sub-category under "${category.name}"`);
+    if (input === null) return;
+    const { name, error } = validateCategoryName(input, 'Sub-category');
+    if (error) { alert(error); return; }
+    const existing = findExistingName(category.subCategories, name);
     if (existing) {
       setEditForm(prev => ({ ...prev, subCategory: existing }));
       return;
@@ -249,7 +282,7 @@ export default function Merchants() {
       })
       .catch(err => {
         console.error('Failed to create sub-category', err);
-        alert('Failed to create sub-category.');
+        alert(err.response?.data || 'Failed to create sub-category.');
       });
   };
 
@@ -285,12 +318,41 @@ export default function Merchants() {
     });
   };
 
+  // Inline note editing from the list rows (same UX as the Transactions page).
+  // The PUT overwrites category/shift unconditionally, so resend the merchant's
+  // current values alongside the note rather than sending the note alone.
+  const updateMerchantNote = (merchant, newNote) => {
+    const trimmed = (newNote ?? '').trim();
+    const previousNotes = merchant.notes;
+    if (trimmed === (previousNotes || '')) return; // nothing changed
+    const notes = trimmed || null;
+
+    const patch = (m) => ({ ...m, notes });
+    setData(prev => prev.map(m => m.id === merchant.id ? patch(m) : m));
+    if (merchantDetails?.id === merchant.id) setMerchantDetails(patch);
+
+    api.put(`/merchants/${merchant.id}`, {
+      category: merchant.category || null,
+      subCategory: merchant.subCategory || null,
+      shiftToNextMonth: merchant.shiftToNextMonth || false,
+      notes,
+    }).catch(err => {
+      console.error("Failed to update note", err);
+      alert("Failed to update note. Please try again.");
+      const revert = (m) => ({ ...m, notes: previousNotes });
+      setData(prev => prev.map(m => m.id === merchant.id ? revert(m) : m));
+      if (merchantDetails?.id === merchant.id) setMerchantDetails(revert);
+    });
+  };
+
   // Inline "Create category" from the row picker: reuse an existing match if
   // one exists, otherwise persist the new top-level category, then assign it.
-  const handleCreateRowCategory = (merchant, name) => {
-    const existing = categoriesList.find(c => c.name.toLowerCase() === name.toLowerCase());
+  const handleCreateRowCategory = (merchant, raw) => {
+    const { name, error } = validateCategoryName(raw);
+    if (error) { alert(error); return; }
+    const existing = findExistingName(categoriesList.map(c => c.name), name);
     if (existing) {
-      applyMerchantCategory(merchant, existing.name);
+      applyMerchantCategory(merchant, existing);
       return;
     }
     api.post('/categories', { name })
@@ -300,7 +362,7 @@ export default function Merchants() {
       })
       .catch(err => {
         console.error('Failed to create category', err);
-        alert('Failed to create category.');
+        alert(err.response?.data || 'Failed to create category.');
       });
   };
 
@@ -334,10 +396,12 @@ export default function Merchants() {
   };
 
   // Inline "Create category" from the bulk picker — mirrors handleCreateRowCategory.
-  const handleCreateBulkCategory = (name) => {
-    const existing = categoriesList.find(c => c.name.toLowerCase() === name.toLowerCase());
+  const handleCreateBulkCategory = (raw) => {
+    const { name, error } = validateCategoryName(raw);
+    if (error) { alert(error); return; }
+    const existing = findExistingName(categoriesList.map(c => c.name), name);
     if (existing) {
-      applyBulkCategory(existing.name);
+      applyBulkCategory(existing);
       return;
     }
     api.post('/categories', { name })
@@ -347,7 +411,7 @@ export default function Merchants() {
       })
       .catch(err => {
         console.error('Failed to create category', err);
-        alert('Failed to create category.');
+        alert(err.response?.data || 'Failed to create category.');
       });
   };
 
@@ -407,40 +471,156 @@ export default function Merchants() {
     return { totalSpent, count, avg, first, last, monthly };
   }, [merchantDetails]);
 
-  // ── Auto-suggested merges: group merchants whose names normalize to the same
-  // key (case/whitespace/punctuation-insensitive). Also folds a merchant into a
-  // group when its name matches another merchant's alias or friendly name.
-  const mergeSuggestions = useMemo(() => {
+  // ── Auto-suggested merges: union-find over several conservative signals, so a
+  // merchant linked to a group by any one of them joins that group:
+  //  • identical normalized name / friendly name (case/space/punctuation-insensitive)
+  //  • its name matching a name previously merged into another merchant (alias)
+  //  • the same name apart from a month/year stamp ("RD JUL 2026" vs "RD JUN 2026")
+  //  • the same name apart from a trailing number ("…TILL 30" vs "…TILL 31")
+  //  • one name being a long (≥10 chars normalized) prefix of another — statement
+  //    columns truncate payee names at different widths per format
+  //  • the same UPI id recorded on two different merchants
+  // Each group carries the reasons that formed it, shown in the review modal.
+  const allMergeSuggestions = useMemo(() => {
     const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const groups = new Map();
+    // Month is only stripped when a year follows it, so real words like "May"
+    // in an ordinary merchant name don't trigger false groupings.
+    const MONTHS = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+    const dateStampRe = new RegExp(String.raw`\b(?:${MONTHS})[\s\-/.,']*\d{2,4}\b|\b\d{1,2}[-/]\d{4}\b|\b\d{4}[-/]\d{1,2}\b|\b(?:19|20)\d{2}\b`, 'gi');
+    const dateless = (s) => norm((s || '').replace(dateStampRe, ' '));
+
+    const parent = new Map(data.map(m => [m.id, m.id]));
+    const find = (id) => {
+      let root = id;
+      while (parent.get(root) !== root) root = parent.get(root);
+      while (parent.get(id) !== root) { const next = parent.get(id); parent.set(id, root); id = next; }
+      return root;
+    };
+    const reasons = new Map(); // root id -> Set of reason labels
+    const addReason = (root, reason) => {
+      if (!reasons.has(root)) reasons.set(root, new Set());
+      reasons.get(root).add(reason);
+    };
+    const union = (a, b, reason) => {
+      const ra = find(a), rb = find(b);
+      if (ra !== rb) {
+        parent.set(ra, rb);
+        (reasons.get(ra) || []).forEach(r => addReason(rb, r));
+        reasons.delete(ra);
+      }
+      addReason(find(b), reason);
+    };
+
+    // 1. Shared normalized identity. One map for all key kinds so a date-stripped
+    // key can also meet a plain name ("RD JUL 2026" ↔ "RD"). Plain-name kinds are
+    // listed first so a merchant whose dateless key equals its own name key
+    // registers under the 'name' kind.
+    const byKey = new Map(); // key -> { id, kind } of the first merchant seen with it
     data.forEach(m => {
-      // A merchant can be reachable by its raw name or its friendly name —
-      // group on whichever keys it exposes so renamed rows still cluster.
-      const keys = new Set([norm(m.name), norm(m.friendlyName)].filter(Boolean));
-      keys.forEach(key => {
-        if (!groups.has(key)) groups.set(key, new Set());
-        groups.get(key).add(m);
+      const seen = new Set();
+      const entries = [
+        [norm(m.name), 'name'],
+        [norm(m.friendlyName), 'name'],
+        ...(m.aliases || []).map(a => [norm(a), 'alias']),
+        [dateless(m.name), 'date'],
+        [dateless(m.friendlyName), 'date'],
+      ];
+      entries.forEach(([key, kind]) => {
+        if (!key || key.length < 3 || seen.has(key)) return;
+        seen.add(key);
+        const first = byKey.get(key);
+        if (!first) { byKey.set(key, { id: m.id, kind }); return; }
+        if (first.id === m.id) return;
+        const reason =
+          first.kind === 'date' || kind === 'date' ? 'same name apart from a date'
+          : first.kind === 'alias' || kind === 'alias' ? 'matches a merged alias'
+          : 'same name';
+        union(first.id, m.id, reason);
       });
     });
-    return [...groups.entries()]
-      .filter(([, set]) => set.size > 1)
-      .map(([key, set]) => {
+
+    // 2. Same name apart from a trailing number (only when digits were stripped).
+    const byStem = new Map();
+    data.forEach(m => {
+      const key = norm(m.name);
+      const stem = key.replace(/\d+$/, '');
+      if (stem === key || stem.length < 6) return;
+      const prev = byStem.get(stem);
+      if (prev && prev !== m.id) union(prev, m.id, 'same name apart from a number');
+      else byStem.set(stem, m.id);
+    });
+
+    // 3. Same UPI id on two merchants — strongest signal of the lot.
+    const byUpi = new Map();
+    data.forEach(m => (m.upiIds || []).forEach(u => {
+      const key = (u || '').toLowerCase();
+      if (!key) return;
+      const prev = byUpi.get(key);
+      if (prev && prev !== m.id) union(prev, m.id, 'shared UPI ID');
+      else byUpi.set(key, m.id);
+    }));
+
+    // 4. Long-prefix containment (truncated names). Sorted order puts every
+    // extension somewhere after its prefix; the stack links non-adjacent ones too.
+    const prefixKeys = data
+      .map(m => ({ key: norm(m.name), id: m.id }))
+      .filter(x => x.key.length >= 10)
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    const stack = [];
+    for (const item of prefixKeys) {
+      while (stack.length && !item.key.startsWith(stack[stack.length - 1].key)) stack.pop();
+      if (stack.length && stack[stack.length - 1].key !== item.key)
+        union(stack[stack.length - 1].id, item.id, 'one name truncates the other');
+      stack.push(item);
+    }
+
+    const groupsByRoot = new Map();
+    data.forEach(m => {
+      const root = find(m.id);
+      if (!groupsByRoot.has(root)) groupsByRoot.set(root, []);
+      groupsByRoot.get(root).push(m);
+    });
+    return [...groupsByRoot.entries()]
+      .filter(([, members]) => members.length > 1)
+      .map(([root, members]) => {
         // Default primary: prefer a categorized merchant, then most transactions.
-        const members = [...set].sort((a, b) =>
+        members.sort((a, b) =>
           (b.category ? 1 : 0) - (a.category ? 1 : 0) ||
           (b.transactionCount ?? 0) - (a.transactionCount ?? 0) ||
           a.id - b.id);
-        return { key, members, defaultPrimaryId: members[0].id };
+        return {
+          key: `g${root}`,
+          sig: groupSignature(members),
+          members,
+          defaultPrimaryId: members[0].id,
+          reasons: [...(reasons.get(root) || [])],
+        };
       })
       .sort((a, b) => b.members.length - a.members.length);
   }, [data]);
+
+  // Marked groups are held back from the badge count, the "merge all" sweep and
+  // the first tab, but keep every per-group action available on the second tab.
+  const markedSet = useMemo(() => new Set(markedGroups), [markedGroups]);
+  const mergeSuggestions = useMemo(
+    () => allMergeSuggestions.filter(g => !markedSet.has(g.sig)),
+    [allMergeSuggestions, markedSet]);
+  const markedSuggestions = useMemo(
+    () => allMergeSuggestions.filter(g => markedSet.has(g.sig)),
+    [allMergeSuggestions, markedSet]);
+
+  const markSuggestion = (group) =>
+    setMarkedGroups(prev => (prev.includes(group.sig) ? prev : [...prev, group.sig]));
+  const unmarkSuggestion = (group) =>
+    setMarkedGroups(prev => prev.filter(sig => sig !== group.sig));
 
   const mergeSuggestionGroup = (group) => {
     const primaryId = suggestPrimary[group.key] ?? group.defaultPrimaryId;
     const secondaryIds = group.members.map(m => m.id).filter(id => id !== primaryId);
     setMergingKey(group.key);
     return api.post('/merchants/merge', { primaryId, secondaryIds })
-      .then(() => fetchMerchants())
+      // The group is gone once merged, so its mark (if any) is dead weight.
+      .then(() => { unmarkSuggestion(group); return fetchMerchants(); })
       .catch(err => {
         console.error(err);
         alert('Failed to merge merchants.');
@@ -472,6 +652,38 @@ export default function Merchants() {
     } finally {
       setMergingKey(null);
     }
+  };
+
+  // Only offer suggestions for merchants that are still uncategorized *and* in the
+  // current account scope — an inline categorization drops its row immediately
+  // without waiting for a refetch.
+  const visibleCatSuggestions = useMemo(() => {
+    const uncategorized = new Set(data.filter(m => !m.category).map(m => m.id));
+    return catSuggestions.filter(s => uncategorized.has(s.merchantId));
+  }, [data, catSuggestions]);
+
+  const toggleCatSuggestion = (id) => {
+    setCatExcluded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const applyCatSuggestions = () => {
+    const items = visibleCatSuggestions
+      .filter(s => !catExcluded.has(s.merchantId))
+      .map(s => ({ id: s.merchantId, category: s.category, subCategory: s.subCategory }));
+    if (items.length === 0 || applyingCats) return;
+    setApplyingCats(true);
+    api.post('/merchants/category-suggestions/apply', { items })
+      .then(() => fetchMerchants())
+      .then(() => setShowCatModal(false))
+      .catch(err => {
+        console.error(err);
+        alert('Failed to apply category suggestions.');
+      })
+      .finally(() => setApplyingCats(false));
   };
 
   if (loading) {
@@ -569,6 +781,30 @@ export default function Merchants() {
           font-size: 11px; font-weight: 600; color: ${T.muted};
           background: ${T.bg}; border: 1px solid ${T.border};
           padding: 2px 8px; border-radius: 999px;
+        }
+        /* Inline note line under the merchant name — mirrors .tx-note on Transactions.
+           Keeps a fixed height so the hover-revealed "+ note" doesn't jog the row. */
+        .mrc-note-line { display: flex; align-items: center; margin-top: 3px; min-height: 18px; }
+        .mrc-note {
+          font-size: 11px; font-style: italic; color: ${T.muted};
+          max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          cursor: pointer;
+        }
+        .mrc-note:hover { color: ${T.indigo}; }
+        .mrc-note-add {
+          display: inline-flex; align-items: center;
+          border: 1px dashed ${T.border}; color: ${T.faint};
+          padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
+          cursor: pointer; white-space: nowrap; opacity: 0;
+          transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+        }
+        .mrc-row:hover .mrc-note-add { opacity: 1; }
+        .mrc-note-add:hover { color: ${T.indigo}; border-color: ${T.indigo}; background: ${T.indigoDim}; }
+        .mrc-note-input {
+          flex: 1 1 auto; min-width: 100px; max-width: 260px;
+          padding: 1px 8px; font-size: 11px;
+          border: 1px solid ${T.indigo}; border-radius: 999px; outline: none;
+          background: ${T.surface}; color: ${T.text}; font-family: inherit;
         }
         .mrc-search {
           width: 100%; padding: 10px 14px 10px 38px;
@@ -673,14 +909,31 @@ export default function Merchants() {
         >
           <FiFilter size={14} /> Uncategorized
         </Button>
-        {isAdmin && mergeSuggestions.length > 0 && (
+        {/* Still offered when everything is marked, so the marked tab stays reachable. */}
+        {isAdmin && allMergeSuggestions.length > 0 && (
           <Button
             variant="secondary"
-            onClick={() => { setSuggestPrimary({}); setShowSuggestModal(true); }}
+            onClick={() => {
+              setSuggestPrimary({});
+              setSuggestTab(mergeSuggestions.length > 0 ? 'pending' : 'marked');
+              setShowSuggestModal(true);
+            }}
             title="Merchants that look like duplicates of each other"
             style={{ fontSize: 'var(--text-sm)' }}
           >
-            ✨ {mergeSuggestions.length} suggested merge{mergeSuggestions.length > 1 ? 's' : ''}
+            {mergeSuggestions.length > 0
+              ? `✨ ${mergeSuggestions.length} suggested merge${mergeSuggestions.length > 1 ? 's' : ''}`
+              : `✨ ${markedSuggestions.length} marked merge${markedSuggestions.length > 1 ? 's' : ''}`}
+          </Button>
+        )}
+        {isAdmin && visibleCatSuggestions.length > 0 && (
+          <Button
+            variant="secondary"
+            onClick={() => { setCatExcluded(new Set()); setShowCatModal(true); }}
+            title="Auto-detected categories for uncategorized merchants"
+            style={{ fontSize: 'var(--text-sm)' }}
+          >
+            🏷️ {visibleCatSuggestions.length} category suggestion{visibleCatSuggestions.length > 1 ? 's' : ''}
           </Button>
         )}
       </div>
@@ -766,6 +1019,43 @@ export default function Merchants() {
                       }}>
                         {hasOriginal ? maskName(merchant.name) : (upiCount > 0 ? maskName(merchant.upiIds[0]) : 'No UPI on record')}
                       </div>
+
+                      {/* Inline note — editable for admins, read-only otherwise (and
+                          then only rendered when there is something to show). */}
+                      {isAdmin ? (
+                        <div className="mrc-note-line" onClick={(e) => e.stopPropagation()}>
+                          {noteEditRowId === merchant.id ? (
+                            <input
+                              className="mrc-note-input"
+                              autoFocus
+                              defaultValue={merchant.notes || ''}
+                              placeholder="note…"
+                              onBlur={(e) => { updateMerchantNote(merchant, e.target.value); setNoteEditRowId(null); }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') { updateMerchantNote(merchant, e.target.value); setNoteEditRowId(null); }
+                                else if (e.key === 'Escape') setNoteEditRowId(null);
+                              }}
+                            />
+                          ) : merchant.notes ? (
+                            <span
+                              className="mrc-note"
+                              title={merchant.notes}
+                              onClick={() => setNoteEditRowId(merchant.id)}
+                            >✎ {merchant.notes}</span>
+                          ) : (
+                            <span
+                              className="mrc-note-add"
+                              onClick={() => setNoteEditRowId(merchant.id)}
+                            >+ note</span>
+                          )}
+                        </div>
+                      ) : merchant.notes ? (
+                        <div className="mrc-note-line">
+                          <span className="mrc-note" style={{ cursor: 'default' }} title={merchant.notes}>
+                            {merchant.notes}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -858,7 +1148,7 @@ export default function Merchants() {
         footer={
           <>
             <button className="btn" onClick={() => setShowSuggestModal(false)}>Close</button>
-            {mergeSuggestions.length > 1 && (
+            {suggestTab === 'pending' && mergeSuggestions.length > 1 && (
               <button
                 className="btn primary"
                 disabled={mergingKey !== null}
@@ -870,21 +1160,51 @@ export default function Merchants() {
           </>
         }
       >
-        {mergeSuggestions.length === 0 ? (
+        {(() => {
+        const marked = suggestTab === 'marked';
+        const groups = marked ? markedSuggestions : mergeSuggestions;
+        return (
+        <>
+        <div style={{ marginBottom: '14px' }}>
+          <Tabs
+            tabs={[
+              { key: 'pending', label: 'Suggestions', count: mergeSuggestions.length },
+              { key: 'marked', label: 'Marked as merged', count: markedSuggestions.length },
+            ]}
+            active={suggestTab}
+            onChange={setSuggestTab}
+            variant="underline"
+          />
+        </div>
+        {groups.length === 0 ? (
           <p style={{ color: T.muted, fontSize: '13px', margin: 0 }}>
-            No duplicate merchants detected. 🎉
+            {marked
+              ? 'Nothing marked yet. Use “Mark as merged” on a suggestion to park it here and merge it later.'
+              : markedSuggestions.length > 0
+                ? 'Nothing left to review — every remaining group is on the marked tab. 🎉'
+                : 'No duplicate merchants detected. 🎉'}
           </p>
         ) : (
           <>
             <p style={{ color: T.muted, fontSize: '13px', margin: '0 0 16px' }}>
-              These merchants have matching names and look like duplicates. Pick which one
-              to keep in each group — the rest fold into it as aliases (you can unmerge later).
+              {marked
+                ? 'You marked these, so they stay out of the suggestions list. Nothing has actually been merged — they are still separate merchants. Merge whenever you are ready, or move a group back.'
+                : 'These merchants look like duplicates — matching or similar names, truncated variants, or a shared UPI ID. Pick which one to keep in each group — the rest fold into it as aliases (you can unmerge later). Not ready? Mark the group instead.'}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '55vh', overflowY: 'auto', paddingRight: '4px' }}>
-              {mergeSuggestions.map(group => {
+              {groups.map(group => {
                 const primaryId = suggestPrimary[group.key] ?? group.defaultPrimaryId;
                 return (
                   <div key={group.key} style={{ border: `1px solid ${T.border}`, borderRadius: '12px', overflow: 'hidden', flexShrink: 0 }}>
+                    {group.reasons?.length > 0 && (
+                      <div style={{
+                        padding: '6px 14px', fontSize: '10px', fontWeight: 700, color: T.faint,
+                        background: T.bg, borderBottom: `1px solid ${T.borderSub}`,
+                        textTransform: 'uppercase', letterSpacing: '0.05em',
+                      }}>
+                        {group.reasons.join(' · ')}
+                      </div>
+                    )}
                     {group.members.map((m, idx) => (
                       <label
                         key={m.id}
@@ -918,7 +1238,17 @@ export default function Merchants() {
                         </div>
                       </label>
                     ))}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 12px', borderTop: `1px solid ${T.borderSub}`, background: T.bg }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '8px 12px', borderTop: `1px solid ${T.borderSub}`, background: T.bg }}>
+                      <button
+                        className="btn small"
+                        disabled={mergingKey !== null}
+                        onClick={() => (marked ? unmarkSuggestion(group) : markSuggestion(group))}
+                        title={marked
+                          ? 'Put this group back in the suggestions list'
+                          : 'Keep these merchants separate for now and hide this suggestion'}
+                      >
+                        {marked ? 'Move back' : 'Mark as merged'}
+                      </button>
                       <button
                         className="btn small primary"
                         disabled={mergingKey !== null}
@@ -928,6 +1258,88 @@ export default function Merchants() {
                       </button>
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+        </>
+        );
+        })()}
+      </Modal>
+
+      {/* Category suggestions modal — review & bulk-apply auto-categorization */}
+      <Modal
+        open={showCatModal}
+        onClose={() => setShowCatModal(false)}
+        title="Suggested categories"
+        width={640}
+        footer={(() => {
+          const selectedCount = visibleCatSuggestions.filter(s => !catExcluded.has(s.merchantId)).length;
+          return (
+            <>
+              <button className="btn" onClick={() => setShowCatModal(false)}>Close</button>
+              <button
+                className="btn primary"
+                disabled={applyingCats || selectedCount === 0}
+                onClick={applyCatSuggestions}
+              >
+                {applyingCats ? 'Applying…' : `Apply ${selectedCount} suggestion${selectedCount === 1 ? '' : 's'}`}
+              </button>
+            </>
+          );
+        })()}
+      >
+        {visibleCatSuggestions.length === 0 ? (
+          <p style={{ color: T.muted, fontSize: '13px', margin: 0 }}>
+            Nothing left to suggest — every matching merchant is categorized. 🎉
+          </p>
+        ) : (
+          <>
+            <p style={{ color: T.muted, fontSize: '13px', margin: '0 0 16px' }}>
+              Based on well-known merchant keywords and merchants you've already categorized.
+              Untick anything that looks wrong — you can always change a category later.
+            </p>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: '12px', overflow: 'hidden auto', maxHeight: '55vh' }}>
+              {visibleCatSuggestions.map((s, idx) => {
+                const checked = !catExcluded.has(s.merchantId);
+                const display = maskName(s.friendlyName || s.name) || '-';
+                return (
+                  <label
+                    key={s.merchantId}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 14px', cursor: 'pointer',
+                      borderTop: idx > 0 ? `1px solid ${T.borderSub}` : 'none',
+                      opacity: checked ? 1 : 0.55, transition: 'opacity 0.12s',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCatSuggestion(s.merchantId)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <Avatar name={display} size={28} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {display}
+                      </div>
+                      <div style={{ fontSize: '11px', color: T.faint, marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {s.source === 'similar'
+                          ? <>Similar to “{maskName(s.matchedOn)}”</>
+                          : <>Name matches “{s.matchedOn}”</>}
+                      </div>
+                    </div>
+                    <span style={{
+                      flexShrink: 0, fontSize: '12px', fontWeight: 600, color: avatarColors(s.category)[1],
+                      background: avatarColors(s.category)[0],
+                      padding: '3px 10px', borderRadius: '999px', maxWidth: '220px',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {s.category}{s.subCategory ? ` › ${s.subCategory}` : ''}
+                    </span>
+                  </label>
                 );
               })}
             </div>

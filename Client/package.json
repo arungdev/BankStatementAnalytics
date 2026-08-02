@@ -13,6 +13,7 @@
     "install:server": "cd server && npm install"
   },
   "dependencies": {
+    "@common/client": "file:./vendor/common-client",
     "axios": "^1.17.0",
     "chart.js": "^4.5.1",
     "react": "^19.2.6",

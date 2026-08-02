@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FiEye, FiEyeOff, FiUserPlus, FiSlash, FiTrash2, FiRotateCcw } from 'react-icons/fi';
 import api from '../api/client';
-import { useAuth } from '../context/useAuth';
-import Badge from './ui/Badge';
+import { Badge, useAuth } from "@common/client";
 
 export default function ProfileSettings() {
   const { username, role, isAdmin } = useAuth();

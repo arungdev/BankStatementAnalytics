@@ -8,6 +8,7 @@ using BankStatementAnalytics.Services.Parser;
 using BankStatementAnalytics.Services.Pdf;
 using System.Text.Json.Serialization;
 using Common.Framework.Auth;
+using Common.Framework.Data;
 using Common.Framework.Logging;
 using Common.Framework.Web;
 using System;
@@ -100,6 +101,18 @@ builder.Services.AddScoped<TransferDetectionService>();
 builder.Services.AddScoped<DepositService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<ReportPdfService>();
+// Whole-instance backup/restore lives in Common.Framework; everything app-specific about it is
+// these options - the product name shown in messages and the download file name, how the live
+// database is located (pg_dump/pg_restore run outside NHibernate), and the statement files to
+// carry alongside the dump.
+builder.Services.AddSingleton(new BackupOptions
+{
+    AppName = "BankStatementAnalytics",
+    DescribeDatabase = NHibernateHelper.Describe,
+    ResolveUploadsRoot = () => UploadStorage.Root,
+    DefaultDatabaseName = "bankstatements",
+});
+builder.Services.AddScoped<BackupService>();
 // ── Auto-register all parsers from registry ──────────────────────────────
 foreach (var config in BankParserRegistry.Parsers)
 {

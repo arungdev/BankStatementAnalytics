@@ -1,28 +1,18 @@
 import { useMemo } from 'react';
-import useTheme from '../context/useTheme';
+import { getToken, useChartTheme as useSharedChartTheme } from '@common/client';
 
-// Read a CSS custom property off the root element — the token blocks in
-// index.css stay the single source of truth for chart colors.
-export function getToken(name) {
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(`--${name}`)
-    .trim();
-}
+// Chart colors resolved from CSS tokens at render time. The generic slots
+// (palette, grid, ticks, tooltip) come from @common/client; the income/spend
+// pair is this app's own — those tokens are defined in index.css because they
+// only mean something for a finance app.
+export { getToken };
 
-// Theme-aware colors for chart.js / recharts, which consume JS values.
-// chart.js consumers must include `theme` in the useMemo deps that build
-// data/options (and pass key={theme}) so a toggle triggers a clean redraw.
 export function useChartTheme() {
-  const { theme } = useTheme();
+  const shared = useSharedChartTheme();
 
   return useMemo(() => ({
-    theme,
-    palette: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => getToken(`chart-${i}`)),
+    ...shared,
     income: getToken('chart-income'),
     spend: getToken('chart-spend'),
-    grid: getToken('chart-grid'),
-    axisTick: getToken('chart-tick'),
-    tooltipBg: theme === 'dark' ? getToken('surface-2') : getToken('gray-900'),
-    tooltipText: theme === 'dark' ? getToken('text-main') : '#ffffff',
-  }), [theme]);
+  }), [shared]);
 }

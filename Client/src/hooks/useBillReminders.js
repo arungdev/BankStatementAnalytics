@@ -1,5 +1,7 @@
 import { useEffect } from "react";
+import { showDesktopNotification } from "@common/client";
 import api from "../api/client";
+import { getAutoImports } from "../api/statements";
 import { currencyFormatter, maskName } from "../utils/format";
 
 // localStorage keys (preferences are client-side; there is no per-user settings table).
@@ -14,39 +16,6 @@ export const reminderWindow = () => {
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : 7;
 };
-
-/**
- * Ensures notification permission is granted, requesting it if still undecided.
- * Returns the final permission string ("granted" | "denied" | "default" | "unsupported").
- */
-export async function ensurePermission() {
-  if (typeof Notification === "undefined") return "unsupported";
-  if (Notification.permission === "default") {
-    try {
-      return await Notification.requestPermission();
-    } catch {
-      return Notification.permission;
-    }
-  }
-  return Notification.permission;
-}
-
-/**
- * Shows a desktop toast now. Returns { ok, reason } so callers can give feedback.
- * reason is one of: "unsupported" | "denied" | "default" | "error".
- */
-export async function showDesktopNotification(title, body, tag) {
-  const perm = await ensurePermission();
-  if (perm !== "granted") return { ok: false, reason: perm === "unsupported" ? "unsupported" : perm };
-  try {
-    const n = new Notification(title, { body, tag, icon: "/icon-192.png", badge: "/favicon-32.png" });
-    // Focus this tab if the user clicks the toast.
-    n.onclick = () => { try { window.focus(); } catch { /* ignore */ } };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, reason: "error", error: String(e) };
-  }
-}
 
 /**
  * Fires a sample reminder immediately — used by the "Send test notification" button.
@@ -96,6 +65,82 @@ export default function useBillReminders() {
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+}
+
+// Auto-import failures already notified, as one capped list rather than a key per
+// failure: a watch folder that keeps rejecting the same file gets a fresh
+// CreatedAt (and so a fresh key) on every retry, which would grow without bound.
+const NOTIFIED_IMPORTS_KEY = "notify.importsNotified";
+const NOTIFIED_IMPORTS_CAP = 100;
+
+// Same identity the bell uses (NotificationBell.notificationKey): the retry endpoint
+// refreshes CreatedAt, so a retry that fails again is a new, notifiable failure.
+const importKey = (h) => `import.${h.id}.${h.createdAt}`;
+
+const loadNotifiedImports = () => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(NOTIFIED_IMPORTS_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+};
+
+const saveNotifiedImports = (set) => {
+  localStorage.setItem(
+    NOTIFIED_IMPORTS_KEY,
+    JSON.stringify([...set].slice(-NOTIFIED_IMPORTS_CAP))
+  );
+};
+
+/**
+ * Fires a desktop toast for each watch-folder import that failed, once per attempt.
+ * Polled rather than fired once on load: the backend sweeps every 60s
+ * (WatchFolderImportService.SweepInterval), so a failure usually happens while the
+ * app is already open and would otherwise sit silently in the bell until a reload.
+ */
+export function useImportFailureNotifications() {
+  useEffect(() => {
+    if (!remindersEnabled()) return;
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+
+    let cancelled = false;
+
+    const check = async () => {
+      let failures;
+      try {
+        const res = await getAutoImports();
+        failures = (res.data || []).filter((h) => h.status === "Failed");
+      } catch {
+        return; // offline or restarting — try again on the next tick
+      }
+      if (cancelled) return;
+
+      const notified = loadNotifiedImports();
+      for (const h of failures) {
+        const key = importKey(h);
+        if (notified.has(key)) continue;
+        // Mark before awaiting so overlapping ticks can't double-notify.
+        notified.add(key);
+        saveNotifiedImports(notified);
+        showDesktopNotification("Statement import failed", `${h.fileName} — ${h.error || "see the app for details"}`, key)
+          .then((res2) => {
+            if (!res2.ok) {
+              const back = loadNotifiedImports();
+              back.delete(key);
+              saveNotifiedImports(back);
+            }
+          });
+      }
+    };
+
+    check();
+    const timer = setInterval(check, 60_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
     };
   }, []);
 }

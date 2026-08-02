@@ -1,0 +1,152 @@
+/* ── Filter chip (page-header filter row) ──
+   Self-labeled pill controls: muted prefix label + value + caret.
+   Used by AccountFilter, DateRangePicker trigger, and FilterSelectChip. */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.filter-chip:hover {
+  border-color: var(--primary);
+}
+
+.filter-chip:focus-visible,
+.filter-chip:focus-within {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.filter-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.filter-chip-prefix {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.filter-chip-caret {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.filter-chip.open .filter-chip-caret {
+  transform: rotate(180deg);
+}
+
+.filter-chip-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 250px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.14);
+  z-index: var(--z-dropdown);
+  padding: 5px;
+  animation: filter-chip-menu-pop 0.13s ease;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+
+/* Portalled to <body> and pinned to the trigger's rect — escapes the page
+   header's stacking context so the menu can sit above an open drawer.
+   Offsets come from the component as inline styles. */
+.filter-chip-menu.floating {
+  position: fixed;
+  top: auto;
+  left: auto;
+  right: auto;
+  z-index: var(--z-modal-top);
+}
+
+@keyframes filter-chip-menu-pop {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Section header inside the menu (e.g. year above its months) */
+.filter-chip-group {
+  padding: 7px 10px 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.filter-chip-group:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 9px;
+}
+
+.filter-chip-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filter-chip-option:hover,
+.filter-chip-option:focus-visible {
+  background: var(--gray-100);
+  outline: none;
+}
+
+.filter-chip-option.active {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.filter-chip-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.filter-chip-option-sub {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}

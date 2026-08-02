@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext } from 'react';
-import usePersistedState from '../hooks/usePersistedState';
+import { usePersistedState } from "@common/client";
 import { setAmountMasking, setNameMasking } from '../utils/format';
 
 export const PrivacyContext = createContext();

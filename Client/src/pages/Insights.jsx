@@ -10,11 +10,8 @@ import {
 import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/ui/EmptyState';
-import Avatar from '../components/ui/Avatar';
-import Drawer from '../components/ui/Drawer';
-import useTheme from '../context/useTheme';
-import { getToken } from '../theme/chartTheme';
+import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
+import { getToken } from "../theme/chartTheme";
 import { currencyFormatter as fmt, currencyFormatterFull as fmtFull, isAmountMasked, MASKED_AMOUNT, maskName } from '../utils/format';
 
 /* ─── Design tokens — mapped to the global CSS variable system. DOM inline
@@ -108,6 +105,18 @@ export function InsightsFilters({
     </>
   );
 }
+
+/* Module scope, not inside Insights: a component declared during render gets a fresh
+   identity every render, so React unmounts and remounts the whole skeleton subtree
+   (restarting the shimmer) instead of updating it. Same definition as Overview.jsx. */
+const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
+  <div style={{
+    width: w, height: h, borderRadius: r,
+    background: 'linear-gradient(90deg, var(--gray-100) 25%, var(--gray-200) 50%, var(--gray-100) 75%)',
+    backgroundSize: '200% 100%',
+    animation: 'shimmer 1.4s infinite',
+  }} />
+);
 
 /* ─── Main Component ────────────────────────────────────────────────────── */
 export default function Insights() {
@@ -279,15 +288,6 @@ export default function Insights() {
       background: color, flexShrink: 0, boxShadow: `0 0 0 2px ${color}33`,
     }),
   };
-
-  const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
-    <div style={{
-      width: w, height: h, borderRadius: r,
-      background: 'linear-gradient(90deg, var(--gray-100) 25%, var(--gray-200) 50%, var(--gray-100) 75%)',
-      backgroundSize: '200% 100%',
-      animation: 'shimmer 1.4s infinite',
-    }} />
-  );
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', overflow: 'visible' }}>

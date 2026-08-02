@@ -128,3 +128,18 @@ software under these terms.
 
 **Use** means anything you do with the software requiring one of
 your licenses.
+
+---
+
+*The following note is not part of the PolyForm Noncommercial License 1.0.0.*
+
+## Commercial licensing
+
+The license above permits noncommercial use only. For commercial use,
+a separate license is required — open an issue at
+<https://github.com/gsarun125/BankStatementAnalytics> to contact the
+author.
+
+Third-party dependencies (React, ASP.NET Core, NHibernate, PostgreSQL,
+PDFsharp/MigraDoc, and others) and the vendored `Common.Framework`
+library are covered by their own licenses, not this one.

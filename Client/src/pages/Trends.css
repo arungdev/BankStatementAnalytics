@@ -38,18 +38,17 @@
 }
 
 /* ── Summary cards ───────────────────────────────────────────────────────── */
-/* Grid rather than a wrapping flex row: when the drill-down drawer narrows the
-   page the tiles reflow 3 → 2 → 1 evenly, instead of one stretching full-width. */
 .summary-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   position: relative;
   z-index: 1;
 }
-/* The grid track already sizes each tile; StatCard's own flex-row floor must not
-   force the row to overflow. */
-.summary-stats > * { min-width: 0; }
+/* The floor that decides when the row wraps — relevant once the drill-down drawer
+   docks and narrows the page. A tile left alone on the last row then stretches to
+   fill it, via flex: 1 from .stat-card. */
+.summary-stats > .stat-card { min-width: 220px; }
 
 /* ── Chart card ──────────────────────────────────────────────────────────── */
 .trends-chart-card {

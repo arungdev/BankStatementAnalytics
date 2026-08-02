@@ -29,18 +29,7 @@ namespace BankStatementAnalytics
                     var dataDir = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Data");
                     var dbPath = Path.Combine(dataDir, "DataBase.db");
 
-                    // Layer config the same way the ASP.NET host does: base file, then the
-                    // environment-specific override, then environment variables. This lets a
-                    // Development override change the DB provider, and lets secrets like the
-                    // Postgres password come from an env var (Database__PostgresConnectionString)
-                    // instead of being committed in appsettings.json.
-                    var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
-                    var config = new ConfigurationBuilder()
-                        .SetBasePath(appDir)
-                        .AddJsonFile("appsettings.json", optional: true)
-                        .AddJsonFile($"appsettings.{env}.json", optional: true)
-                        .AddEnvironmentVariables()
-                        .Build();
+                    var config = BuildConfig(appDir);
 
                     var isPostgres = string.Equals(config["Database:Provider"], "Postgres", StringComparison.OrdinalIgnoreCase);
                     var isEmbedded = isPostgres && string.Equals(config["Database:Embedded"], "true", StringComparison.OrdinalIgnoreCase);
@@ -89,6 +78,49 @@ namespace BankStatementAnalytics
                     throw;
                 }
             }
+        }
+
+        /// <summary>
+        /// Layers config the same way the ASP.NET host does: base file, then the
+        /// environment-specific override, then environment variables. This lets a
+        /// Development override change the DB provider, and lets secrets like the
+        /// Postgres password come from an env var (Database__PostgresConnectionString)
+        /// instead of being committed in appsettings.json.
+        /// </summary>
+        private static IConfigurationRoot BuildConfig(string appDir)
+        {
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+            return new ConfigurationBuilder()
+                .SetBasePath(appDir)
+                .AddJsonFile("appsettings.json", optional: true)
+                .AddJsonFile($"appsettings.{env}.json", optional: true)
+                .AddEnvironmentVariables()
+                .Build();
+        }
+
+        /// <summary>
+        /// Where the database physically lives, for the tools that have to reach it outside
+        /// NHibernate — <see cref="BackupService"/> shells out to pg_dump/pg_restore and needs the
+        /// host/port/credentials plus the folder holding the bundled Postgres binaries (it takes
+        /// this method as <see cref="BackupOptions.DescribeDatabase"/>; see Program.cs).
+        /// Re-reads the same layered config rather than caching what
+        /// <see cref="SessionFactory"/> resolved, so it doesn't depend on init order.
+        /// </summary>
+        public static DatabaseInfo Describe()
+        {
+            var appDir = Common.Framework.AppPaths.ResolveAppDirectory();
+            var config = BuildConfig(appDir);
+
+            var isPostgres = string.Equals(config["Database:Provider"], "Postgres", StringComparison.OrdinalIgnoreCase);
+            var isEmbedded = isPostgres && string.Equals(config["Database:Embedded"], "true", StringComparison.OrdinalIgnoreCase);
+
+            // The embedded instance's port and password are generated on first run and known only
+            // to the manager, so its live connection string is the only source for them.
+            var connectionString = isPostgres
+                ? (isEmbedded ? EmbeddedPostgresManager.ConnectionString : config["Database:PostgresConnectionString"])
+                : null;
+
+            return new DatabaseInfo(isPostgres, isEmbedded, appDir, connectionString);
         }
 
         /// <summary>

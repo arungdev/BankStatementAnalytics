@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/useAuth';
-import { AuthShell, AuthField, AuthPasswordField, AuthError, AuthSubmit } from '../components/AuthShell';
+import { AuthError, AuthField, AuthPasswordField, AuthShell, AuthSubmit, useAuth } from "@common/client";
+import { apiErrorMessage } from '../utils/apiError';
 
 export default function Login() {
   const { login } = useAuth();
@@ -18,10 +18,16 @@ export default function Login() {
       await login(username, password);
     } catch (err) {
       const status = err.response?.status;
-      if (status === 423) {
-        setError('Account is temporarily locked. Try again later.');
+      if (status === 429) {
+        // The "auth" rate limiter rejects with an empty body - say why, rather than
+        // letting it read as a wrong password and inviting more blocked attempts.
+        setError('Too many sign-in attempts. Please wait a minute and try again.');
+      } else if (status === 423) {
+        setError(apiErrorMessage(err, 'Account is temporarily locked. Try again later.'));
+      } else if (status === 401) {
+        setError(apiErrorMessage(err, 'Invalid username or password.'));
       } else {
-        setError(err.response?.data || 'Invalid username or password.');
+        setError(apiErrorMessage(err, 'Sign-in failed. Please try again.'));
       }
     } finally {
       setSubmitting(false);
@@ -32,6 +38,7 @@ export default function Login() {
     <AuthShell
       title="Welcome back"
       subtitle="Sign in to BankStatementAnalytics"
+      logo={<img src="/icon-192.png" alt="Bank Analytics" />}
       onSubmit={submit}
     >
       <AuthField

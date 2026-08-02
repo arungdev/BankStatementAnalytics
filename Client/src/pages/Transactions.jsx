@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import api from "../api/client";
-import usePersistedState from "../hooks/usePersistedState";
+import { Avatar, Badge, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState } from "@common/client";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
-import { useAuth } from "../context/useAuth";
 import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
 import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "../api/statements";
@@ -12,15 +11,9 @@ import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "..
 import DateRangePicker from "../components/Daterangepicker";
 import { FilterGroup } from "../components/PageHeader";
 import Pagination from "../components/Pagination";
-import Button from "../components/ui/Button";
-import Badge from "../components/ui/Badge";
-import EmptyState from "../components/ui/EmptyState";
-import Drawer from "../components/ui/Drawer";
-import Avatar from "../components/ui/Avatar";
-import Modal from "../components/ui/Modal";
-import Tabs from "../components/ui/Tabs";
 import CategoryPicker from "../components/CategoryPicker";
 import { currencyFormatter, maskName } from "../utils/format";
+import { validateCategoryName, findExistingName } from "../utils/categoryName";
 
 /* ─── Design tokens — mapped to the global CSS variable system so both the
  * inline styles and the injected <style> block below pick up light/dark. */
@@ -70,6 +63,7 @@ export default function Transactions() {
   // here, so fall back to the first account rather than a dead-end state.
   const effectiveAccountId =
     selectedAccountId === ALL_ACCOUNTS ? (accounts[0]?.id ?? null) : selectedAccountId;
+  const shownAccount = accounts.find(a => a.id === effectiveAccountId);
 
   const [tx, setTx] = useState([]);
   const [loading, setLoading] = useState(!effectiveAccountId);
@@ -477,9 +471,17 @@ export default function Transactions() {
     });
   };
 
-  // Inline "Create category" from the picker: persist the new top-level
-  // category, add it to the local list, then assign it to the transaction.
-  const handleCreateCategory = (t, name) => {
+  // Inline "Create category" from the picker: reuse an existing match if one
+  // exists, otherwise persist the new top-level category, add it to the local
+  // list, then assign it to the transaction.
+  const handleCreateCategory = (t, raw) => {
+    const { name, error } = validateCategoryName(raw);
+    if (error) { alert(error); return; }
+    const existing = findExistingName(categories.map(c => c.name), name);
+    if (existing) {
+      handleCategoryChange(t, existing);
+      return;
+    }
     api.post('/categories', { name })
       .then(res => {
         const created = res.data;
@@ -491,7 +493,7 @@ export default function Transactions() {
       })
       .catch(err => {
         console.error("Failed to create category", err);
-        alert("Failed to create category.");
+        alert(err.response?.data || "Failed to create category.");
       });
   };
 
@@ -812,6 +814,15 @@ export default function Transactions() {
             >
               ×
             </span>
+          </Badge>
+        )}
+
+        {/* The header's account chip is global and can read "All accounts", but
+            this page loads one account at a time — say which one it settled on
+            so the count below never looks like it covers everything. */}
+        {selectedAccountId === ALL_ACCOUNTS && shownAccount && (
+          <Badge variant="amber" title="Transactions are shown one account at a time">
+            {shownAccount.bankName} ···· {shownAccount.accountNumber?.slice(-4) || '****'} only
           </Badge>
         )}
 

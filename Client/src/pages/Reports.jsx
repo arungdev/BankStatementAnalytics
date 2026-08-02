@@ -8,12 +8,9 @@ import {
 } from 'recharts';
 import { FilterGroup, FilterPill, FilterDropdownChip } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import EmptyState from '../components/ui/EmptyState';
-import Drawer from '../components/ui/Drawer';
-import Avatar from '../components/ui/Avatar';
+import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
+import { getToken } from "../theme/chartTheme";
 import { FiDownload, FiCalendar, FiArrowRight } from 'react-icons/fi';
-import useTheme from '../context/useTheme';
-import { getToken } from '../theme/chartTheme';
 import { currencyFormatter as fmt, maskName } from '../utils/format';
 import './Reports.css';
 

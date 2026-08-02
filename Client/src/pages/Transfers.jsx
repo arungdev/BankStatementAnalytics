@@ -3,9 +3,7 @@ import { FiArrowRight, FiCheck, FiCheckCircle, FiX } from "react-icons/fi";
 import api from "../api/client";
 import { currencyFormatter, maskName } from "../utils/format";
 import { usePrivacy } from "../context/usePrivacy";
-import Drawer from "../components/ui/Drawer";
-import EmptyState from "../components/ui/EmptyState";
-import Tabs from "../components/ui/Tabs";
+import { Drawer, EmptyState, Tabs } from "@common/client";
 import StatCard from "../components/StatCard";
 
 const fmtDate = (d) =>
@@ -127,18 +125,25 @@ export default function Transfers() {
       .finally(() => setBusy(false));
   };
 
-  const markAll = () => {
-    if (!window.confirm(`Mark all ${visibleSuggestions.length} suggested pairs as transfers?`)) return;
+  const markMany = (pairs, prompt) => {
+    if (!window.confirm(prompt)) return;
     setBusy(true);
-    // Mark only the pairs the user can see — locally dismissed ones stay out.
     Promise.allSettled(
-      visibleSuggestions.map((p) =>
-        api.post("/transfers/mark", { from: legKey(p.from), to: legKey(p.to) })
-      )
+      pairs.map((p) => api.post("/transfers/mark", { from: legKey(p.from), to: legKey(p.to) }))
     )
       .then(load)
       .finally(() => setBusy(false));
   };
+
+  // Mark only the pairs the user can see — locally dismissed ones stay out.
+  const markAll = () =>
+    markMany(visibleSuggestions, `Mark all ${visibleSuggestions.length} suggested pairs as transfers?`);
+
+  const markAllHigh = () =>
+    markMany(
+      highConfidence,
+      `Mark the ${highConfidence.length} high-confidence pair${highConfidence.length === 1 ? "" : "s"} as transfers?`
+    );
 
   const unmark = (p) => {
     setBusy(true);
@@ -161,6 +166,7 @@ export default function Transfers() {
   };
 
   const visibleSuggestions = suggestions.filter((p) => !dismissed.has(pairKey(p)));
+  const highConfidence = visibleSuggestions.filter((p) => p.confidence === "high");
 
   if (loading) {
     return (
@@ -255,14 +261,27 @@ export default function Transfers() {
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "24px", gap: "12px", flexWrap: "wrap" }}>
         <Tabs tabs={TABS} active={activeTab} onChange={setActiveTab} variant="underline" />
         {activeTab === "suggestions" && visibleSuggestions.length > 0 && (
-          <button
-            className="btn primary"
-            onClick={markAll}
-            disabled={busy}
-            style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", whiteSpace: "nowrap" }}
-          >
-            <FiCheckCircle size={15} /> Mark all as transfers
-          </button>
+          <div style={{ display: "flex", gap: "8px", marginBottom: "6px" }}>
+            {highConfidence.length > 0 && (
+              <button
+                className="btn"
+                onClick={markAllHigh}
+                disabled={busy}
+                style={{ display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap" }}
+                title="Mark only the pairs flagged high confidence"
+              >
+                <FiCheck size={15} /> Mark high confidence ({highConfidence.length})
+              </button>
+            )}
+            <button
+              className="btn primary"
+              onClick={markAll}
+              disabled={busy}
+              style={{ display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap" }}
+            >
+              <FiCheckCircle size={15} /> Mark all as transfers
+            </button>
+          </div>
         )}
       </div>
 

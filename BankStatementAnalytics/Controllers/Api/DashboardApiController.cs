@@ -94,7 +94,81 @@ namespace BankStatementAnalytics.Controllers.Api
             });
         }
 
+        // GET: api/dashboard/transactions — the rows behind an Overview summary tile,
+        // for the page's drill-down drawer. Filtered exactly like GetDashboardData's
+        // totals so the list reconciles with the tile that was clicked: the money tiles
+        // drop own-money moves, while "all" counts every row like the Transactions tile.
+        // Paged, because the Overview scope is the account's whole history.
+        [HttpGet("transactions")]
+        public async Task<IActionResult> GetTileTransactions(
+            [FromQuery] int accountId,
+            [FromQuery] string accountIds = null,
+            [FromQuery] string kind = null,
+            [FromQuery] int skip = 0,
+            [FromQuery] int take = TilePageSize)
+        {
+            using var session = DbHelper.GetSession();
+
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            if (ids.Count == 0)
+                return Ok(new { items = new List<object>(), hasMore = false, total = 0, credits = 0m, debits = 0m });
+
+            skip = Math.Max(skip, 0);
+            take = Math.Clamp(take, 1, 100);
+            kind = kind?.ToLowerInvariant();
+
+            var baseQuery = session.Query<BankTransaction>().Where(t => ids.Contains(t.AccountId));
+
+            var query = kind == "all" ? baseQuery : baseQuery.ExcludeOwnMoneyMoves();
+            query = kind switch
+            {
+                "income" => query.Where(t => t.Credit > 0),
+                "spend" => query.Where(t => t.Debit > 0),
+                _ => query, // "net"/"all" — both sides of the ledger
+            };
+
+            // Footer stats describe the whole filtered set, not just the loaded page,
+            // so they still add up to the tile once paging kicks in.
+            var total = await query.CountAsync();
+            var credits = await query.SumAsync(t => (decimal?)t.Credit) ?? 0m;
+            var debits = await query.SumAsync(t => (decimal?)t.Debit) ?? 0m;
+
+            var rows = await query
+                .OrderByDescending(t => t.EffectiveDate ?? t.TransactionDate)
+                // Same-day ties are the norm, and an unstable sort makes paged windows
+                // overlap or skip rows — BankReference + AccountId completes the ordering.
+                .ThenByDescending(t => t.BankReference)
+                .ThenBy(t => t.AccountId)
+                .Skip(skip)
+                .Take(take + 1) // one extra row answers "is there more?" without a second COUNT
+                .Select(t => new
+                {
+                    id = t.BankReference,
+                    date = t.EffectiveDate ?? t.TransactionDate,
+                    accountId = t.AccountId,
+                    description = t.Description,
+                    merchant = t.CounterParty != null ? t.CounterParty.Name : null,
+                    category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
+                    credit = t.Credit,
+                    debit = t.Debit
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                items = rows.Take(take).ToList(),
+                hasMore = rows.Count > take,
+                total,
+                credits,
+                debits
+            });
+        }
+
         private const int RecentPageSize = 10;
+        private const int TilePageSize = 50;
 
         // Columns the activity feed actually renders — projected in SQL so the
         // full entity (and a lazy CounterParty load per row) never leaves the DB.

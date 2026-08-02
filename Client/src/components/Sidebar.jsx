@@ -8,8 +8,7 @@ import {
   FiDollarSign, FiSun, FiMoon, FiMonitor, FiFileText, FiSettings,
   FiShuffle,
 } from 'react-icons/fi';
-import { useAuth } from '../context/useAuth';
-import useTheme from '../context/useTheme';
+import { useAuth, useTheme } from "@common/client";
 import api from '../api/client';
 import './Sidebar.css';
 

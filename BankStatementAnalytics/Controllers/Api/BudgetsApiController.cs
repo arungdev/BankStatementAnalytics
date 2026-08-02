@@ -137,6 +137,69 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(suggestions);
         }
 
+        // GET: api/budgets/{id}/transactions?monthsAgo=0 — the debit rows that add up to this
+        // budget's spend for the requested month, newest first, for the card's drill-down drawer.
+        // Uses exactly the filters and the category coalesce SpendForMonthAsync uses, so the
+        // drawer's total reconciles with the amount shown on the card.
+        [HttpGet("{id}/transactions")]
+        public async Task<IActionResult> GetBudgetTransactions(int id, [FromQuery] int monthsAgo = 0)
+        {
+            using var session = DbHelper.GetSession();
+
+            var budget = session.Get<Budget>(id);
+            if (!Owns(budget)) return NotFound();
+
+            var (monthStart, monthEnd) = MonthRange(monthsAgo);
+
+            var ownedIds = AccountAccess.OwnedIds(session, CurrentUserId);
+            var rows = ownedIds.Count == 0
+                ? new List<CategoryRow>()
+                : await session.Query<BankTransaction>()
+                    .ExcludeOwnMoneyMoves()
+                    .Where(t => ownedIds.Contains(t.AccountId)
+                             && t.Debit > 0
+                             && (t.EffectiveDate ?? t.TransactionDate) >= monthStart
+                             && (t.EffectiveDate ?? t.TransactionDate) < monthEnd)
+                    .Select(t => new CategoryRow
+                    {
+                        Id = t.BankReference,
+                        Date = t.EffectiveDate ?? t.TransactionDate,
+                        AccountId = t.AccountId,
+                        Description = t.Description,
+                        Merchant = t.CounterParty != null ? t.CounterParty.Name : null,
+                        CategoryOverride = t.CategoryOverride,
+                        MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null,
+                        Debit = t.Debit
+                    })
+                    .ToListAsync();
+
+            // The coalesce can't be expressed in the query, so resolve the category in memory.
+            // Ordinal comparison matches the dictionary lookup GetBudgets does.
+            var transactions = rows
+                .Where(r => string.Equals(
+                    r.CategoryOverride ?? r.MerchantCategory ?? "Uncategorized", budget.Category, StringComparison.Ordinal))
+                .OrderByDescending(r => r.Date)
+                .Select(r => new
+                {
+                    id = r.Id,
+                    date = r.Date,
+                    accountId = r.AccountId,
+                    description = r.Description,
+                    merchant = r.Merchant,
+                    debit = r.Debit
+                })
+                .ToList();
+
+            return Ok(new
+            {
+                category = budget.Category,
+                month = monthStart.ToString("MMMM yyyy"),
+                monthlyLimit = budget.MonthlyLimit,
+                total = transactions.Sum(t => t.debit),
+                transactions
+            });
+        }
+
         // POST: api/budgets — create a budget for a category (one per category per user).
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] BudgetDto req)
@@ -230,6 +293,19 @@ namespace BankStatementAnalytics.Controllers.Api
             if (value < 100) return Math.Ceiling(value / 10) * 10;
             if (value < 1000) return Math.Ceiling(value / 50) * 50;
             return Math.Ceiling(value / 100) * 100;
+        }
+
+        // A month's debit row carrying both category sources, so the coalesce can run in memory.
+        private sealed class CategoryRow
+        {
+            public string Id { get; set; } = string.Empty;
+            public DateTime Date { get; set; }
+            public long AccountId { get; set; }
+            public string? Description { get; set; }
+            public string? Merchant { get; set; }
+            public string? CategoryOverride { get; set; }
+            public string? MerchantCategory { get; set; }
+            public decimal Debit { get; set; }
         }
 
         private sealed class SpendRow

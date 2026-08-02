@@ -1,170 +1,31 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* App-specific tokens. Everything generic — the gray ramp, surfaces, status,
+   spacing, radius, shadow, z-index and type scales, and the chart-1..8 slots —
+   comes from @common/client/styles.css, which main.jsx loads first. Only what
+   is particular to this app lives here. */
 :root {
-  color-scheme: light;
-
-  /* Brand / accent */
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-light: #eef2ff;
-
-  /* Neutrals */
-  --gray-50: #f9fafb;
-  --gray-100: #f3f4f6;
-  --gray-200: #e5e7eb;
-  --gray-300: #d1d5db;
-  --gray-400: #9ca3af;
-  --gray-500: #6b7280;
-  --gray-600: #4b5563;
-  --gray-700: #374151;
-  --gray-800: #1f2937;
-  --gray-900: #111827;
-
-  /* Surfaces — bg sits a step below surface-2 so white cards read as raised;
-     text-muted/faint stay ≥4.5:1 on white for small-label legibility. */
-  --bg: #edeff4;
-  --surface: #ffffff;
-  --surface-2: #f4f5f9;
-  --border-color: #dcdfe6;
-  --border-subtle: #e7e9ef;
-  --text-main: var(--gray-900);
-  --text-muted: var(--gray-600);
-  --text-faint: var(--gray-500);
-  --overlay: rgba(15, 23, 42, 0.45);
-
   /* Legacy aliases kept for existing components */
   --bg-color: var(--bg);
   --sidebar-bg: var(--surface);
   --card-bg: var(--surface);
 
-  /* Status */
-  --success: #10b981;
-  --success-light: #ecfdf5;
-  --danger: #ef4444;
-  --danger-light: #fef2f2;
-  --danger-border: #fecaca;
-  --warning: #d97706;
-  --warning-light: #fffbeb;
-
-  /* Charts (fixed slot order — do not re-sort per render) */
-  --chart-1: #4f46e5;
-  --chart-2: #0d9488;
-  --chart-3: #d97706;
-  --chart-4: #059669;
-  --chart-5: #9333ea;
-  --chart-6: #dc2626;
-  --chart-7: #db2777;
-  --chart-8: #ea580c;
+  /* Domain-named chart series — income vs. spend is a finance-app concept, so
+     it has no place in the shared palette. */
   --chart-income: #059669;
   --chart-spend: #dc2626;
-  --chart-grid: var(--gray-200);
-  --chart-tick: var(--gray-600);
 
-  /* Stat tile (branded KPI card) */
+  /* Stat tile (branded KPI card — see StatCard.jsx) */
   --stat-tile-bg: linear-gradient(135deg, #1e1b4b, #312e81);
   --stat-tile-border: transparent;
   --stat-tile-label: #a5b4fc;
   --stat-tile-value: #ffffff;
-
-  /* Z-index scale */
-  --z-header: 100;
-  --z-dropdown: 600;
-  --z-drawer: 1000;
-  --z-modal: 1100;
-  --z-modal-top: 1200;
-
-  /* Spacing scale */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-
-  /* Radius */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-full: 9999px;
-
-  /* Shadow */
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
-  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.1), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
-
-  /* Type scale — every token multiplies by --font-scale so the Appearance
-     setting can enlarge/shrink all text globally (set on <html> at runtime). */
-  --font-scale: 1;
-  --text-xs: calc(12px * var(--font-scale));
-  --text-sm: calc(13px * var(--font-scale));
-  --text-base: calc(14px * var(--font-scale));
-  --text-md: calc(15px * var(--font-scale));
-  --text-lg: calc(18px * var(--font-scale));
-  --text-xl: calc(22px * var(--font-scale));
-  --text-2xl: calc(28px * var(--font-scale));
-  --text-3xl: calc(32px * var(--font-scale));
 }
 
-/* --- DARK THEME ---
-   Same custom-property names redefined; anything consuming var(--x) is
-   theme-aware automatically. The gray ramp is inverted so existing rules
-   like `tr:hover td { background: var(--gray-50) }` stay correct. */
 [data-theme="dark"] {
-  color-scheme: dark;
-
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --primary-light: rgba(99, 102, 241, 0.16);
-
-  --gray-50: #1e222d;
-  --gray-100: #232734;
-  --gray-200: #2a3040;
-  --gray-300: #3b4254;
-  --gray-400: #6b7280;
-  --gray-500: #9aa3b2;
-  --gray-600: #b7bfcc;
-  --gray-700: #cdd3de;
-  --gray-800: #e2e6ee;
-  --gray-900: #f3f4f6;
-
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --surface-2: #232734;
-  --border-color: #2a3040;
-  --border-subtle: #232734;
-  --text-main: #f3f4f6;
-  --text-muted: #9aa3b2;
-  --text-faint: #6b7280;
-  --overlay: rgba(0, 0, 0, 0.6);
-
-  --success: #34d399;
-  --success-light: rgba(16, 185, 129, 0.14);
-  --danger: #f87171;
-  --danger-light: rgba(239, 68, 68, 0.14);
-  --danger-border: rgba(248, 113, 113, 0.35);
-  --warning: #fbbf24;
-  --warning-light: rgba(217, 119, 6, 0.16);
-
-  /* Dark relies on borders + surface steps, not shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.25);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35);
-
-  --chart-1: #6366f1;
-  --chart-2: #0d9488;
-  --chart-3: #d97706;
-  --chart-4: #059669;
-  --chart-5: #a855f7;
-  --chart-6: #ef4444;
-  --chart-7: #ec4899;
-  --chart-8: #ea580c;
   /* CVD-validated against --surface #1a1d27 (dataviz six-checks validator) */
   --chart-income: #12a594;
   --chart-spend: #e5484d;
-  --chart-grid: #2a3040;
-  --chart-tick: #9aa3b2;
 
   --stat-tile-bg: linear-gradient(135deg, #232048, #2b2a5e);
   --stat-tile-border: rgba(129, 140, 248, 0.3);
@@ -336,6 +197,14 @@ tr:hover td {
   font-variant-numeric: tabular-nums;
 }
 
+/* StatCard's default sizing for the flex stat rows most pages use. Kept here
+   rather than inline on the component so a page can override it (e.g. a grid
+   layout setting min-width: 0) — inline styles would win over any rule. */
+.stat-card {
+  flex: 1;
+  min-width: 190px;
+}
+
 /* Summary tiles that drill down to their underlying rows (see StatCard). */
 .stat-card.is-clickable:hover {
   transform: translateY(-2px);
@@ -427,11 +296,11 @@ tr:hover td {
   margin-left: var(--space-2);
 }
 
-/* --- Form fields (CreateAccount, Settings, Upload) --- */
+/* --- Form fields ---
+   .field-input / .field-select live in @common/client; these give the legacy
+   .modal-content dialogs the same look without needing the class. */
 .modal-content input,
-.modal-content select,
-.field-input,
-.field-select {
+.modal-content select {
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
@@ -445,17 +314,13 @@ tr:hover td {
 }
 
 .modal-content input:focus,
-.modal-content select:focus,
-.field-input:focus,
-.field-select:focus {
+.modal-content select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-light);
 }
 
 .modal-content input:disabled,
-.modal-content select:disabled,
-.field-input:disabled,
-.field-select:disabled {
+.modal-content select:disabled {
   background: var(--gray-100);
   color: var(--text-muted);
   cursor: not-allowed;
@@ -465,102 +330,10 @@ tr:hover td {
   color: var(--success);
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-full);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  background: var(--gray-100);
-  color: var(--gray-600);
-}
-
-.badge.blue {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.badge.green {
-  background: var(--success-light);
-  color: #047857;
-}
-
-.badge.red {
-  background: var(--danger-light);
-  color: #b91c1c;
-}
-
-.badge.purple {
-  background: #faf5ff;
-  color: #7c3aed;
-}
-
-.badge.amber {
-  background: var(--warning-light);
-  color: #b45309;
-}
-
-/* Badge/icon text colors are dark pastel-on-light pairs; give them
-   readable dark-theme counterparts. */
-[data-theme="dark"] .badge.blue { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
-[data-theme="dark"] .badge.green { color: #6ee7b7; }
-[data-theme="dark"] .badge.red { color: #fca5a5; }
-[data-theme="dark"] .badge.purple { background: rgba(168, 85, 247, 0.18); color: #d8b4fe; }
-[data-theme="dark"] .badge.amber { color: #fcd34d; }
+/* Card icons are dark pastel-on-light pairs; give them readable dark-theme
+   counterparts. */
 [data-theme="dark"] .card-icon.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
 [data-theme="dark"] .card-icon.purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
-
-/* --- LOADER --- */
-.loader-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 60vh;
-  gap: var(--space-4);
-}
-
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--primary-light);
-  border-radius: 50%;
-  border-top-color: var(--primary);
-  animation: spin 1s ease-in-out infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.loader-text {
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-/* --- APP ENTRY / ROUTE TRANSITIONS --- */
-/* .boot-splash itself is styled inline in index.html (it must render before
-   this stylesheet is injected); these classes handle what comes after it. */
-.app-fade {
-  animation: app-fade-in 0.35s ease-out both;
-}
-
-.route-fade {
-  animation: app-fade-in 0.22s ease-out both;
-}
-
-@keyframes app-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-fade,
-  .route-fade {
-    animation: none;
-  }
-}
 
 /* --- Upload Statement Page --- */
 .upload-page {
@@ -593,21 +366,6 @@ tr:hover td {
 .progress-text { font-size:var(--text-xs); color:var(--text-muted); margin-top:var(--space-2); }
 
 .form-actions { display:flex; gap:var(--space-3); align-items:center; margin-top:var(--space-2); }
-.btn { padding:var(--space-3) var(--space-4); border-radius:var(--radius-sm); border:1px solid var(--border-color); background:transparent; cursor:pointer; font-weight:600; font-family: inherit; transition: background 0.15s, border-color 0.15s; }
-.btn:hover { background: var(--gray-50); }
-.btn.primary { background:var(--primary); color:white; border:none; }
-.btn.primary:hover { background: var(--primary-hover); }
-.btn.danger { background:var(--danger-light); border-color: var(--danger-border); color:var(--danger); }
-.btn.danger:hover { filter: brightness(0.97); }
-.btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn.small { padding: 6px 12px; font-size: var(--text-sm); }
-.btn.ghost { border-color: transparent; background: transparent; color: var(--text-muted); }
-.btn.ghost:hover { background: var(--gray-100); color: var(--text-main); }
-.btn.icon { display: inline-flex; align-items: center; justify-content: center; padding: var(--space-2); line-height: 1; }
-.btn:focus-visible, .field-input:focus-visible, .field-select:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
 
 .form-message { margin-top:var(--space-2); color:var(--text-muted); }
 
@@ -646,166 +404,6 @@ tr:hover td {
   }
 }
 .upload-history .btn { padding: var(--space-2) var(--space-3); font-size: var(--text-sm); }
-
-/* --- AUTH (Login / Setup) --- */
-.auth-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-6);
-  background:
-    radial-gradient(600px 300px at 15% 10%, rgba(79, 70, 229, 0.08), transparent 60%),
-    radial-gradient(700px 350px at 85% 90%, rgba(168, 85, 247, 0.07), transparent 60%),
-    var(--gray-50);
-}
-
-.auth-card {
-  width: 400px;
-  max-width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-10) var(--space-8) var(--space-8);
-}
-
-.auth-logo {
-  width: 48px;
-  height: 48px;
-  margin: 0 auto var(--space-4);
-  border-radius: 14px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8px 16px -6px rgba(13, 148, 136, 0.5);
-}
-
-.auth-logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.auth-title {
-  margin: 0 0 var(--space-1);
-  text-align: center;
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-main);
-}
-
-.auth-subtitle {
-  margin: 0 0 var(--space-8);
-  text-align: center;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
-.auth-field {
-  margin-bottom: var(--space-4);
-}
-
-.auth-field label {
-  display: block;
-  margin-bottom: var(--space-2);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--gray-700);
-}
-
-.auth-field .field-input {
-  padding: 10px var(--space-3);
-}
-
-.auth-password {
-  position: relative;
-}
-
-.auth-password .field-input {
-  padding-right: 40px;
-}
-
-.auth-eye {
-  position: absolute;
-  top: 0;
-  right: 0;
-  height: 100%;
-  width: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--gray-400);
-  transition: color 0.15s;
-}
-
-.auth-eye:hover {
-  color: var(--gray-600);
-}
-
-.auth-error {
-  display: flex;
-  gap: var(--space-2);
-  align-items: flex-start;
-  margin-bottom: var(--space-4);
-  padding: var(--space-3);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--danger-border);
-  background: var(--danger-light);
-  color: var(--danger);
-  font-size: var(--text-sm);
-  line-height: 1.4;
-}
-
-.auth-error svg {
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.auth-submit {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  height: 42px;
-  font-size: var(--text-base);
-  box-shadow: 0 4px 10px -4px rgba(79, 70, 229, 0.55);
-}
-
-.auth-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-.auth-footer {
-  margin: var(--space-6) 0 0;
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--border-color);
-  text-align: center;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-}
-
-.auth-footer a {
-  color: var(--primary);
-  font-weight: 600;
-}
-
-.auth-footer a:hover {
-  color: var(--primary-hover);
-  text-decoration: underline;
-}
 
 /* Transfers page — the whole pair card is clickable (opens the detail drawer). */
 .transfer-card:hover {

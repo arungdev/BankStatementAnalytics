@@ -30,8 +30,9 @@ export default function StatCard({ label, value, sub, accent, valueColor, onClic
       border: '1px solid var(--stat-tile-border)',
       borderRadius: '14px',
       padding: '20px 24px',
-      flex: 1,
-      minWidth: '190px',
+      // flex/min-width live on the .stat-card class (index.css) rather than here,
+      // so a page laying tiles out in a grid can override the flex-row floor —
+      // an inline style would win over any stylesheet rule.
       boxShadow: active
         ? '0 4px 20px rgba(79,70,229,0.15), 0 0 0 2px var(--primary)'
         : '0 4px 20px rgba(79,70,229,0.15)',

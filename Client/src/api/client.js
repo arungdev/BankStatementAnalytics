@@ -1,24 +1,13 @@
-import axios from "axios";
+import { createApiClient } from "@common/client";
 
-const base = "/api";
-
-const api = axios.create({
-  baseURL: base,
-  withCredentials: true,
-  headers: {
-    "Content-Type": "application/json",
-  },
+// The app's single axios instance. Everything else imports this module, not
+// the factory, so there is exactly one configured client.
+// /setup joins /login as a public route: an unauthenticated visitor belongs
+// there, so a 401 must not bounce them away from it.
+const api = createApiClient({
+  baseURL: "/api",
+  loginPath: "/login",
+  publicPaths: ["/login", "/setup"],
 });
-
-api.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    const path = window.location.pathname;
-    if (err.response?.status === 401 && path !== "/login" && path !== "/setup") {
-      window.location.href = "/login";
-    }
-    return Promise.reject(err);
-  }
-);
 
 export default api;

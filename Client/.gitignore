@@ -8,8 +8,10 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
-dist-ssr
+# Anchored: only this project's own build output. vendor/common-client/dist is
+# the committed @common/client bundle and must NOT be ignored.
+/dist
+/dist-ssr
 *.local
 
 # Editor directories and files
