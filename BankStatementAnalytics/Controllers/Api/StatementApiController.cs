@@ -123,9 +123,12 @@ namespace BankStatementAnalytics.Controllers.Api
         }
 
         // GET: api/statements/{accountId}
+        // accountId 0 + accountIds=1,2,3 is the combined "All accounts" form (same
+        // CSV contract as trends/merchants); each row then carries its own account.
         [HttpGet("{accountId}")]
         public async Task<IActionResult> GetTransactions(
      int accountId,
+     [FromQuery] string accountIds = null,
      [FromQuery] int page = 1,
      [FromQuery] int pageSize = 0,
      [FromQuery] int? year = null,
@@ -134,18 +137,35 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] DateTime? endDate = null,
      [FromQuery] bool uncategorizedOnly = false,
      [FromQuery] string search = null,
-     [FromQuery] Guid? uploadId = null)
+     [FromQuery] Guid? uploadId = null,
+     [FromQuery] string sortBy = null,
+     [FromQuery] string sortDir = null)
         {
-            var account = DbHelper.GetById<Account>((long)accountId);
-            if (!Owns(account))
-                return NotFound();
-
             using var session = DbHelper.GetSession();
 
-            var bankType = BankTypeCode.For(account.BankName);
+            Account account = null;
+            IQueryable<BankTransaction> query;
 
-            var query = session.Query<BankTransaction>()
-                .Where(t => t.AccountId == accountId && t.BankType == bankType);
+            if (!string.IsNullOrWhiteSpace(accountIds))
+            {
+                var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+                var scopeIds = AccountAccess.FilterOwned(accountIds, ownedIds);
+                if (scopeIds.Count == 0)
+                    return Ok(new { accountId, totalCount = 0, transactions = Array.Empty<object>() });
+
+                query = session.Query<BankTransaction>()
+                    .Where(t => scopeIds.Contains(t.AccountId));
+            }
+            else
+            {
+                account = DbHelper.GetById<Account>((long)accountId);
+                if (!Owns(account))
+                    return NotFound();
+
+                var bankType = BankTypeCode.For(account.BankName);
+                query = session.Query<BankTransaction>()
+                    .Where(t => t.AccountId == accountId && t.BankType == bankType);
+            }
 
             // Rows a specific upload added (duplicates keep their first upload's id,
             // so this is exactly that upload's "new" transactions).
@@ -182,18 +202,40 @@ namespace BankStatementAnalytics.Controllers.Api
 
             if (!string.IsNullOrWhiteSpace(search))
             {
-                var term = search.Trim();
+                var term = search.Trim().ToLower();
                 query = query.Where(t =>
-                    (t.CounterParty != null && t.CounterParty.Name.Contains(term)) ||
-                    t.Description.Contains(term) ||
-                    t.UpiReference.Contains(term));
+                    (t.CounterParty != null && t.CounterParty.Name.ToLower().Contains(term)) ||
+                    t.Description.ToLower().Contains(term) ||
+                    t.UpiReference.ToLower().Contains(term));
             }
 
-            var projectedQuery = query
-                .OrderByDescending(t => t.TransactionDate)
+            // Column sorting — whitelisted fields only; anything else falls back to
+            // the default date-descending order. Category/merchant sort on the same
+            // effective values the projection returns (override beats merchant default).
+            var descending = !string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
+            IOrderedQueryable<BankTransaction> ordered = (sortBy ?? "").ToLowerInvariant() switch
+            {
+                "merchant" => descending
+                    ? query.OrderByDescending(t => t.CounterParty != null ? t.CounterParty.Name : null)
+                    : query.OrderBy(t => t.CounterParty != null ? t.CounterParty.Name : null),
+                "category" => descending
+                    ? query.OrderByDescending(t => t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null))
+                    : query.OrderBy(t => t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null)),
+                // One of Debit/Credit is always zero, so their sum is the amount.
+                "amount" => descending
+                    ? query.OrderByDescending(t => t.Debit + t.Credit)
+                    : query.OrderBy(t => t.Debit + t.Credit),
+                _ => descending
+                    ? query.OrderByDescending(t => t.TransactionDate)
+                    : query.OrderBy(t => t.TransactionDate),
+            };
+
+            var projectedQuery = ordered
+                .ThenByDescending(t => t.TransactionDate)
                 .Select(t => new
                 {
                     Id = t.BankReference,
+                    AccountId = t.AccountId,
                     TransactionDate = t.TransactionDate,
                     Description = t.Description,
                     UpiReference = t.UpiReference,
@@ -202,7 +244,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     Debit = t.Debit,
                     Credit = t.Credit,
                     Balance = t.Balance,
-                    BankType = bankType,
+                    BankType = t.BankType,
                     Category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : null),
                     SubCategory = t.SubCategoryOverride ?? (t.CounterParty != null ? t.CounterParty.SubCategory : null),
                     Tags = t.Tags != null ? t.Tags.Split(',').ToList() : new List<string>(),
@@ -217,8 +259,8 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(new
             {
                 accountId,
-                account.AccountNumber,
-                account.BankName,
+                AccountNumber = account?.AccountNumber,
+                BankName = account?.BankName,
                 totalCount = paged.TotalCount,
                 transactions = paged.Items
             });
