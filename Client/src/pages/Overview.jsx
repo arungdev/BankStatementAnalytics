@@ -8,7 +8,7 @@ import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
 import CreditCardPanel from '../components/CreditCardPanel';
-import { EmptyState, useTheme } from "@common/client";
+import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
 import { getToken } from "../theme/chartTheme";
 import { currencyFormatter as fmt, formatDate, maskName } from '../utils/format';
 
@@ -69,6 +69,22 @@ const initialsOf = name =>
 
 // Rows per activity-feed page — matches RecentPageSize on the server.
 const RECENT_PAGE = 10;
+
+// Rows per drill-down page — matches TilePageSize on the server. The Overview
+// scope is the account's whole history, so the drawer pages rather than loading
+// every row the way the date-bounded Trends/Reports drawers can.
+const TILE_PAGE = 50;
+
+/* Each summary tile drills down to the rows behind it. `kind` is the filter
+   passed to api/dashboard/transactions: the money tiles exclude own-money
+   transfers (as their totals do), while 'all' counts every row — which is why
+   Net Flow and Transactions open different lists. */
+const TILES = {
+  income: { kind: 'income', title: 'Income transactions' },
+  spend:  { kind: 'spend',  title: 'Spend transactions' },
+  net:    { kind: 'net',    title: 'Net flow — income and spends' },
+  count:  { kind: 'all',    title: 'All transactions' },
+};
 
 // Feed rows are grouped by day, so the row itself carries no date — the sticky
 // header does. Anything inside the current week reads better as a word.
@@ -177,6 +193,9 @@ export default function Overview() {
 
   const isEmpty = !loading && data && (data.totalTransactions ?? 0) === 0;
 
+  // Tiles only drill down once there are rows behind them to show.
+  const tilesClickable = !loading && !!data && (data.totalTransactions ?? 0) > 0;
+
   // Recent activity, bucketed by day with a per-day net so the sticky headers
   // carry information rather than just separating rows.
   const recentDays = useMemo(() => {
@@ -244,6 +263,98 @@ export default function Overview() {
     return () => io.disconnect();
   }, [loadMoreRecent]);
 
+  // ── Summary-tile drill-down ────────────────────────────────────────────
+  // openTileScope pins the drawer to the account scope it was opened under, so
+  // switching accounts closes it (derived, rather than an effect that resets state).
+  const [openTile, setOpenTile]         = useState(null); // key into TILES
+  const [openTileScope, setOpenTileScope] = useState('');
+  const [drawerWidth, setDrawerWidth]   = useState(420);
+  const [tileRows, setTileRows]         = useState([]);
+  const [tileStats, setTileStats]       = useState({ total: 0, credits: 0, debits: 0 });
+  const [tileHasMore, setTileHasMore]   = useState(false);
+  const [tileLoading, setTileLoading]   = useState(false);
+  const [tileLoadingMore, setTileLoadingMore] = useState(false);
+  const [tileError, setTileError]       = useState(null);
+
+  const trayOpen = openTile != null && openTileScope === scopeQuery;
+
+  const closeTray = useCallback(() => {
+    setOpenTile(null);
+    setTileRows([]);
+    setTileHasMore(false);
+    setTileError(null);
+  }, []);
+
+  // Tile click → the rows behind that tile. Clicking the open tile closes it.
+  const openTileDrawer = useCallback((key) => {
+    if (openTile === key && openTileScope === scopeQuery) { closeTray(); return; }
+    if (!scopeQuery || !TILES[key]) return;
+
+    setOpenTile(key);
+    setOpenTileScope(scopeQuery);
+    setTileLoading(true);
+    setTileError(null);
+    setTileRows([]);
+    setTileHasMore(false);
+
+    api.get(`/dashboard/transactions?${scopeQuery}&kind=${TILES[key].kind}&skip=0&take=${TILE_PAGE}`)
+      .then(res => {
+        setTileRows(res.data?.items ?? []);
+        setTileHasMore(!!res.data?.hasMore);
+        setTileStats({
+          total: res.data?.total ?? 0,
+          credits: res.data?.credits ?? 0,
+          debits: res.data?.debits ?? 0,
+        });
+      })
+      .catch(err => {
+        console.error('Failed to fetch tile transactions', err);
+        setTileError('Could not load transactions. Please try again.');
+      })
+      .finally(() => setTileLoading(false));
+  }, [scopeQuery, openTile, openTileScope, closeTray]);
+
+  // Latest tile, readable from an in-flight request without re-creating it.
+  const tileRef = useRef(openTile);
+  useEffect(() => { tileRef.current = openTile; }, [openTile]);
+
+  const loadMoreTile = useCallback(() => {
+    if (!trayOpen || !tileHasMore || tileLoading || tileLoadingMore) return;
+    const requestScope = scopeQuery;
+    const requestTile = openTile;
+    setTileLoadingMore(true);
+    api.get(`/dashboard/transactions?${scopeQuery}&kind=${TILES[openTile].kind}&skip=${tileRows.length}&take=${TILE_PAGE}`)
+      .then(res => {
+        // A page in flight when the scope or tile changed belongs to the old list.
+        if (scopeRef.current !== requestScope || tileRef.current !== requestTile) return;
+        setTileRows(prev => [...prev, ...(res.data?.items ?? [])]);
+        setTileHasMore(!!res.data?.hasMore);
+      })
+      .catch(err => { console.error('Failed to load more tile transactions', err); setTileHasMore(false); })
+      .finally(() => setTileLoadingMore(false));
+  }, [trayOpen, tileHasMore, tileLoading, tileLoadingMore, scopeQuery, openTile, tileRows.length]);
+
+  // Read by the observer, so it doesn't have to be rebuilt on every page.
+  const loadMoreTileRef = useRef(loadMoreTile);
+  useEffect(() => { loadMoreTileRef.current = loadMoreTile; }, [loadMoreTile]);
+
+  // Infinite scroll inside the drawer: the sentinel sits below the last row and
+  // trips a little before it comes into view, so the next page lands without a gap.
+  const tileSentinelRef = useCallback(node => {
+    if (!node) return undefined;
+    const io = new IntersectionObserver(
+      entries => { if (entries[0].isIntersecting) loadMoreTileRef.current(); },
+      { rootMargin: '120px' },
+    );
+    io.observe(node);
+    return () => io.disconnect();
+  }, []);
+
+  const accountMap = useMemo(
+    () => accounts.reduce((m, a) => { m[a.id] = a.bankName; return m; }, {}),
+    [accounts]
+  );
+
   // Credit-card-only panel: statement dues, utilization, cycle spend.
   const selectedAccount = selectedAccountId !== ALL_ACCOUNTS
     ? accounts.find(a => a.id === selectedAccountId)
@@ -251,7 +362,7 @@ export default function Overview() {
   const isCreditCard = selectedAccount?.bankName === 'HDFCCreditCard';
 
   return (
-    <div style={s.page}>
+    <div style={{ ...s.page, marginRight: trayOpen ? drawerWidth : 0, transition: 'margin-right 0.2s ease' }}>
       <style>{`
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         .ov-row { transition: background .15s ease; }
@@ -290,19 +401,30 @@ export default function Overview() {
           opacity: 0; transition: opacity .18s ease;
         }
         .ov-fade[data-show="1"] { opacity: 1; }
+
+        /* The floor that decides when the tile row wraps. Below the 190px default,
+           so all four stay on one row once the drill-down drawer docks and narrows
+           the page — a tile left alone on the last row would stretch full width. */
+        .ov-stat-row > .stat-card { min-width: 150px; }
       `}</style>
 
       {/* ── Stat cards ── */}
-      <div style={s.statsRow}>
+      <div className="ov-stat-row" style={s.statsRow}>
         <StatCard
           label="Total Income"
           value={loading ? '—' : fmt.format(totalIncome)}
           valueColor="#34d399"
+          onClick={tilesClickable ? () => openTileDrawer('income') : undefined}
+          active={trayOpen && openTile === 'income'}
+          title="Show the income transactions behind this total"
         />
         <StatCard
           label="Total Spends"
           value={loading ? '—' : fmt.format(totalSpends)}
           valueColor="#f87171"
+          onClick={tilesClickable ? () => openTileDrawer('spend') : undefined}
+          active={trayOpen && openTile === 'spend'}
+          title="Show the spend transactions behind this total"
         />
         <StatCard
           label="Net Flow"
@@ -310,11 +432,17 @@ export default function Overview() {
           valueColor={netPositive ? '#34d399' : '#f87171'}
           sub={loading ? '' : (netPositive ? 'Positive cash flow' : 'Negative cash flow')}
           accent={netPositive ? '#34d399' : '#f87171'}
+          onClick={tilesClickable ? () => openTileDrawer('net') : undefined}
+          active={trayOpen && openTile === 'net'}
+          title="Show the income and spend transactions behind this total"
         />
         <StatCard
           label="Transactions"
           value={loading ? '—' : (data?.totalTransactions ?? 0).toLocaleString('en-IN')}
           accent={T.indigoSoft}
+          onClick={tilesClickable ? () => openTileDrawer('count') : undefined}
+          active={trayOpen && openTile === 'count'}
+          title="Show every transaction on this account"
         />
       </div>
 
@@ -561,6 +689,89 @@ export default function Overview() {
         </div>
         </>
       )}
+
+      {/* ── Tile drill-down — RHS docked drawer (the page behind stays usable) ── */}
+      <Drawer
+        open={trayOpen}
+        onClose={closeTray}
+        title={openTile ? TILES[openTile].title : 'Transactions'}
+        width={drawerWidth}
+        onWidthChange={setDrawerWidth}
+        minWidth={420}
+        modal={false}
+      >
+        {/* Stats cover the whole tile, not just the rows loaded so far. */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+          {[
+            { label: 'Rows', value: tileStats.total.toLocaleString('en-IN') },
+            { label: 'Credits', value: fmt.format(tileStats.credits), color: T.green },
+            { label: 'Debits', value: fmt.format(tileStats.debits), color: T.red },
+          ].map(stat => (
+            <div key={stat.label} style={{ flex: 1, background: T.bg, borderRadius: '8px', padding: '10px 12px', border: `1px solid ${T.border}` }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{stat.label}</p>
+              <p className="tnum" style={{ margin: '3px 0 0', fontSize: '14px', fontWeight: 800, color: stat.color || T.text }}>{stat.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {tileLoading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {[...Array(6)].map((_, i) => <Skeleton key={i} h={20} />)}
+          </div>
+        ) : tileError ? (
+          <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: T.red }}>{tileError}</p>
+          </div>
+        ) : tileRows.length === 0 ? (
+          <EmptyState icon="📭" title="No transactions" subtitle="Nothing found for this tile." compact />
+        ) : (
+          <div style={{ margin: '0 -8px' }}>
+            {tileRows.map((tx, i) => {
+              const credit = tx.credit > 0;
+              const label = maskName(tx.merchant || tx.description || '—');
+              return (
+                <div
+                  key={tx.id ? `${tx.id}-${tx.accountId}-${i}` : i}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 8px',
+                    borderBottom: i < tileRows.length - 1 ? `1px solid ${T.borderSub}` : 'none',
+                  }}
+                >
+                  <Avatar name={label} size={34} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {label}
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {tx.date ? formatDate(tx.date) : '—'}
+                      {tx.category ? ` · ${tx.category}` : ''}
+                      {accountMap[tx.accountId] ? ` · ${accountMap[tx.accountId]}` : ''}
+                    </p>
+                  </div>
+                  <p className="tnum" style={{ margin: 0, fontSize: '13px', fontWeight: 700, flexShrink: 0, color: credit ? T.green : T.red }}>
+                    {credit ? '+' : '−'}{fmt.format(credit ? tx.credit : tx.debit)}
+                  </p>
+                </div>
+              );
+            })}
+
+            {tileHasMore ? (
+              <div ref={tileSentinelRef} style={{ padding: '2px 0 6px' }}>
+                {tileLoadingMore && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '12px 8px 4px' }}>
+                    <Skeleton h={20} />
+                    <Skeleton h={20} />
+                  </div>
+                )}
+              </div>
+            ) : tileRows.length > TILE_PAGE && (
+              <p style={{ margin: '12px 0 2px', textAlign: 'center', fontSize: '11px', fontWeight: 600, color: T.muted }}>
+                That's all {tileRows.length.toLocaleString('en-IN')} transactions
+              </p>
+            )}
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }
