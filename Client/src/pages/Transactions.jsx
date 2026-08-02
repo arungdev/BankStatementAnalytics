@@ -59,14 +59,23 @@ export default function Transactions() {
     transactionsRange: dateRange = { start: null, end: null, preset: 'ALL' },
   } = useOutletContext() ?? {};
 
-  // Transactions are viewed one account at a time. "All accounts" isn't offered
-  // here, so fall back to the first account rather than a dead-end state.
-  const effectiveAccountId =
-    selectedAccountId === ALL_ACCOUNTS ? (accounts[0]?.id ?? null) : selectedAccountId;
-  const shownAccount = accounts.find(a => a.id === effectiveAccountId);
+  // "All accounts" is a real combined view: accountId 0 plus an accountIds CSV
+  // (the same contract Trends/Insights use), with each row carrying its own
+  // account. A specific selection stays the single-account path.
+  const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
+  const effectiveAccountId = isAllAccounts ? (accounts.length > 0 ? 0 : null) : selectedAccountId;
+  const accountScope = isAllAccounts ? accounts.map(a => a.id).join(',') : String(effectiveAccountId ?? '');
+  const accountById = new Map(accounts.map(a => [a.id, a]));
+  const accountLabel = (accountId, fallback = '') => {
+    const a = accountById.get(accountId);
+    return a ? `${a.bankName} ····${a.accountNumber?.slice(-4) || '****'}` : fallback;
+  };
+  // Rows are identified by account + bank + reference — a BankReference alone
+  // can repeat across accounts once the list spans all of them.
+  const txKey = (t) => `${t.accountId}|${t.bankType}|${t.id}`;
 
   const [tx, setTx] = useState([]);
-  const [loading, setLoading] = useState(!effectiveAccountId);
+  const [loading, setLoading] = useState(effectiveAccountId == null);
   // Full-page loader only before the first load — later refetches (search typing,
   // paging) keep the list mounted so the search input doesn't lose focus.
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -80,6 +89,21 @@ export default function Transactions() {
   // Pagination state (itemsPerPage persists across reloads; page resets to 1)
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = usePersistedState('transactionsPerPage', 10);
+
+  // ── Column sort ───────────────────────────────────────────────────────
+  // Server-side (the list is server-paginated); date-descending is the default.
+  const [sortBy, setSortBy] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
+  const toggleSort = (col) => {
+    if (sortBy === col) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(col);
+      // Text columns read naturally A→Z first; date/amount biggest-first.
+      setSortDir(col === 'merchant' || col === 'category' ? 'asc' : 'desc');
+    }
+    setCurrentPage(1);
+  };
 
   // Quick filter: show only transactions with no category yet
   const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
@@ -95,15 +119,12 @@ export default function Transactions() {
   const [selectionFilterKey, setSelectionFilterKey] = useState(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkTag, setBulkTag] = useState('');
-  // Every row of an account carries the same bankType — remembered from the last
-  // non-empty fetch so a bulk action still keys correctly on an empty page.
-  const [bankType, setBankType] = useState(null);
   const clearSelection = () => setSelectedIds(new Set());
 
-  const toggleSelected = (id) => {
+  const toggleSelected = (key) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   };
@@ -166,7 +187,7 @@ export default function Transactions() {
       setRefreshKey(k => k + 1);
       getUploads()
         .then(res => setUploads((res.data || [])
-          .filter(u => String(u.accountId) === String(effectiveAccountId))
+          .filter(u => isAllAccounts || String(u.accountId) === String(effectiveAccountId))
           .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))))
         .catch(() => {});
     } catch (err) {
@@ -205,17 +226,17 @@ export default function Transactions() {
   // changes underneath it, so it never keeps showing another account's history.
   useEffect(() => {
     if (!uploadHistoryOpen) return;
-    if (!effectiveAccountId) { setUploads([]); setImportFails([]); return; }
+    if (effectiveAccountId == null) { setUploads([]); setImportFails([]); return; }
     setLoadingUploads(true);
     Promise.all([
       getUploads().then(res => (res.data || [])
-        .filter(u => String(u.accountId) === String(effectiveAccountId))
+        .filter(u => isAllAccounts || String(u.accountId) === String(effectiveAccountId))
         .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
       ).catch(() => []),
       // Failed auto-imports leave no upload row — fetched separately so they
       // still show up in the history alongside successful uploads.
       getAutoImports().then(res => (res.data || [])
-        .filter(h => h.status === 'Failed' && String(h.accountId) === String(effectiveAccountId))
+        .filter(h => h.status === 'Failed' && (isAllAccounts || String(h.accountId) === String(effectiveAccountId)))
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       ).catch(() => []),
     ])
@@ -293,7 +314,6 @@ export default function Transactions() {
     setSelectedTx(null);
     setTagEditRowId(null);
     setNoteEditRowId(null);
-    setBankType(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveAccountId]);
 
@@ -301,7 +321,7 @@ export default function Transactions() {
   // on rows the user can no longer see would be a surprise. Reset during render
   // rather than in an effect so no stale selection is ever painted.
   const filterKey = [
-    effectiveAccountId,
+    accountScope,
     dateRange.start, dateRange.end,
     uncategorizedOnly, search, uploadFilter?.id ?? '',
   ].join('|');
@@ -311,7 +331,7 @@ export default function Transactions() {
   }
 
   useEffect(() => {
-    if (!effectiveAccountId) {
+    if (effectiveAccountId == null) {
       setLoading(false);
       setTx([]);
       setTotalTransactions(0);
@@ -322,6 +342,7 @@ export default function Transactions() {
     const { start: startDate, end: endDate } = dateRange;
 
     const params = new URLSearchParams({ page: currentPage, pageSize: itemsPerPage });
+    if (isAllAccounts) params.append('accountIds', accountScope);
 
     // While drilling into an upload's new transactions, ignore the date range —
     // the imported rows may fall outside the currently selected period.
@@ -333,6 +354,10 @@ export default function Transactions() {
     }
     if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
     if (search) params.append('search', search);
+    if (sortBy !== 'date' || sortDir !== 'desc') {
+      params.append('sortBy', sortBy);
+      params.append('sortDir', sortDir);
+    }
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -373,6 +398,19 @@ export default function Transactions() {
             return true;
           });
 
+          // Mirror the server-side column sort for the plain-array response shape.
+          const dir = sortDir === 'asc' ? 1 : -1;
+          const amountOf = (t) => Math.max(t.credit || 0, t.debit || 0);
+          allTx.sort((a, b) => {
+            let cmp;
+            if (sortBy === 'merchant')      cmp = (a.merchant || '').localeCompare(b.merchant || '');
+            else if (sortBy === 'category') cmp = (a.category || '').localeCompare(b.category || '');
+            else if (sortBy === 'amount')   cmp = amountOf(a) - amountOf(b);
+            else                            cmp = new Date(a.transactionDate) - new Date(b.transactionDate);
+            if (cmp !== 0) return cmp * dir;
+            return new Date(b.transactionDate) - new Date(a.transactionDate);
+          });
+
           setTotalTransactions(allTx.length);
           const startIdx = (currentPage - 1) * itemsPerPage;
           setTx(allTx.slice(startIdx, startIdx + itemsPerPage));
@@ -380,7 +418,6 @@ export default function Transactions() {
           setTx(allTx);
           setTotalTransactions(res.data.totalCount);
         }
-        if (allTx.length > 0 && allTx[0].bankType) setBankType(allTx[0].bankType);
         setLoading(false);
         setHasLoaded(true);
       })
@@ -389,7 +426,8 @@ export default function Transactions() {
         setLoading(false);
         setHasLoaded(true);
       });
-  }, [effectiveAccountId, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search, uploadFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveAccountId, accountScope, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search, uploadFilter, sortBy, sortDir]);
 
   if (loading && !hasLoaded) {
     return (
@@ -400,7 +438,7 @@ export default function Transactions() {
     );
   }
 
-  if (!effectiveAccountId) {
+  if (effectiveAccountId == null) {
     return (
       <EmptyState
         title="No account selected"
@@ -435,19 +473,19 @@ export default function Transactions() {
     const displayLabel = resolvedSubCategory || resolvedCategory || '';
 
     setTx(prev => prev.map(item =>
-      item.id === t.id
+      txKey(item) === txKey(t)
         ? { ...item, category: displayLabel, subCategory: resolvedSubCategory }
         : item
     ));
 
     setSelectedTx(prev =>
-      prev && prev.id === t.id
+      prev && txKey(prev) === txKey(t)
         ? { ...prev, category: displayLabel, subCategory: resolvedSubCategory }
         : prev
     );
 
     api.patch(`/transactions/category`, {
-      AccountId: effectiveAccountId,
+      AccountId: t.accountId,
       BankReference: t.id,
       BankType: t.bankType,
       Category: resolvedCategory,
@@ -459,12 +497,12 @@ export default function Transactions() {
       console.error("Failed to update category", err);
       alert("Failed to update category. Please try again.");
       setTx(prev => prev.map(item =>
-        item.id === t.id
+        txKey(item) === txKey(t)
           ? { ...item, category: previousCategory, subCategory: previousSubCategory }
           : item
       ));
       setSelectedTx(prev =>
-        prev && prev.id === t.id
+        prev && txKey(prev) === txKey(t)
           ? { ...prev, category: previousCategory, subCategory: previousSubCategory }
           : prev
       );
@@ -500,22 +538,22 @@ export default function Transactions() {
   const updateTags = (t, updatedTags) => {
     const previousTags = t.tags;
 
-    setSelectedTx(prev => prev && prev.id === t.id ? { ...prev, tags: updatedTags } : prev);
+    setSelectedTx(prev => prev && txKey(prev) === txKey(t) ? { ...prev, tags: updatedTags } : prev);
     setTx(prev => prev.map(item =>
-      item.id === t.id ? { ...item, tags: updatedTags } : item
+      txKey(item) === txKey(t) ? { ...item, tags: updatedTags } : item
     ));
 
     api.patch(`/transactions/tags`, {
-      AccountId: effectiveAccountId,
+      AccountId: t.accountId,
       BankReference: t.id,
       BankType: t.bankType,
       Tags: updatedTags
     }).catch(err => {
       console.error("Failed to update tags", err);
       alert("Failed to update tags. Please try again.");
-      setSelectedTx(prev => prev && prev.id === t.id ? { ...prev, tags: previousTags } : prev);
+      setSelectedTx(prev => prev && txKey(prev) === txKey(t) ? { ...prev, tags: previousTags } : prev);
       setTx(prev => prev.map(item =>
-        item.id === t.id ? { ...item, tags: previousTags } : item
+        txKey(item) === txKey(t) ? { ...item, tags: previousTags } : item
       ));
     });
   };
@@ -538,22 +576,22 @@ export default function Transactions() {
     const previousNote = t.note;
     if (trimmed === (previousNote || '')) return; // nothing changed
 
-    setSelectedTx(prev => prev && prev.id === t.id ? { ...prev, note: trimmed } : prev);
+    setSelectedTx(prev => prev && txKey(prev) === txKey(t) ? { ...prev, note: trimmed } : prev);
     setTx(prev => prev.map(item =>
-      item.id === t.id ? { ...item, note: trimmed } : item
+      txKey(item) === txKey(t) ? { ...item, note: trimmed } : item
     ));
 
     api.patch(`/transactions/note`, {
-      AccountId: effectiveAccountId,
+      AccountId: t.accountId,
       BankReference: t.id,
       BankType: t.bankType,
       Note: trimmed
     }).catch(err => {
       console.error("Failed to update note", err);
       alert("Failed to update note. Please try again.");
-      setSelectedTx(prev => prev && prev.id === t.id ? { ...prev, note: previousNote } : prev);
+      setSelectedTx(prev => prev && txKey(prev) === txKey(t) ? { ...prev, note: previousNote } : prev);
       setTx(prev => prev.map(item =>
-        item.id === t.id ? { ...item, note: previousNote } : item
+        txKey(item) === txKey(t) ? { ...item, note: previousNote } : item
       ));
     });
   };
@@ -561,24 +599,35 @@ export default function Transactions() {
   const handleNoteChange = (newNote) => updateNote(selectedTx, newNote);
 
   // ── Bulk actions ──────────────────────────────────────────────────────
-  // One PATCH for the whole selection; the list is refetched afterwards so the
-  // rows reflect server truth (merchant defaults, normalised tags) rather than
-  // an optimistic guess applied to many rows at once.
+  // The bulk endpoint acts on one account at a time, and in the combined view a
+  // selection can span accounts — so split the selection keys back into
+  // (account, bankType) groups and PATCH each. The list is refetched afterwards
+  // so the rows reflect server truth (merchant defaults, normalised tags)
+  // rather than an optimistic guess applied to many rows at once.
   const runBulk = async (payload, describe) => {
-    const ids = [...selectedIds];
-    if (ids.length === 0) return;
+    if (selectedIds.size === 0) return;
+    const groups = new Map();
+    for (const key of selectedIds) {
+      const [accId, bType, ...refParts] = key.split('|');
+      const groupKey = `${accId}|${bType}`;
+      if (!groups.has(groupKey)) groups.set(groupKey, { accountId: Number(accId), bankType: bType, refs: [] });
+      groups.get(groupKey).refs.push(refParts.join('|'));
+    }
     setBulkBusy(true);
     try {
-      const res = await api.patch('/transactions/bulk', {
-        AccountId: effectiveAccountId,
-        BankType: bankType,
-        BankReferences: ids,
-        ...payload,
-      });
+      let updated = 0;
+      for (const group of groups.values()) {
+        const res = await api.patch('/transactions/bulk', {
+          AccountId: group.accountId,
+          BankType: group.bankType,
+          BankReferences: group.refs,
+          ...payload,
+        });
+        updated += res.data?.updated ?? group.refs.length;
+      }
       clearSelection();
       setSelectedTx(null);
       setRefreshKey(k => k + 1);
-      const updated = res.data?.updated ?? ids.length;
       if (updated === 0) alert(`Nothing to change — ${describe} left every selected transaction as it was.`);
     } catch (err) {
       console.error("Bulk update failed", err);
@@ -617,10 +666,15 @@ export default function Transactions() {
   const handleExportCSV = () => {
     const { start: startDate, end: endDate } = dateRange;
     const params = new URLSearchParams({ pageSize: 0 });
+    if (isAllAccounts) params.append('accountIds', accountScope);
     if (startDate) params.append('startDate', toLocalDate(startDate));
     if (endDate)   params.append('endDate',   toLocalDate(endDate));
     if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
     if (search) params.append('search', search);
+    if (sortBy !== 'date' || sortDir !== 'desc') {
+      params.append('sortBy', sortBy);
+      params.append('sortDir', sortDir);
+    }
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -628,6 +682,7 @@ export default function Transactions() {
         if (allTx.length === 0) return alert("No transactions to export.");
 
         const headers = ["Date", "Merchant", "Category", "Description", "Debit", "Credit", "Balance", "Mode", "UPI Reference"];
+        if (isAllAccounts) headers.unshift("Account");
         const csvRows = [headers.join(",")];
 
         allTx.forEach(t => {
@@ -642,6 +697,7 @@ export default function Transactions() {
             `"${t.mode || ''}"`,
             `"${t.upiReference || ''}"`
           ];
+          if (isAllAccounts) row.unshift(`"${accountLabel(t.accountId, t.bankType).replace(/"/g, '""')}"`);
           csvRows.push(row.join(","));
         });
 
@@ -662,7 +718,7 @@ export default function Transactions() {
 
   // Select-all applies to the rows currently on screen; the selection itself may
   // already hold rows from other pages, so count them separately.
-  const pageIds = tx.map(t => t.id).filter(Boolean);
+  const pageIds = tx.filter(t => t.id).map(txKey);
   const allOnPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id));
   const someOnPageSelected = pageIds.some(id => selectedIds.has(id));
 
@@ -706,6 +762,14 @@ export default function Transactions() {
           border-bottom: 1px solid ${T.border};
           background: ${T.bg};
         }
+        .tx-sort {
+          display: inline-flex; align-items: center; gap: 4px;
+          cursor: pointer; user-select: none;
+          transition: color 0.12s;
+        }
+        .tx-sort:hover { color: ${T.muted}; }
+        .tx-sort.active { color: ${T.indigo}; }
+        .tx-sort-arrow { font-size: 8px; line-height: 1; }
         .tx-tag {
           display: inline-flex; align-items: center; gap: 4px;
           background: ${T.blueDim}; color: ${T.blue};
@@ -817,15 +881,6 @@ export default function Transactions() {
           </Badge>
         )}
 
-        {/* The header's account chip is global and can read "All accounts", but
-            this page loads one account at a time — say which one it settled on
-            so the count below never looks like it covers everything. */}
-        {selectedAccountId === ALL_ACCOUNTS && shownAccount && (
-          <Badge variant="amber" title="Transactions are shown one account at a time">
-            {shownAccount.bankName} ···· {shownAccount.accountNumber?.slice(-4) || '****'} only
-          </Badge>
-        )}
-
         <Badge variant="blue">
           {totalTransactions} {uncategorizedOnly ? 'Uncategorized' : 'Total'} Transactions
         </Badge>
@@ -907,10 +962,25 @@ export default function Transactions() {
               title={allOnPageSelected ? 'Clear this page' : 'Select every transaction on this page'}
             />
           )}
-          <span>Date</span>
-          <span>Merchant</span>
-          <span className="tx-col-cat">Category</span>
-          <span style={{ textAlign: 'right' }}>Amount</span>
+          {[
+            { col: 'date', label: 'Date' },
+            { col: 'merchant', label: 'Merchant' },
+            { col: 'category', label: 'Category', className: 'tx-col-cat' },
+            { col: 'amount', label: 'Amount', style: { justifyContent: 'flex-end' } },
+          ].map(({ col, label, className, style }) => (
+            <span
+              key={col}
+              className={`tx-sort${sortBy === col ? ' active' : ''}${className ? ` ${className}` : ''}`}
+              style={style}
+              onClick={() => toggleSort(col)}
+              title={`Sort by ${label.toLowerCase()}`}
+            >
+              {label}
+              {sortBy === col && (
+                <span className="tx-sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>
+              )}
+            </span>
+          ))}
         </div>
 
         <datalist id="tx-row-tags-list">
@@ -928,11 +998,12 @@ export default function Transactions() {
               const d = new Date(t.transactionDate);
               const catValue = t.subCategory || t.category || '';
               const rowTags = t.tags || [];
-              const isChecked = selectedIds.has(t.id);
+              const rowKey = txKey(t);
+              const isChecked = selectedIds.has(rowKey);
               return (
                 <div
-                  key={t.id || index}
-                  className={`tx-row${selectedTx && selectedTx.id === t.id ? ' selected' : ''}${isChecked ? ' checked' : ''}`}
+                  key={t.id ? rowKey : index}
+                  className={`tx-row${selectedTx && txKey(selectedTx) === rowKey ? ' selected' : ''}${isChecked ? ' checked' : ''}`}
                   onClick={() => { closeUploadHistory(); setSelectedTx(t); }}
                 >
                   {isAdmin && (
@@ -941,7 +1012,7 @@ export default function Transactions() {
                       className="tx-check"
                       checked={isChecked}
                       onClick={(e) => e.stopPropagation()}
-                      onChange={() => toggleSelected(t.id)}
+                      onChange={() => toggleSelected(rowKey)}
                     />
                   )}
                   <div style={{ textAlign: 'center' }}>
@@ -978,6 +1049,19 @@ export default function Transactions() {
                         )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', minWidth: 0 }}>
+                        {isAllAccounts && (
+                          <span
+                            title="Account"
+                            style={{
+                              fontSize: '10px', fontWeight: 700, color: T.muted,
+                              background: T.bg, border: `1px solid ${T.borderSub}`,
+                              padding: '0 6px', borderRadius: '999px',
+                              whiteSpace: 'nowrap', flexShrink: 0,
+                            }}
+                          >
+                            {accountLabel(t.accountId, t.bankType)}
+                          </span>
+                        )}
                         <span style={{ fontSize: '12px', color: T.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {t.mode || 'Transfer'}
                         </span>
@@ -992,7 +1076,7 @@ export default function Transactions() {
                           </span>
                         ))}
                         {rowTags.length > 2 && <span style={{ fontSize: '11px', color: T.faint }}>+{rowTags.length - 2}</span>}
-                        {tagEditRowId === t.id ? (
+                        {tagEditRowId === rowKey ? (
                           <input
                             className="tx-tag-input"
                             list="tx-row-tags-list"
@@ -1008,10 +1092,10 @@ export default function Transactions() {
                         ) : (
                           <span
                             className="tx-tag-add"
-                            onClick={(e) => { e.stopPropagation(); setNoteEditRowId(null); setTagEditRowId(t.id); }}
+                            onClick={(e) => { e.stopPropagation(); setNoteEditRowId(null); setTagEditRowId(rowKey); }}
                           >+ tag</span>
                         )}
-                        {noteEditRowId === t.id ? (
+                        {noteEditRowId === rowKey ? (
                           <input
                             className="tx-note-input"
                             autoFocus
@@ -1028,12 +1112,12 @@ export default function Transactions() {
                           <span
                             className="tx-note"
                             title={t.note}
-                            onClick={(e) => { e.stopPropagation(); setTagEditRowId(null); setNoteEditRowId(t.id); }}
+                            onClick={(e) => { e.stopPropagation(); setTagEditRowId(null); setNoteEditRowId(rowKey); }}
                           >✎ {t.note}</span>
                         ) : (
                           <span
                             className="tx-tag-add"
-                            onClick={(e) => { e.stopPropagation(); setTagEditRowId(null); setNoteEditRowId(t.id); }}
+                            onClick={(e) => { e.stopPropagation(); setTagEditRowId(null); setNoteEditRowId(rowKey); }}
                           >+ note</span>
                         )}
                       </div>
@@ -1099,6 +1183,12 @@ export default function Transactions() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+              {isAllAccounts && (
+                <div style={{ gridColumn: 'span 2' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Account</div>
+                  <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{accountLabel(selectedTx.accountId, selectedTx.bankType)}</div>
+                </div>
+              )}
               <div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Date</div>
                 <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{new Date(selectedTx.transactionDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
@@ -1229,7 +1319,9 @@ export default function Transactions() {
 
             {uploadTab === 'success' ? (
               uploads.length === 0 ? (
-                <EmptyState message="No statements have been imported for this account yet." />
+                <EmptyState message={isAllAccounts
+                  ? "No statements have been imported yet."
+                  : "No statements have been imported for this account yet."} />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {uploads.map(upload => (
@@ -1240,6 +1332,7 @@ export default function Transactions() {
                           <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{upload.fileName}</div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
                             {new Date(upload.uploadedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {isAllAccounts && accountById.has(upload.accountId) && ` · ${accountLabel(upload.accountId)}`}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                             <Badge variant="blue">{upload.totalCount ?? upload.transactionCount ?? 0} total</Badge>
@@ -1270,7 +1363,9 @@ export default function Transactions() {
               )
             ) : (
               importFails.length === 0 ? (
-                <EmptyState message="No failed imports for this account." />
+                <EmptyState message={isAllAccounts
+                  ? "No failed imports."
+                  : "No failed imports for this account."} />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {importFails.map(fail => (
@@ -1281,6 +1376,7 @@ export default function Transactions() {
                           <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '14px', wordBreak: 'break-all' }}>{fail.fileName}</div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
                             {new Date(fail.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {isAllAccounts && accountById.has(fail.accountId) && ` · ${accountLabel(fail.accountId)}`}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                             <Badge variant="red">Auto-import failed</Badge>
