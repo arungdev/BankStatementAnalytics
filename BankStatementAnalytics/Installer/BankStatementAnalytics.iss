@@ -38,6 +38,9 @@
 ; Must NOT be nested inside MySourceDir - Files packages MySourceDir\* recursively,
 ; so an OutputDir underneath it would try to include its own prior output.
 #define MyOutputDir    "..\..\Setup"
+; Override the engine default (MyAppName + "-Setup-" + version), which would put
+; spaces in the file name. Version still comes from the .csproj on every build.
+#define MyOutputBaseFilename "BankStatementAnalytics-Setup-" + MyAppVersion
 
 ; Trimmed PostgreSQL 18.4 win-x64 binaries (bin/lib/share only, no pgAdmin/docs/headers),
 ; extracted from the official EDB installer via its --extract-only mode, committed under
