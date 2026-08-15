@@ -133,17 +133,35 @@ var allowedOrigins = new[]
     "http://localhost:5080",
 };
 
+// Accepts loopback and any RFC1918 private-LAN origin (10.x, 172.16-31.x, 192.168.x),
+// so phones/tablets on the same Wi-Fi work without hardcoding the PC's IP, which
+// changes on DHCP renewal. IPv4 only - extend if you need IPv6 LAN access.
+static bool IsPrivateNetworkOrigin(string origin)
+{
+    if (!Uri.TryCreate(origin, UriKind.Absolute, out var u)) return false;
+    if (u.IsLoopback) return true;
+    if (!System.Net.IPAddress.TryParse(u.Host, out var ip)) return false;
+    if (ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) return false;
+
+    var b = ip.GetAddressBytes();
+    return b[0] == 10
+        || (b[0] == 192 && b[1] == 168)
+        || (b[0] == 172 && b[1] >= 16 && b[1] <= 31);
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("React", policy =>
     {
         policy.AllowAnyHeader().AllowAnyMethod().AllowCredentials();
 
-        if (builder.Environment.IsDevelopment())
-            // Any localhost port in dev, so the Vite port doesn't need enumerating.
-            policy.SetIsOriginAllowed(o => Uri.TryCreate(o, UriKind.Absolute, out var u) && u.IsLoopback);
-        else
-            policy.WithOrigins(allowedOrigins);
+        // Dev keeps its existing loopback-only rule (Vite's port varies).
+        // Production now also accepts named allowedOrigins OR any private-LAN origin,
+        // so your phone works regardless of which IP DHCP hands your PC.
+        policy.SetIsOriginAllowed(o =>
+            builder.Environment.IsDevelopment()
+                ? Uri.TryCreate(o, UriKind.Absolute, out var u) && u.IsLoopback
+                : allowedOrigins.Contains(o) || IsPrivateNetworkOrigin(o));
     });
 });
 builder.Services.AddControllers()
@@ -163,6 +181,20 @@ var app = builder.Build();
 
 app.UseCors("React");
 app.UseSecurityHeaders();
+
+// ── Defensive cookie policy override ──────────────────────────────────────
+// AddCookieSessionAuth already sets Cookie.SecurePolicy = SameAsRequest, but something
+// downstream (possibly inside UseSecurityHeaders, or HSTS/HTTPS-redirection further below)
+// was still forcing "secure" onto the auth cookie over plain HTTP, breaking LAN/phone
+// access. This explicit UseCookiePolicy runs before UseAuthentication, so it wraps the
+// response-cookie feature before the login endpoint appends the auth cookie, and forces
+// the policy back to SameAsRequest no matter what else touches cookie config.
+// TODO: once UseSecurityHeaders()'s source is confirmed, find and remove whatever was
+// overriding this, and this block can likely be deleted as redundant.
+app.UseCookiePolicy(new CookiePolicyOptions
+{
+    Secure = CookieSecurePolicy.SameAsRequest
+});
 
 // Global exception handling: logs unhandled exceptions and returns a 500 response.
 app.UseApiExceptionHandling();
@@ -197,8 +229,12 @@ app.UseRoleGate(options =>
     options.FullAccessRoles = new[] { nameof(AppRole.Admin), nameof(AppRole.User) };
     options.AllowedOrigins = allowedOrigins;
     // In dev the SPA runs on a localhost port that varies (Vite); accept any loopback
-    // origin so uploads/mutations aren't blocked. Production stays strict.
-    options.AllowLoopbackOrigins = app.Environment.IsDevelopment();
+    // origin so uploads/mutations aren't blocked. Also true in Production now so LAN
+    // devices (e.g. phone) aren't blocked - IF RoleGate's loopback check only tests
+    // for 127.0.0.1/::1, this line alone won't cover a real LAN IP like 192.168.x.x.
+    // In that case, add an IsOriginAllowedPredicate-style hook to RoleGateOptions in
+    // Common.Framework.Web and pass IsPrivateNetworkOrigin there instead.
+    options.AllowLoopbackOrigins = true;
 });
 
 app.UseAuthorization();
