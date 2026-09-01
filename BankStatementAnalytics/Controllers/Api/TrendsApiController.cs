@@ -107,8 +107,45 @@ namespace BankStatementAnalytics.Controllers.Api
                         });
                     break;
 
+                 case "billing_month":
+                {
+                    // Fetch the account's statement day. Use the first id from the resolved set
+                    // when accountId is 0 (e.g. "All accounts" view) as a fallback.
+                    var accountIdToUse = accountId != 0 ? accountId : (ids.FirstOrDefault());
+                    var account = accountIdToUse != 0 ? DbHelper.GetById<Account>((long)accountIdToUse) : null;
+                    int? statementDay = account?.StatementDay;
+
+                    if (statementDay == null)
+                    {
+                        result = all
+                            .GroupBy(t => new DateTime(t.Date.Year, t.Date.Month, 1))
+                            .OrderBy(g => g.Key)
+                            .Select(g => new {
+                                date = g.Key.ToString("yyyy-MM-dd"),
+                                label = g.Key.ToString("MMM yy"),
+                                spend = g.Sum(t => t.Spend),
+                                income = g.Sum(t => t.Income)
+                            });
+                    }
+                    else
+                    {
+                        result = all
+                            .GroupBy(t => GetBillingCycle(t.Date, statementDay.Value))
+                            .OrderBy(g => g.Key)
+                            .Select(g => new {
+                                date = g.Key.ToString("yyyy-MM-dd"),
+                                label = g.Key.ToString("MMM yy"),
+                                cycleStart = GetCycleStart(g.Key, statementDay.Value).ToString("yyyy-MM-dd"),
+                                cycleEnd = GetCycleEnd(g.Key, statementDay.Value).ToString("yyyy-MM-dd"),
+                                spend = g.Sum(t => t.Spend),
+                                income = g.Sum(t => t.Income)
+                            });
+                    }
+                    break;
+                }
+
                 default:
-                    return BadRequest("Invalid period. Use 'day', 'week', or 'month'.");
+                    return BadRequest("Invalid period. Use 'day', 'week', 'month', or 'billing_month'.");
             }
 
             return Ok(result);
@@ -180,6 +217,33 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             int diff = (7 + (dt.DayOfWeek - DayOfWeek.Sunday)) % 7;
             return dt.AddDays(-diff).Date;
+        }
+
+        private static DateTime GetBillingCycle(DateTime date, int statementDay)
+        {
+            int effectiveDay = Math.Min(statementDay, DateTime.DaysInMonth(date.Year, date.Month));
+            if (date.Day <= effectiveDay)
+                return new DateTime(date.Year, date.Month, 1);
+            var nextMonth = new DateTime(date.Year, date.Month, 1).AddMonths(1);
+            return new DateTime(nextMonth.Year, nextMonth.Month, 1);
+        }
+
+        private static DateTime GetCycleEnd(DateTime cycleStart, int statementDay)
+        {
+            int effectiveDay = Math.Min(statementDay, DateTime.DaysInMonth(cycleStart.Year, cycleStart.Month));
+            return new DateTime(cycleStart.Year, cycleStart.Month, effectiveDay);
+        }
+
+        /// <summary>
+        /// Returns the first day of the billing cycle that is labelled by <paramref name="cycleStart"/>.
+        /// For a cycle key of 2026-03-01 with statementDay 23, this returns 2026-02-24
+        /// (the day after the previous month's statement day).
+        /// </summary>
+        private static DateTime GetCycleStart(DateTime cycleStart, int statementDay)
+        {
+            var prevMonth = cycleStart.AddMonths(-1);
+            int effectiveDay = Math.Min(statementDay, DateTime.DaysInMonth(prevMonth.Year, prevMonth.Month));
+            return new DateTime(prevMonth.Year, prevMonth.Month, effectiveDay).AddDays(1);
         }
     }
 }

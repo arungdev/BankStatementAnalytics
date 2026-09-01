@@ -213,6 +213,7 @@ function Layout() {
         setPeriod={setTrendsPeriod}
         dateRange={trendsRange}
         setDateRange={setTrendsRange}
+        isCreditCard={accounts.find(a => a.id === selectedAccountId)?.bankName === 'HDFCCreditCard'}
       />
       : isTransactions
         ? <TransactionsFilters

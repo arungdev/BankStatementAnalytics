@@ -61,7 +61,7 @@ const VISIBLE_GROUPS = 8;
 
 // Per-period column width. Wide enough that the bar pair reads as two solid
 // marks and the two-line date tick never collides with its neighbour.
-const GROUP_WIDTH = { day: 84, week: 74, month: 96 };
+const GROUP_WIDTH = { day: 84, week: 74, month: 96, billing_month: 96 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -103,7 +103,9 @@ const hoverBandPlugin = {
 };
 
 /* ─── TrendsFilters — rendered in Layout's PageHeader filter row ───────── */
-export function TrendsFilters({ period, setPeriod, dateRange, setDateRange }) {
+export function TrendsFilters({ period, setPeriod, dateRange, setDateRange, isCreditCard }) {
+  const periods = ['day', 'week', 'month'];
+  if (isCreditCard) periods.push('billing_month');
   return (
     <>
       <FilterGroup style={{ position: 'relative', zIndex: 500 }}>
@@ -117,9 +119,9 @@ export function TrendsFilters({ period, setPeriod, dateRange, setDateRange }) {
       </FilterGroup>
 
       <FilterGroup label="View">
-        {['day', 'week', 'month'].map(p => (
+        {periods.map(p => (
           <FilterPill key={p} active={period === p} onClick={() => setPeriod(p)}>
-            {p.charAt(0).toUpperCase() + p.slice(1)}
+            {p === 'billing_month' ? 'Billing Month' : p.charAt(0).toUpperCase() + p.slice(1)}
           </FilterPill>
         ))}
       </FilterGroup>
@@ -138,6 +140,7 @@ const Trends = () => {
   const [loading, setLoading] = useState(true);
   const { selectedAccountId } = useAccount();
   const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
+  const isCreditCard = accounts.find(a => a.id === selectedAccountId)?.bankName === 'HDFCCreditCard';
 
   // Theme-resolved chart colors — shared token hook, recomputed on theme flip.
   const T = useChartTheme();
@@ -244,7 +247,7 @@ const Trends = () => {
       const [y, m, day] = (d.date || '').split('-').map(Number);
       if (!y) { ticks.push(d.label); full.push(d.label); return; }
 
-      if (period === 'month') {
+      if (period === 'month' || period === 'billing_month') {
         ticks.push([MONTHS[m - 1], lastGroup === y ? '' : String(y)]);
         full.push(`${MONTHS[m - 1]} ${y}`);
         lastGroup = y;
@@ -289,6 +292,10 @@ const Trends = () => {
     } else if (period === 'week') {
       end = new Date(start);
       end.setDate(end.getDate() + 6);
+    } else if (period === 'billing_month') {
+      const cStart = item.cycleStart ? new Date(item.cycleStart) : start;
+      end = item.cycleEnd ? new Date(item.cycleEnd) : new Date(y, m, 0);
+      return { startDate: toLocalDate(cStart), endDate: toLocalDate(end) };
     } else {
       end = new Date(y, m, 0); // last day of that month
     }

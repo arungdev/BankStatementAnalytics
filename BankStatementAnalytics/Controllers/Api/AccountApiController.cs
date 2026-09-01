@@ -106,7 +106,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public async Task<IActionResult> GetAll()
         {
             var accounts = (await DbHelper.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId))
-                .Select(a => new { a.Id, a.AccountHolderName, a.BankName, MaskedAccountNumber = a.MaskedAccountNumber });
+                .Select(a => new { a.Id, a.AccountHolderName, a.BankName, a.StatementDay, MaskedAccountNumber = a.MaskedAccountNumber });
             return Ok(accounts);
         }
 
@@ -118,7 +118,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!Owns(account))
                 return NotFound();
 
-            var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
+            var dto = new { account.Id, account.AccountHolderName, account.BankName, account.StatementDay, MaskedAccountNumber = account.MaskedAccountNumber };
             return Ok(dto);
         }
 
@@ -135,7 +135,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             await DbHelper.SaveAsync(account);
 
-            var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
+            var dto = new { account.Id, account.AccountHolderName, account.BankName, account.StatementDay, MaskedAccountNumber = account.MaskedAccountNumber };
             return CreatedAtAction(nameof(GetById), new { id = account.Id }, dto);
         }
 
@@ -154,7 +154,7 @@ namespace BankStatementAnalytics.Controllers.Api
             account.AccountHolderName = name;
             await DbHelper.UpdateAsync(account);
 
-            var dto = new { account.Id, account.AccountHolderName, account.BankName, MaskedAccountNumber = account.MaskedAccountNumber };
+            var dto = new { account.Id, account.AccountHolderName, account.BankName, account.StatementDay, MaskedAccountNumber = account.MaskedAccountNumber };
             return Ok(dto);
         }
 
