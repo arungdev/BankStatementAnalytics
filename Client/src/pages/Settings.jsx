@@ -208,26 +208,27 @@ export default function Settings() {
   // Credit-card metadata drafts (credit limit / statement day), keyed by account id.
   // Values usually come parsed from the PDF statement; these fields are the manual fallback.
   const [cardDrafts, setCardDrafts] = useState({});
-  const cardDraft = (acc) => cardDrafts[acc.id] ?? {
+  const cardDraft = (acc) => ({
     creditLimit: acc.creditLimit ?? "",
     statementDay: acc.statementDay ?? "",
     sharedLimitAccountId: acc.sharedLimitAccountId ?? "",
-  };
+    ...(cardDrafts[acc.id] ?? {}),
+  });
   const setCardDraft = (id, patch) =>
     setCardDrafts(prev => ({ ...prev, [id]: { ...(prev[id] ?? {}), ...patch } }));
 
   const handleSaveCardSettings = async (acc) => {
     const d = cardDraft(acc);
     const body = {
-      creditLimit: d.creditLimit === "" ? null : Number(d.creditLimit),
-      statementDay: d.statementDay === "" ? null : Number(d.statementDay),
-      sharedLimitAccountId: d.sharedLimitAccountId === "" ? null : Number(d.sharedLimitAccountId),
+      creditLimit: d.creditLimit === "" || d.creditLimit == null ? null : Number(d.creditLimit),
+      statementDay: d.statementDay === "" || d.statementDay == null ? null : Number(d.statementDay),
+      sharedLimitAccountId: d.sharedLimitAccountId === "" || d.sharedLimitAccountId == null ? null : Number(d.sharedLimitAccountId),
     };
-    if (body.statementDay != null && (body.statementDay < 1 || body.statementDay > 31)) {
+    if (body.statementDay != null && (isNaN(body.statementDay) || body.statementDay < 1 || body.statementDay > 31)) {
       alert("Statement day must be between 1 and 31.");
       return;
     }
-    if (body.creditLimit != null && body.creditLimit < 0) {
+    if (body.creditLimit != null && (isNaN(body.creditLimit) || body.creditLimit < 0)) {
       alert("Credit limit cannot be negative.");
       return;
     }
@@ -1107,73 +1108,105 @@ export default function Settings() {
 
             {/* Credit-card-only metadata: usually auto-filled from the PDF
                 statement; editable here as the manual fallback. */}
-            {acc.bankName === 'HDFCCreditCard' && isAdmin && (
-              <div className="account-panel" id={acc.id === cardAccounts[0]?.id ? 'set-card-details' : undefined}>
-                <div className="account-panel-head">
-                  <div style={{ minWidth: 0 }}>
-                    <h4 className="account-panel-title">Card details</h4>
-                    <span className="account-panel-hint">Used for utilization and billing cycles</span>
+            {acc.bankName === 'HDFCCreditCard' && isAdmin && (() => {
+              const dependentCards = cardAccounts.filter(a => a.sharedLimitAccountId === acc.id);
+              const parentCard = cardAccounts.find(a => a.id === acc.sharedLimitAccountId);
+              const isPrimary = dependentCards.length > 0;
+              const sharedGroupLimit = acc.creditLimit || parentCard?.creditLimit || dependentCards.find(d => d.creditLimit)?.creditLimit;
+              const sharedGroupDay = acc.statementDay || parentCard?.statementDay || dependentCards.find(d => d.statementDay)?.statementDay;
+
+              return (
+                <div className="account-panel" id={acc.id === cardAccounts[0]?.id ? 'set-card-details' : undefined}>
+                  <div className="account-panel-head">
+                    <div style={{ minWidth: 0 }}>
+                      <h4 className="account-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span>Card details</span>
+                        {isPrimary && (
+                          <Badge variant="blue">
+                            Primary limit (Shared with {dependentCards.map(d => `•••• ${d.accountNumber?.slice(-4) || d.id}`).join(', ')})
+                          </Badge>
+                        )}
+                        {parentCard && (
+                          <Badge variant="purple">
+                            Shares limit with •••• {parentCard.accountNumber?.slice(-4) || parentCard.id}
+                          </Badge>
+                        )}
+                      </h4>
+                      <span className="account-panel-hint">
+                        {isPrimary
+                          ? `This card holds the primary credit limit shared with ${dependentCards.map(d => `•••• ${d.accountNumber?.slice(-4) || d.id}`).join(', ')}.`
+                          : parentCard
+                          ? `This card shares the credit limit of primary card •••• ${parentCard.accountNumber?.slice(-4) || parentCard.id}.`
+                          : 'Used for utilization and billing cycles'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div className="settings-field-grid" style={{ marginTop: 'var(--space-4)' }}>
-                  <label className="settings-field sm">
-                    <span className="settings-field-label">Credit limit (₹)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="e.g. 100000"
-                      value={cardDraft(acc).creditLimit}
-                      onChange={(e) => setCardDraft(acc.id, { creditLimit: e.target.value })}
-                      className="field-input"
-                    />
-                  </label>
-                  <label className="settings-field sm">
-                    <span className="settings-field-label">Statement day (1–31)</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="31"
-                      placeholder="e.g. 23"
-                      value={cardDraft(acc).statementDay}
-                      onChange={(e) => setCardDraft(acc.id, { statementDay: e.target.value })}
-                      className="field-input"
-                    />
-                  </label>
-                  {/* HDFC add-on/second cards draw on the primary card's limit;
-                      linking them makes utilization count both cards together. */}
-                  {cardAccounts.some(a => a.id !== acc.id) && (
-                    <label className="settings-field lg">
-                      <span className="settings-field-label">Shares limit with</span>
-                      <select
-                        value={cardDraft(acc).sharedLimitAccountId}
-                        onChange={(e) => setCardDraft(acc.id, { sharedLimitAccountId: e.target.value })}
+                  <div className="settings-field-grid" style={{ marginTop: 'var(--space-4)' }}>
+                    <label className="settings-field sm">
+                      <span className="settings-field-label">Credit limit (₹)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder={sharedGroupLimit && !cardDraft(acc).creditLimit ? `Shared: ${sharedGroupLimit}` : "e.g. 100000"}
+                        value={cardDraft(acc).creditLimit}
+                        onChange={(e) => setCardDraft(acc.id, { creditLimit: e.target.value })}
                         className="field-input"
-                      >
-                        <option value="">None (own limit)</option>
-                        {cardAccounts.filter(a => a.id !== acc.id).map(a => (
-                          <option key={a.id} value={a.id}>
-                            •••• {a.accountNumber?.slice(-4) || a.id}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </label>
+                    <label className="settings-field sm">
+                      <span className="settings-field-label">Statement day (1–31)</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        placeholder={sharedGroupDay && !cardDraft(acc).statementDay ? `Shared: ${sharedGroupDay}` : "e.g. 23"}
+                        value={cardDraft(acc).statementDay}
+                        onChange={(e) => setCardDraft(acc.id, { statementDay: e.target.value })}
+                        className="field-input"
+                      />
+                    </label>
+                    {/* HDFC add-on/second cards draw on the primary card's limit;
+                        linking them makes utilization count both cards together. */}
+                    {cardAccounts.some(a => a.id !== acc.id) && (
+                      <label className="settings-field lg">
+                        <span className="settings-field-label">Shares limit with</span>
+                        <select
+                          value={cardDraft(acc).sharedLimitAccountId}
+                          onChange={(e) => setCardDraft(acc.id, { sharedLimitAccountId: e.target.value })}
+                          className="field-input"
+                          disabled={isPrimary}
+                          title={isPrimary ? "Other cards share this card's limit — unlink them first to change." : undefined}
+                        >
+                          <option value="">
+                            {isPrimary
+                              ? `Primary card (shared by ${dependentCards.map(d => `•••• ${d.accountNumber?.slice(-4) || d.id}`).join(', ')})`
+                              : "None (own limit)"}
+                          </option>
+                          {cardAccounts.filter(a => a.id !== acc.id).map(a => (
+                            <option key={a.id} value={a.id}>
+                              •••• {a.accountNumber?.slice(-4) || a.id}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                  {cardDrafts[acc.id] && (
+                    <div className="account-panel-actions">
+                      <button className="btn primary small" onClick={() => handleSaveCardSettings(acc)}>
+                        Save card details
+                      </button>
+                      <button
+                        className="btn small"
+                        onClick={() => setCardDrafts(prev => { const n = { ...prev }; delete n[acc.id]; return n; })}
+                      >
+                        Discard
+                      </button>
+                    </div>
                   )}
                 </div>
-                {cardDrafts[acc.id] && (
-                  <div className="account-panel-actions">
-                    <button className="btn primary small" onClick={() => handleSaveCardSettings(acc)}>
-                      Save card details
-                    </button>
-                    <button
-                      className="btn small"
-                      onClick={() => setCardDrafts(prev => { const n = { ...prev }; delete n[acc.id]; return n; })}
-                    >
-                      Discard
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+              );
+            })()}
 
             {/* Auto-import: a folder the backend sweeps ~once a minute,
                 importing new statement files like a manual upload. The switch
