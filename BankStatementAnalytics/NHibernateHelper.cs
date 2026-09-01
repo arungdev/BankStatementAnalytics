@@ -4,6 +4,7 @@ using NHibernate;
 using Microsoft.Extensions.Configuration;
 using BankStatementAnalytics.Mapping;
 using BankStatementAnalytics.Mappping;
+using BankStatementAnalytics.Migrations;
 using Common.Framework.Auth;
 using Common.Framework.Data;
 using Common.Framework.Logging;
@@ -66,7 +67,8 @@ namespace BankStatementAnalytics
                             db.Driver<NHibernate.Driver.NpgsqlDriver>();
                             db.Dialect<NHibernate.Dialect.PostgreSQL83Dialect>();
                         }
-                        : null);
+                        : null,
+                    configureMigrations: AppMigrations.Register);
 
                     CreateExpressionIndexes();
 

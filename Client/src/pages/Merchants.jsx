@@ -777,22 +777,36 @@ export default function Merchants() {
       <style>{`
         .mrc-row {
           display: grid;
-          grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 150px 100px 96px 88px 20px;
+          grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(0,1fr) 150px 100px 96px 88px 20px;
           align-items: center;
           gap: 16px;
           padding: 14px 20px;
           border-bottom: 1px solid ${T.borderSub};
+          border-left: 3px solid transparent;
           cursor: pointer;
-          transition: background 0.12s;
+          transition: background 0.12s, border-left-color 0.12s;
         }
         .mrc-row:hover { background: ${T.bg}; }
-        .mrc-row.selected { background: ${T.indigoDim}; }
+        .mrc-row.selected {
+          background: ${T.indigoDim};
+          border-left-color: ${T.indigo};
+        }
         .mrc-row:last-child { border-bottom: none; }
         .mrc-chevron { color: ${T.faint}; opacity: 0; transition: opacity 0.12s, transform 0.12s; }
         .mrc-row:hover .mrc-chevron { opacity: 1; transform: translateX(2px); }
+        .mrc-check-cell {
+          display: flex; align-items: center; justify-content: center;
+          width: 36px; height: 100%; min-height: 40px;
+          cursor: pointer;
+        }
+        .mrc-check {
+          width: 17px; height: 17px;
+          cursor: pointer; accent-color: ${T.indigo};
+          margin: 0; display: block;
+        }
         .mrc-head {
           display: grid;
-          grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 150px 100px 96px 88px 20px;
+          grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(0,1fr) 150px 100px 96px 88px 20px;
           gap: 16px;
           padding: 12px 20px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
