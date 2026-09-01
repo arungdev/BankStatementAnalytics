@@ -872,7 +872,7 @@ export default function Merchants() {
         .mrc-stat:active { transform: scale(0.98); }
         .mrc-stat:focus-visible { outline: 2px solid ${T.indigo}; outline-offset: 2px; }
         @media (max-width: 720px) {
-          .mrc-row, .mrc-head { grid-template-columns: ${isAdmin ? '28px ' : ''}minmax(0,1fr) 88px 20px; }
+          .mrc-row, .mrc-head { grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(0,1fr) 88px 20px; }
           /* Spend survives the squeeze — it's the column worth scanning on a phone. */
           .mrc-col-cat, .mrc-col-meta, .mrc-col-count { display: none; }
         }
@@ -1021,12 +1021,14 @@ export default function Merchants() {
       }}>
         <div className="mrc-head">
           {isAdmin && (
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={(e) => setSelectedIds(e.target.checked ? filteredData.map(c => c.id) : [])}
-              style={{ cursor: 'pointer' }}
-            />
+            <label className="mrc-check-cell">
+              <input
+                type="checkbox"
+                className="mrc-check"
+                checked={allSelected}
+                onChange={(e) => setSelectedIds(e.target.checked ? filteredData.map(c => c.id) : [])}
+              />
+            </label>
           )}
           {[
             { col: 'merchant', label: 'Merchant' },
@@ -1077,13 +1079,17 @@ export default function Merchants() {
                   onClick={() => handleRowClick(merchant.id)}
                 >
                   {isAdmin && (
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(merchant.id)}
+                    <label
+                      className="mrc-check-cell"
                       onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => toggleSelection(merchant.id, e)}
-                      style={{ cursor: 'pointer' }}
-                    />
+                    >
+                      <input
+                        type="checkbox"
+                        className="mrc-check"
+                        checked={selectedIds.includes(merchant.id)}
+                        onChange={(e) => toggleSelection(merchant.id, e)}
+                      />
+                    </label>
                   )}
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>

@@ -736,25 +736,31 @@ export default function Transactions() {
       <style>{`
         .tx-row {
           display: grid;
-          grid-template-columns: ${isAdmin ? '22px ' : ''}76px minmax(0,1fr) 168px 128px;
+          grid-template-columns: ${isAdmin ? '36px ' : ''}76px minmax(0,1fr) 168px 128px;
           align-items: center;
           gap: 16px;
           padding: 13px 20px;
           border-bottom: 1px solid ${T.borderSub};
+          border-left: 3px solid transparent;
           cursor: pointer;
-          transition: background 0.12s;
+          transition: background 0.12s, border-left-color 0.12s;
         }
         .tx-row:hover { background: ${T.bg}; }
-        .tx-row.selected { background: ${T.indigoDim}; }
-        .tx-row.checked { background: ${T.indigoDim}; }
+        .tx-row.selected { background: ${T.indigoDim}; border-left-color: ${T.indigo}; }
+        .tx-row.checked { background: ${T.indigoDim}; border-left-color: ${T.indigo}; }
         .tx-row:last-child { border-bottom: none; }
+        .tx-check-cell {
+          display: flex; align-items: center; justify-content: center;
+          width: 36px; height: 100%; min-height: 40px;
+          cursor: pointer;
+        }
         .tx-check {
-          width: 15px; height: 15px; cursor: pointer; accent-color: ${T.indigo};
+          width: 17px; height: 17px; cursor: pointer; accent-color: ${T.indigo};
           margin: 0; display: block;
         }
         .tx-head {
           display: grid;
-          grid-template-columns: ${isAdmin ? '22px ' : ''}76px minmax(0,1fr) 168px 128px;
+          grid-template-columns: ${isAdmin ? '36px ' : ''}76px minmax(0,1fr) 168px 128px;
           gap: 16px;
           padding: 12px 20px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
@@ -825,7 +831,7 @@ export default function Transactions() {
         }
         .tx-bulk-tag:focus { border-color: ${T.indigo}; }
         @media (max-width: 720px) {
-          .tx-row, .tx-head { grid-template-columns: ${isAdmin ? '22px ' : ''}60px minmax(0,1fr) 110px; }
+          .tx-row, .tx-head { grid-template-columns: ${isAdmin ? '36px ' : ''}60px minmax(0,1fr) 110px; }
           .tx-col-cat { display: none; }
         }
       `}</style>
@@ -952,15 +958,19 @@ export default function Transactions() {
       }}>
         <div className="tx-head">
           {isAdmin && (
-            <input
-              type="checkbox"
-              className="tx-check"
-              checked={allOnPageSelected}
-              ref={el => { if (el) el.indeterminate = !allOnPageSelected && someOnPageSelected; }}
-              onChange={toggleSelectPage}
-              disabled={pageIds.length === 0}
+            <label
+              className="tx-check-cell"
               title={allOnPageSelected ? 'Clear this page' : 'Select every transaction on this page'}
-            />
+            >
+              <input
+                type="checkbox"
+                className="tx-check"
+                checked={allOnPageSelected}
+                ref={el => { if (el) el.indeterminate = !allOnPageSelected && someOnPageSelected; }}
+                onChange={toggleSelectPage}
+                disabled={pageIds.length === 0}
+              />
+            </label>
           )}
           {[
             { col: 'date', label: 'Date' },
@@ -1007,13 +1017,17 @@ export default function Transactions() {
                   onClick={() => { closeUploadHistory(); setSelectedTx(t); }}
                 >
                   {isAdmin && (
-                    <input
-                      type="checkbox"
-                      className="tx-check"
-                      checked={isChecked}
+                    <label
+                      className="tx-check-cell"
                       onClick={(e) => e.stopPropagation()}
-                      onChange={() => toggleSelected(rowKey)}
-                    />
+                    >
+                      <input
+                        type="checkbox"
+                        className="tx-check"
+                        checked={isChecked}
+                        onChange={() => toggleSelected(rowKey)}
+                      />
+                    </label>
                   )}
                   <div style={{ textAlign: 'center' }}>
                     <div className="tnum" style={{ fontSize: '17px', fontWeight: 800, color: T.text, lineHeight: 1.1 }}>
