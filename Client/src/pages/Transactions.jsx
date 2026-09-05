@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import api from "../api/client";
 import { Avatar, Badge, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState } from "@common/client";
@@ -14,7 +14,6 @@ import Pagination from "../components/Pagination";
 import CategoryPicker from "../components/CategoryPicker";
 import { currencyFormatter, maskName } from "../utils/format";
 import { validateCategoryName, findExistingName } from "../utils/categoryName";
-import AmountFilterChip from "../components/AmountFilterChip";
 
 /* ─── Design tokens — mapped to the global CSS variable system so both the
  * inline styles and the injected <style> block below pick up light/dark. */
@@ -116,6 +115,11 @@ export default function Transactions() {
   // Quick filter: min/max transaction amount range
   const [minAmount, setMinAmount] = useState(null);
   const [maxAmount, setMaxAmount] = useState(null);
+  // Quick filter: specific category name ('' = all).
+  const [selectedCategory, setSelectedCategory] = useState('');
+  // Column header dropdown: which header menu is open ('category' | 'amount' | null).
+  const [headerMenu, setHeaderMenu] = useState(null);
+  const headerMenuRef = useRef(null);
 
   // ── Bulk selection ────────────────────────────────────────────────────
   // Set of BankReferences. Kept across pages (so you can page through and act
@@ -144,6 +148,16 @@ export default function Transactions() {
     }, 300);
     return () => clearTimeout(handle);
   }, [searchInput]);
+
+  // Close column header dropdown on outside click.
+  useEffect(() => {
+    if (!headerMenu) return;
+    const handler = (e) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target)) setHeaderMenu(null);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [headerMenu]);
 
   // Sidebar state
   const [selectedTx, setSelectedTx] = useState(null);
@@ -365,6 +379,7 @@ export default function Transactions() {
     }
     if (minAmount != null) params.append('minAmount', minAmount);
     if (maxAmount != null) params.append('maxAmount', maxAmount);
+    if (selectedCategory) params.append('category', selectedCategory);
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -382,6 +397,7 @@ export default function Transactions() {
 
         if (!isServerPaginated) {
           if (uncategorizedOnly) allTx = allTx.filter(t => !t.category);
+          if (selectedCategory) allTx = allTx.filter(t => t.category === selectedCategory);
           if (search) {
             const q = search.toLowerCase();
             allTx = allTx.filter(t =>
@@ -444,7 +460,7 @@ export default function Transactions() {
         setHasLoaded(true);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveAccountId, accountScope, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search, uploadFilter, sortBy, sortDir, minAmount, maxAmount]);
+  }, [effectiveAccountId, accountScope, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search, uploadFilter, sortBy, sortDir, minAmount, maxAmount, selectedCategory]);
 
   if (loading && !hasLoaded) {
     return (
@@ -792,7 +808,45 @@ export default function Transactions() {
         }
         .tx-sort:hover { color: ${T.muted}; }
         .tx-sort.active { color: ${T.indigo}; }
+        .tx-sort.filtered { color: ${T.green}; }
+        .tx-sort.filtered.active { color: ${T.indigo}; }
         .tx-sort-arrow { font-size: 8px; line-height: 1; }
+        .tx-header-menu {
+          position: absolute; top: calc(100% + 6px); left: 0;
+          min-width: 200px; max-height: 320px; overflow-y: auto;
+          background: ${T.surface}; border: 1px solid ${T.border};
+          border-radius: 10px; box-shadow: 0 16px 48px rgba(0,0,0,0.14);
+          z-index: 100; padding: 5px;
+          animation: filter-chip-menu-pop 0.13s ease;
+          scrollbar-width: thin; scrollbar-color: var(--gray-300) transparent;
+          text-transform: none; letter-spacing: normal;
+        }
+        .tx-header-menu-right { left: auto; right: 0; }
+        .tx-header-group {
+          padding: 7px 10px 3px; font-size: 9px; font-weight: 700;
+          color: ${T.faint}; letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .tx-header-group:not(:first-child) {
+          margin-top: 4px; border-top: 1px solid ${T.borderSub}; padding-top: 9px;
+        }
+        .tx-header-opt {
+          display: flex; align-items: center; gap: 10px; width: 100%;
+          padding: 7px 10px; border: none; border-radius: 7px;
+          background: transparent; color: ${T.text};
+          font-family: inherit; font-size: 13px; font-weight: 600;
+          text-align: left; cursor: pointer; text-transform: none; letter-spacing: normal;
+        }
+        .tx-header-opt:hover { background: var(--gray-100); }
+        .tx-header-opt.active { background: ${T.indigoDim}; color: ${T.indigo}; }
+        .tx-header-input {
+          width: 100%; padding: 6px 10px; margin-top: 2px;
+          border: 1px solid ${T.border}; border-radius: 7px;
+          background: ${T.surface}; color: ${T.text};
+          font-family: inherit; font-size: 13px; font-weight: 600;
+          outline: none; box-sizing: border-box;
+          text-transform: none; letter-spacing: normal;
+        }
+        .tx-header-input:focus { border-color: ${T.indigo}; }
         .tx-tag {
           display: inline-flex; align-items: center; gap: 4px;
           background: ${T.blueDim}; color: ${T.blue};
@@ -884,11 +938,6 @@ export default function Transactions() {
         >
           <FiFilter size={14} /> Uncategorized
         </Button>
-        <AmountFilterChip
-          minAmount={minAmount}
-          maxAmount={maxAmount}
-          onChange={({ min, max }) => { setMinAmount(min); setMaxAmount(max); setCurrentPage(1); }}
-        />
 
         {activeUploadFilter && (
           <Badge
@@ -997,22 +1046,174 @@ export default function Transactions() {
           {[
             { col: 'date', label: 'Date' },
             { col: 'merchant', label: 'Merchant' },
-            { col: 'category', label: 'Category', className: 'tx-col-cat' },
-            { col: 'amount', label: 'Amount', style: { justifyContent: 'flex-end' } },
-          ].map(({ col, label, className, style }) => (
-            <span
-              key={col}
-              className={`tx-sort${sortBy === col ? ' active' : ''}${className ? ` ${className}` : ''}`}
-              style={style}
-              onClick={() => toggleSort(col)}
-              title={`Sort by ${label.toLowerCase()}`}
-            >
-              {label}
-              {sortBy === col && (
-                <span className="tx-sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>
-              )}
-            </span>
-          ))}
+            { col: 'category', label: 'Category', className: 'tx-col-cat', filterable: true },
+            { col: 'amount', label: 'Amount', style: { justifyContent: 'flex-end' }, filterable: true },
+          ].map(({ col, label, className, style, filterable }) => {
+            const isSorted = sortBy === col;
+            const isFiltered = col === 'category' ? !!selectedCategory : col === 'amount' ? (minAmount != null || maxAmount != null) : false;
+            const isMenuOpen = headerMenu === col;
+            const isRight = col === 'amount';
+            return (
+              <span
+                key={col}
+                className={`tx-sort${isSorted ? ' active' : ''}${isFiltered ? ' filtered' : ''}${className ? ` ${className}` : ''}`}
+                style={{ ...style, position: filterable ? 'relative' : undefined }}
+                onClick={() => {
+                  if (filterable) {
+                    setHeaderMenu(v => v === col ? null : col);
+                  } else {
+                    toggleSort(col);
+                  }
+                }}
+                title={filterable ? `Sort & filter by ${label.toLowerCase()}` : `Sort by ${label.toLowerCase()}`}
+              >
+                {label}
+                {isSorted && (
+                  <span className="tx-sort-arrow">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                )}
+                {!isSorted && filterable && (
+                  <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '2px' }}>▾</span>
+                )}
+                {isFiltered && <span style={{ color: T.green, marginLeft: '2px', fontSize: '10px' }}>●</span>}
+
+                {/* ── Column header dropdown (sort + filter) ── */}
+                {filterable && isMenuOpen && (
+                  <div
+                    ref={headerMenuRef}
+                    className={`tx-header-menu${isRight ? ' tx-header-menu-right' : ''}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Sort section */}
+                    <div className="tx-header-group">Sort</div>
+                    <button
+                      type="button"
+                      className={`tx-header-opt${isSorted && sortDir === 'asc' ? ' active' : ''}`}
+                      onClick={() => {
+                        setSortBy(col);
+                        setSortDir('asc');
+                        setCurrentPage(1);
+                      }}
+                    >
+                      ▲ Ascending
+                    </button>
+                    <button
+                      type="button"
+                      className={`tx-header-opt${isSorted && sortDir === 'desc' ? ' active' : ''}`}
+                      onClick={() => {
+                        setSortBy(col);
+                        setSortDir('desc');
+                        setCurrentPage(1);
+                      }}
+                    >
+                      ▼ Descending
+                    </button>
+                    {isSorted && (col !== 'date' || sortDir !== 'desc') && (
+                      <button
+                        type="button"
+                        className="tx-header-opt"
+                        onClick={() => {
+                          setSortBy('date');
+                          setSortDir('desc');
+                          setCurrentPage(1);
+                        }}
+                      >
+                        ✕ Reset sort
+                      </button>
+                    )}
+
+                    {/* Filter section — Category */}
+                    {col === 'category' && (
+                      <>
+                        <div className="tx-header-group">Filter</div>
+                        <button
+                          type="button"
+                          className={`tx-header-opt${!selectedCategory ? ' active' : ''}`}
+                          onClick={() => {
+                            setSelectedCategory('');
+                            setCurrentPage(1);
+                            setHeaderMenu(null);
+                          }}
+                        >
+                          All Categories
+                        </button>
+                        {categories.map(cat => (
+                          <button
+                            type="button"
+                            key={cat.id || cat.name}
+                            className={`tx-header-opt${selectedCategory === cat.name ? ' active' : ''}`}
+                            onClick={() => {
+                              setSelectedCategory(cat.name);
+                              setCurrentPage(1);
+                              setHeaderMenu(null);
+                            }}
+                          >
+                            {cat.name}
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Filter section — Amount (min/max) */}
+                    {col === 'amount' && (
+                      <>
+                        <div className="tx-header-group">Filter</div>
+                        <div style={{ padding: '4px 10px' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
+                            Min (₹)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="No minimum"
+                            className="tx-header-input"
+                            value={minAmount ?? ''}
+                            onChange={(e) => {
+                              setMinAmount(e.target.value !== '' ? Number(e.target.value) : null);
+                              setCurrentPage(1);
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setHeaderMenu(null); }}
+                          />
+                        </div>
+                        <div style={{ padding: '4px 10px' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
+                            Max (₹)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="No maximum"
+                            className="tx-header-input"
+                            value={maxAmount ?? ''}
+                            onChange={(e) => {
+                              setMaxAmount(e.target.value !== '' ? Number(e.target.value) : null);
+                              setCurrentPage(1);
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setHeaderMenu(null); }}
+                          />
+                        </div>
+                        {(minAmount != null || maxAmount != null) && (
+                          <button
+                            type="button"
+                            className="tx-header-opt"
+                            onClick={() => {
+                              setMinAmount(null);
+                              setMaxAmount(null);
+                              setCurrentPage(1);
+                              setHeaderMenu(null);
+                            }}
+                          >
+                            ✕ Clear filter
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </span>
+            );
+          })}
         </div>
 
         <datalist id="tx-row-tags-list">

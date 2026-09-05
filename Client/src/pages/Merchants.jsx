@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { FiFilter } from "react-icons/fi";
+import { FiFilter, FiChevronDown } from "react-icons/fi";
 import api from "../api/client";
 import { Avatar, avatarColors, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState, useTheme } from "@common/client";
 import { getToken } from "../theme/chartTheme";
@@ -13,6 +13,7 @@ import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { usePrivacy } from "../context/usePrivacy";
 import AmountFilterChip from "../components/AmountFilterChip";
+import "../components/filter-chip.css";
 
 /* ─── Design tokens — mapped to the global CSS variable system so DOM inline
  * styles pick up light/dark automatically. (SVG chart colors can't use var()
@@ -80,6 +81,11 @@ export default function Merchants() {
   // Quick filter: min/max spent amount range.
   const [minSpent, setMinSpent] = useState(null);
   const [maxSpent, setMaxSpent] = useState(null);
+  // Quick filter: specific category name ('' = all).
+  const [selectedCategory, setSelectedCategory] = useState('');
+  // Column header dropdown: which header menu is open ('category' | 'spent' | null).
+  const [headerMenu, setHeaderMenu] = useState(null);
+  const headerMenuRef = useRef(null);
 
   // Sidebar state
   const [selectedMerchantId, setSelectedMerchantId] = useState(null);
@@ -199,6 +205,16 @@ export default function Merchants() {
     closeSidebar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountQuery]);
+
+  // Close column header dropdown on outside click.
+  useEffect(() => {
+    if (!headerMenu) return;
+    const handler = (e) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target)) setHeaderMenu(null);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [headerMenu]);
 
   const toggleSelection = (id, e) => {
     e.stopPropagation();
@@ -718,6 +734,7 @@ export default function Merchants() {
     if (mergedOnly && !(merchant.aliases?.length > 0)) return false;
     if (minSpent != null && (merchant.totalSpent ?? 0) < minSpent) return false;
     if (maxSpent != null && (merchant.totalSpent ?? 0) > maxSpent) return false;
+    if (selectedCategory && merchant.category !== selectedCategory) return false;
     return merchant.friendlyName?.toLowerCase().includes(term) ||
            merchant.name?.toLowerCase().includes(term) ||
            merchant.category?.toLowerCase().includes(term) ||
@@ -828,6 +845,43 @@ export default function Merchants() {
         }
         .mrc-sort:hover { color: ${T.text}; }
         .mrc-sort.active { color: ${T.indigo}; }
+        .mrc-sort.filtered { color: ${T.green}; }
+        .mrc-sort.filtered.active { color: ${T.indigo}; }
+        .mrc-header-menu {
+          position: absolute; top: calc(100% + 6px); left: 0;
+          min-width: 200px; max-height: 320px; overflow-y: auto;
+          background: ${T.surface}; border: 1px solid ${T.border};
+          border-radius: 10px; box-shadow: 0 16px 48px rgba(0,0,0,0.14);
+          z-index: 100; padding: 5px;
+          animation: filter-chip-menu-pop 0.13s ease;
+          scrollbar-width: thin; scrollbar-color: var(--gray-300) transparent;
+        }
+        .mrc-header-menu-right { left: auto; right: 0; }
+        .mrc-header-group {
+          padding: 7px 10px 3px; font-size: 9px; font-weight: 700;
+          color: ${T.faint}; letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .mrc-header-group:not(:first-child) {
+          margin-top: 4px; border-top: 1px solid ${T.borderSub}; padding-top: 9px;
+        }
+        .mrc-header-opt {
+          display: flex; align-items: center; gap: 10px; width: 100%;
+          padding: 7px 10px; border: none; border-radius: 7px;
+          background: transparent; color: ${T.text};
+          font-family: inherit; font-size: 13px; font-weight: 600;
+          text-align: left; cursor: pointer; text-transform: none; letter-spacing: normal;
+        }
+        .mrc-header-opt:hover { background: var(--gray-100); }
+        .mrc-header-opt.active { background: ${T.indigoDim}; color: ${T.indigo}; }
+        .mrc-header-input {
+          width: 100%; padding: 6px 10px; margin-top: 2px;
+          border: 1px solid ${T.border}; border-radius: 7px;
+          background: ${T.surface}; color: ${T.text};
+          font-family: inherit; font-size: 13px; font-weight: 600;
+          outline: none; box-sizing: border-box;
+          text-transform: none; letter-spacing: normal;
+        }
+        .mrc-header-input:focus { border-color: ${T.indigo}; }
         .mrc-chip {
           display: inline-flex; align-items: center; gap: 4px;
           font-size: 11px; font-weight: 600; color: ${T.muted};
@@ -991,11 +1045,6 @@ export default function Merchants() {
         >
           <FiFilter size={14} /> Uncategorized
         </Button>
-        <AmountFilterChip
-          minAmount={minSpent}
-          maxAmount={maxSpent}
-          onChange={({ min, max }) => { setMinSpent(min); setMaxSpent(max); }}
-        />
         {/* Still offered when everything is marked, so the marked tab stays reachable. */}
         {isAdmin && allMergeSuggestions.length > 0 && (
           <Button
@@ -1043,22 +1092,117 @@ export default function Merchants() {
           )}
           {[
             { col: 'merchant', label: 'Merchant' },
-            { col: 'category', label: 'Category', className: 'mrc-col-cat' },
+            { col: 'category', label: 'Category', className: 'mrc-col-cat', filterable: true },
             { col: 'identifiers', label: 'Identifiers', className: 'mrc-col-meta' },
             { col: 'transactions', label: 'Transactions', className: 'mrc-col-count', right: true },
-            { col: 'spent', label: 'Spent', right: true },
-          ].map(({ col, label, className, right }) => (
-            <span key={col} className={className} style={right ? { textAlign: 'right' } : undefined}>
-              <button
-                type="button"
-                className={`mrc-sort${listSort?.col === col ? ' active' : ''}`}
-                onClick={() => toggleListSort(col)}
-                title={`Sort by ${label.toLowerCase()}`}
-              >
-                {label} {listSort?.col === col ? (listSort.dir === 'desc' ? '▾' : '▴') : '⇅'}
-              </button>
-            </span>
-          ))}
+            { col: 'spent', label: 'Spent', right: true, filterable: true },
+          ].map(({ col, label, className, right, filterable }) => {
+            const isSorted = listSort?.col === col;
+            const isFiltered = col === 'category' ? !!selectedCategory : col === 'spent' ? (minSpent != null || maxSpent != null) : false;
+            const isMenuOpen = headerMenu === col;
+            return (
+              <span key={col} className={className} style={{ ...(right ? { textAlign: 'right' } : {}), position: filterable ? 'relative' : undefined }}>
+                <button
+                  type="button"
+                  className={`mrc-sort${isSorted ? ' active' : ''}${isFiltered ? ' filtered' : ''}`}
+                  onClick={() => filterable ? setHeaderMenu(v => v === col ? null : col) : toggleListSort(col)}
+                  title={filterable ? `Sort & filter by ${label.toLowerCase()}` : `Sort by ${label.toLowerCase()}`}
+                >
+                  {label} {isSorted ? (listSort.dir === 'desc' ? '▾' : '▴') : '⇅'}
+                  {isFiltered && <span style={{ color: T.green, marginLeft: '2px', fontSize: '10px' }}>●</span>}
+                </button>
+
+                {/* ── Column header dropdown (sort + filter) ── */}
+                {filterable && isMenuOpen && (
+                  <div ref={headerMenuRef} className={`mrc-header-menu${right ? ' mrc-header-menu-right' : ''}`}>
+                    {/* Sort section */}
+                    <div className="mrc-header-group">Sort</div>
+                    <button
+                      className={`mrc-header-opt${isSorted && listSort.dir === 'asc' ? ' active' : ''}`}
+                      onClick={() => { setListSort({ col, dir: 'asc' }); }}
+                    >
+                      ▴ Ascending
+                    </button>
+                    <button
+                      className={`mrc-header-opt${isSorted && listSort.dir === 'desc' ? ' active' : ''}`}
+                      onClick={() => { setListSort({ col, dir: 'desc' }); }}
+                    >
+                      ▾ Descending
+                    </button>
+                    {isSorted && (
+                      <button
+                        className="mrc-header-opt"
+                        onClick={() => { setListSort(null); }}
+                      >
+                        ✕ Clear sort
+                      </button>
+                    )}
+
+                    {/* Filter section — Category */}
+                    {col === 'category' && (
+                      <>
+                        <div className="mrc-header-group">Filter</div>
+                        <button
+                          className={`mrc-header-opt${!selectedCategory ? ' active' : ''}`}
+                          onClick={() => { setSelectedCategory(''); setHeaderMenu(null); }}
+                        >
+                          All Categories
+                        </button>
+                        {categoriesList.map(cat => (
+                          <button
+                            key={cat.name}
+                            className={`mrc-header-opt${selectedCategory === cat.name ? ' active' : ''}`}
+                            onClick={() => { setSelectedCategory(cat.name); setHeaderMenu(null); }}
+                          >
+                            {cat.name}
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Filter section — Spent (min/max) */}
+                    {col === 'spent' && (
+                      <>
+                        <div className="mrc-header-group">Filter</div>
+                        <div style={{ padding: '4px 10px' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
+                            Min (₹)
+                          </label>
+                          <input
+                            type="number" min="0" step="any" placeholder="No minimum"
+                            className="mrc-header-input"
+                            value={minSpent ?? ''}
+                            onChange={(e) => setMinSpent(e.target.value !== '' ? Number(e.target.value) : null)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setHeaderMenu(null); }}
+                          />
+                        </div>
+                        <div style={{ padding: '4px 10px' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>
+                            Max (₹)
+                          </label>
+                          <input
+                            type="number" min="0" step="any" placeholder="No maximum"
+                            className="mrc-header-input"
+                            value={maxSpent ?? ''}
+                            onChange={(e) => setMaxSpent(e.target.value !== '' ? Number(e.target.value) : null)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') setHeaderMenu(null); }}
+                          />
+                        </div>
+                        {(minSpent != null || maxSpent != null) && (
+                          <button
+                            className="mrc-header-opt"
+                            onClick={() => { setMinSpent(null); setMaxSpent(null); setHeaderMenu(null); }}
+                          >
+                            ✕ Clear filter
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </span>
+            );
+          })}
           <span />
         </div>
 

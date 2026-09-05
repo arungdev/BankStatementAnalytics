@@ -142,7 +142,8 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] string sortBy = null,
      [FromQuery] string sortDir = null,
      [FromQuery] decimal? minAmount = null,
-     [FromQuery] decimal? maxAmount = null)
+     [FromQuery] decimal? maxAmount = null,
+     [FromQuery] string category = null)
         {
             using var session = DbHelper.GetSession();
 
@@ -216,6 +217,14 @@ namespace BankStatementAnalytics.Controllers.Api
                 query = query.Where(t => (t.Debit + t.Credit) >= minAmount.Value);
             if (maxAmount.HasValue)
                 query = query.Where(t => (t.Debit + t.Credit) <= maxAmount.Value);
+
+            if (!string.IsNullOrWhiteSpace(category))
+            {
+                var cat = category.Trim();
+                query = query.Where(t =>
+                    (t.CategoryOverride != null && t.CategoryOverride != "" && t.CategoryOverride == cat) ||
+                    ((t.CategoryOverride == null || t.CategoryOverride == "") && t.CounterParty != null && t.CounterParty.Category == cat));
+            }
 
             // Column sorting — whitelisted fields only; anything else falls back to
             // the default date-descending order. Category/merchant sort on the same
