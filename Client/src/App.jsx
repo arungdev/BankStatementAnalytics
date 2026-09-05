@@ -47,7 +47,14 @@ function AuthGate() {
 
   // Same markup/classes as the pre-mount splash in index.html (styled there),
   // so the hand-off from static HTML to React is seamless.
-  if (loading) return <div className="boot-splash"><div className="boot-spinner" /></div>;
+  if (loading) {
+    return (
+      <div className="boot-splash">
+        <img src="/icon-192.png" alt="Bank Analytics" className="boot-logo" />
+        <div className="boot-spinner" />
+      </div>
+    );
+  }
 
   return (
     <Routes>
