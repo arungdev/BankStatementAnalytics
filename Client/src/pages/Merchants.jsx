@@ -12,6 +12,7 @@ import CategoryPicker from "../components/CategoryPicker";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { usePrivacy } from "../context/usePrivacy";
+import AmountFilterChip from "../components/AmountFilterChip";
 
 /* ─── Design tokens — mapped to the global CSS variable system so DOM inline
  * styles pick up light/dark automatically. (SVG chart colors can't use var()
@@ -76,6 +77,9 @@ export default function Merchants() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   // Quick filter: show only merchants that have merged aliases (from the "Merged groups" tile).
   const [mergedOnly, setMergedOnly] = useState(false);
+  // Quick filter: min/max spent amount range.
+  const [minSpent, setMinSpent] = useState(null);
+  const [maxSpent, setMaxSpent] = useState(null);
 
   // Sidebar state
   const [selectedMerchantId, setSelectedMerchantId] = useState(null);
@@ -712,6 +716,8 @@ export default function Merchants() {
     if (categoryFilter === 'uncategorized' && merchant.category) return false;
     if (categoryFilter === 'categorized' && !merchant.category) return false;
     if (mergedOnly && !(merchant.aliases?.length > 0)) return false;
+    if (minSpent != null && (merchant.totalSpent ?? 0) < minSpent) return false;
+    if (maxSpent != null && (merchant.totalSpent ?? 0) > maxSpent) return false;
     return merchant.friendlyName?.toLowerCase().includes(term) ||
            merchant.name?.toLowerCase().includes(term) ||
            merchant.category?.toLowerCase().includes(term) ||
@@ -985,6 +991,11 @@ export default function Merchants() {
         >
           <FiFilter size={14} /> Uncategorized
         </Button>
+        <AmountFilterChip
+          minAmount={minSpent}
+          maxAmount={maxSpent}
+          onChange={({ min, max }) => { setMinSpent(min); setMaxSpent(max); }}
+        />
         {/* Still offered when everything is marked, so the marked tab stays reachable. */}
         {isAdmin && allMergeSuggestions.length > 0 && (
           <Button

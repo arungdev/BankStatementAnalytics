@@ -83,11 +83,12 @@ namespace BankStatementAnalytics.Controllers.Api
                     // uploaded statement is missing.
                     latestSummaryByAccount.TryGetValue(a.Id, out var latest);
 
-                    balance = latest?.StatementDate != null && latest.TotalDue != null
+                    var raw = latest?.StatementDate != null && latest.TotalDue != null
                         ? latest.TotalDue.Value + (txns
                             .Where(t => t.TransactionDate > latest.StatementDate.Value)
                             .Sum(t => (decimal?)(t.Debit - t.Credit)) ?? 0m)
                         : txns.Sum(t => (decimal?)(t.Debit - t.Credit));
+                    balance = raw.HasValue ? Math.Max(0m, raw.Value) : (decimal?)null;
                 }
                 else
                 {
@@ -139,7 +140,9 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] string search = null,
      [FromQuery] Guid? uploadId = null,
      [FromQuery] string sortBy = null,
-     [FromQuery] string sortDir = null)
+     [FromQuery] string sortDir = null,
+     [FromQuery] decimal? minAmount = null,
+     [FromQuery] decimal? maxAmount = null)
         {
             using var session = DbHelper.GetSession();
 
@@ -208,6 +211,11 @@ namespace BankStatementAnalytics.Controllers.Api
                     t.Description.ToLower().Contains(term) ||
                     t.UpiReference.ToLower().Contains(term));
             }
+
+            if (minAmount.HasValue)
+                query = query.Where(t => (t.Debit + t.Credit) >= minAmount.Value);
+            if (maxAmount.HasValue)
+                query = query.Where(t => (t.Debit + t.Credit) <= maxAmount.Value);
 
             // Column sorting — whitelisted fields only; anything else falls back to
             // the default date-descending order. Category/merchant sort on the same

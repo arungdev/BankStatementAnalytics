@@ -17,7 +17,7 @@ const monogram = (name = '') => {
   return (words[0] || '?').slice(0, 3).toUpperCase();
 };
 
-const last4 = (acc) => acc.accountNumber?.slice(-4) || '****';
+const last4 = (acc) => (acc.maskedAccountNumber || acc.accountNumber)?.slice(-4) || '****';
 
 /**
  * Account selector — a self-labeled "chip" (muted Account prefix + value +

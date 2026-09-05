@@ -14,6 +14,7 @@ import Pagination from "../components/Pagination";
 import CategoryPicker from "../components/CategoryPicker";
 import { currencyFormatter, maskName } from "../utils/format";
 import { validateCategoryName, findExistingName } from "../utils/categoryName";
+import AmountFilterChip from "../components/AmountFilterChip";
 
 /* ─── Design tokens — mapped to the global CSS variable system so both the
  * inline styles and the injected <style> block below pick up light/dark. */
@@ -111,6 +112,10 @@ export default function Transactions() {
     setUncategorizedOnly(v => !v);
     setCurrentPage(1);
   };
+
+  // Quick filter: min/max transaction amount range
+  const [minAmount, setMinAmount] = useState(null);
+  const [maxAmount, setMaxAmount] = useState(null);
 
   // ── Bulk selection ────────────────────────────────────────────────────
   // Set of BankReferences. Kept across pages (so you can page through and act
@@ -358,6 +363,8 @@ export default function Transactions() {
       params.append('sortBy', sortBy);
       params.append('sortDir', sortDir);
     }
+    if (minAmount != null) params.append('minAmount', minAmount);
+    if (maxAmount != null) params.append('maxAmount', maxAmount);
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -398,6 +405,16 @@ export default function Transactions() {
             return true;
           });
 
+          // Client-side amount filtering
+          if (minAmount != null || maxAmount != null) {
+            allTx = allTx.filter(t => {
+              const amt = Math.max(t.credit || 0, t.debit || 0);
+              if (minAmount != null && amt < minAmount) return false;
+              if (maxAmount != null && amt > maxAmount) return false;
+              return true;
+            });
+          }
+
           // Mirror the server-side column sort for the plain-array response shape.
           const dir = sortDir === 'asc' ? 1 : -1;
           const amountOf = (t) => Math.max(t.credit || 0, t.debit || 0);
@@ -427,7 +444,7 @@ export default function Transactions() {
         setHasLoaded(true);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveAccountId, accountScope, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search, uploadFilter, sortBy, sortDir]);
+  }, [effectiveAccountId, accountScope, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search, uploadFilter, sortBy, sortDir, minAmount, maxAmount]);
 
   if (loading && !hasLoaded) {
     return (
@@ -867,6 +884,11 @@ export default function Transactions() {
         >
           <FiFilter size={14} /> Uncategorized
         </Button>
+        <AmountFilterChip
+          minAmount={minAmount}
+          maxAmount={maxAmount}
+          onChange={({ min, max }) => { setMinAmount(min); setMaxAmount(max); setCurrentPage(1); }}
+        />
 
         {activeUploadFilter && (
           <Badge

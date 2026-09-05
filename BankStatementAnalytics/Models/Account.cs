@@ -54,7 +54,7 @@ namespace BankStatementAnalytics.Models
 
                 var digits = AccountNumber.Trim();
                 int len = digits.Length;
-                if (len <= 4) return new string('X', len);
+                if (len <= 4) return digits;
                 return new string('X', len - 4) + digits.Substring(len - 4);
             }
         }
@@ -65,7 +65,7 @@ namespace BankStatementAnalytics.Models
             if (string.IsNullOrEmpty(number)) return string.Empty;
             var digits = number.Trim();
             int len = digits.Length;
-            if (len <= 4) return new string('X', len);
+            if (len <= 4) return digits;
             return new string('X', len - 4) + digits.Substring(len - 4);
         }
     }

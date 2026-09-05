@@ -44,6 +44,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (group.Count > 1)
             {
                 sharedCards = new List<object>();
+                groupOutstanding = 0m;
                 foreach (var member in group)
                 {
                     decimal memberOutstanding;
@@ -56,9 +57,9 @@ namespace BankStatementAnalytics.Controllers.Api
                         var mSummary = LatestSummary(session, (int)member.Id);
                         memberOutstanding = OutstandingFor(
                             LoadCardTransactions(session, (int)member.Id, member.BankName), mSummary);
-                        groupOutstanding += memberOutstanding;
                         creditLimit ??= mSummary?.CreditLimit ?? member.CreditLimit;
                     }
+                    groupOutstanding += memberOutstanding;
                     sharedCards.Add(new
                     {
                         AccountId = member.Id,
@@ -324,14 +325,18 @@ namespace BankStatementAnalytics.Controllers.Api
         /// <summary>
         /// Anchor the outstanding on the latest statement's billed total plus
         /// everything since — the raw Σ(Debit−Credit) goes negative whenever
-        /// history before the first uploaded statement is missing.
+        /// history before the first uploaded statement is missing. Clamped to
+        /// non-negative so unanchored credits/payments never drag down the balance.
         /// </summary>
-        private static decimal OutstandingFor(List<CardTxn> txns, CardStatementSummary? summary) =>
-            summary?.StatementDate != null && summary.TotalDue != null
+        private static decimal OutstandingFor(List<CardTxn> txns, CardStatementSummary? summary)
+        {
+            var raw = summary?.StatementDate != null && summary.TotalDue != null
                 ? summary.TotalDue.Value + txns
                     .Where(t => t.TransactionDate > summary.StatementDate.Value)
                     .Sum(t => t.Debit - t.Credit)
                 : txns.Sum(t => t.Debit - t.Credit);
+            return Math.Max(0m, raw);
+        }
 
         /// <summary>
         /// Every card drawing on the same limit as <paramref name="account"/> —
