@@ -1376,6 +1376,14 @@ export default function Transactions() {
 
                   <div className="tnum" style={{ textAlign: 'right', fontSize: '15px', fontWeight: 800, color: isCredit ? T.green : T.red, letterSpacing: '-0.3px' }}>
                     {isCredit ? '+' : '−'}{currencyFormatter.format(Math.max(t.credit, t.debit))}
+                    {t.originalCurrency && t.originalAmount && (
+                      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '2px' }}>
+                        <span style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: '4px', border: '1px solid var(--border-subtle)', marginRight: '4px', fontSize: '10px' }}>
+                          🌐 {t.originalCurrency}
+                        </span>
+                        {t.originalCurrency} {Number(t.originalAmount).toFixed(2)}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

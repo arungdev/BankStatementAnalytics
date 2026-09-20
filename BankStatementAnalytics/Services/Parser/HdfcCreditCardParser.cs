@@ -24,6 +24,10 @@ namespace BankStatementAnalytics.Services.Parser
             new(@"^(EMI|FT)-\s*(.+?)-(\d+)\s*-\s*(.+?)\s*-\s*$",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly Regex ForexRegex =
+            new(@"\b(USD|EUR|GBP|AED|SGD|AUD|CAD|JPY|CHF|CNY|HKD|NZD|THB)\s*([0-9]+(?:\.[0-9]{1,2})?)\b",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         // ── IBankParser explicit implementation ───────────────────────────
         IEnumerable<BankTransaction> IBankParser.Parse(string text, int accountId)
             => Parse(text, accountId);
@@ -157,6 +161,8 @@ namespace BankStatementAnalytics.Services.Parser
 
             if (string.IsNullOrWhiteSpace(narration)) return;
 
+            DetectForex(narration, tx);
+
             // UPI
             if (narration.StartsWith("UPI-", StringComparison.OrdinalIgnoreCase))
             {
@@ -254,6 +260,21 @@ namespace BankStatementAnalytics.Services.Parser
             // Fallback — use first segment as counterparty
             tx.Mode = "POS";
             counterPartyName = narration.Split('-').FirstOrDefault()?.Trim();
+        }
+
+        private static void DetectForex(string text, BankTransaction tx)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            var match = ForexRegex.Match(text);
+            if (match.Success)
+            {
+                tx.OriginalCurrency = match.Groups[1].Value.ToUpperInvariant();
+                if (decimal.TryParse(match.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var origAmt))
+                {
+                    tx.OriginalAmount = origAmt;
+                    tx.ForexMarkupPercent = 3.5m;
+                }
+            }
         }
 
         // ── Reference generator ───────────────────────────────────────────

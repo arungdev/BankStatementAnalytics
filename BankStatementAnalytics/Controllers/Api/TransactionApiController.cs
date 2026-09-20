@@ -46,7 +46,10 @@ namespace BankStatementAnalytics.Controllers.Api
                     MerchantSubCategory = t.CounterParty != null ? t.CounterParty.SubCategory : null,
                     t.CategoryOverride,
                     t.SubCategoryOverride,
-                    t.Note
+                    t.Note,
+                    t.OriginalCurrency,
+                    t.OriginalAmount,
+                    t.ForexMarkupPercent
                 })
                 .ToListAsync();
 
@@ -66,7 +69,10 @@ namespace BankStatementAnalytics.Controllers.Api
                 Category = t.CategoryOverride ?? t.MerchantCategory,
                 SubCategory = t.SubCategoryOverride ?? t.MerchantSubCategory,
                 HasCategoryOverride = !string.IsNullOrEmpty(t.CategoryOverride),
-                t.Note
+                t.Note,
+                t.OriginalCurrency,
+                t.OriginalAmount,
+                t.ForexMarkupPercent
             });
 
             return Ok(result);
