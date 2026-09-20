@@ -6,7 +6,7 @@ import {
   FiTrendingUp, FiPieChart, FiLogOut,
   FiChevronsLeft, FiChevronsRight, FiBell, FiHome, FiTarget,
   FiDollarSign, FiSun, FiMoon, FiMonitor, FiFileText, FiSettings,
-  FiShuffle,
+  FiShuffle, FiFlag,
 } from 'react-icons/fi';
 import { useAuth, useTheme } from "@common/client";
 import api from '../api/client';
@@ -153,6 +153,14 @@ const Sidebar = () => {
             <NavLink to="/budgets" className="nav-item-header" title="Budgets">
               <FiTarget size={16} />
               {isOpen && <span>Budgets</span>}
+            </NavLink>
+          </li>
+
+          {/* Goals */}
+          <li>
+            <NavLink to="/goals" className="nav-item-header" title="Savings Goals">
+              <FiFlag size={16} />
+              {isOpen && <span>Goals</span>}
             </NavLink>
           </li>
 

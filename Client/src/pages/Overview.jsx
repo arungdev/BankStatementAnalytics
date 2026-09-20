@@ -8,6 +8,7 @@ import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
 import CreditCardPanel from '../components/CreditCardPanel';
+import CashFlowForecast from '../components/CashFlowForecast';
 import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
 import { getToken } from "../theme/chartTheme";
 import { currencyFormatter as fmt, formatDate, maskName } from '../utils/format';
@@ -687,6 +688,12 @@ export default function Overview() {
             <div className="ov-fade" data-show={feedScrollable ? '1' : '0'} />
           </div>
         </div>
+
+        {/* Cash Flow Forecast */}
+        <CashFlowForecast
+          accountId={isAllAccounts ? null : selectedAccountId}
+          accountIds={isAllAccounts ? accounts.map(a => a.id).join(',') : null}
+        />
         </>
       )}
 

@@ -26,7 +26,7 @@ namespace BankStatementAnalytics.Controllers.Api
         private static List<string> DisplayAliases(Merchant merchant)
         {
             static string Normalize(string value) =>
-                string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
+                string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
 
             var seen = new HashSet<string> { Normalize(merchant.Name ?? string.Empty) };
             var aliases = new List<string>();
@@ -46,7 +46,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // GET: api/merchants
         [HttpGet]
-        public IActionResult GetAll([FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
+        public IActionResult GetAll([FromQuery] long accountId = 0, [FromQuery] string? accountIds = null)
         {
             using var session = DbHelper.GetSession();
 
@@ -70,7 +70,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (filterByAccount)
                 txQuery = txQuery.Where(t => scopeIds.Contains(t.AccountId));
             var txStats = txQuery
-                .GroupBy(t => t.CounterParty.Id)
+                .GroupBy(t => t.CounterParty!.Id)
                 .Select(g => new { Id = g.Key, Count = g.Count(), Spent = g.Sum(t => t.Debit) })
                 .ToList()
                 .ToDictionary(x => x.Id, x => (x.Count, x.Spent));
@@ -101,7 +101,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // GET: api/merchants/{id}
         [HttpGet("{id}")]
-        public IActionResult GetById(int id, [FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
+        public IActionResult GetById(int id, [FromQuery] long accountId = 0, [FromQuery] string? accountIds = null)
         {
             using var session = DbHelper.GetSession();
 
@@ -110,7 +110,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 .FetchMany(x => x.UpiIds)
                 .SingleOrDefault();
 
-            if (!Owns(merchantEntity))
+            if (merchantEntity is null || !Owns(merchantEntity))
                 return NotFound();
 
             var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
@@ -315,7 +315,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 .FetchMany(c => c.UpiIds)
                 .SingleOrDefault(c => c.Id == request.PrimaryId);
 
-            if (!Owns(primary)) return NotFound("Primary merchant not found.");
+            if (primary is null || !Owns(primary)) return NotFound("Primary merchant not found.");
 
             foreach (var secId in request.SecondaryIds)
             {
@@ -325,7 +325,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     .FetchMany(c => c.UpiIds)
                     .SingleOrDefault(c => c.Id == secId);
 
-                if (!Owns(secondary)) continue;
+                if (secondary is null || !Owns(secondary)) continue;
 
                 // Remember the secondary's name so we don't recreate it on future uploads!
                 if (!primary.Aliases.Contains(secondary.Name))
@@ -399,7 +399,7 @@ namespace BankStatementAnalytics.Controllers.Api
             using var tx = session.BeginTransaction();
 
             var primary = session.Get<Merchant>(request.PrimaryId);
-            if (!Owns(primary)) return NotFound("Primary merchant not found.");
+            if (primary is null || !Owns(primary)) return NotFound("Primary merchant not found.");
 
             // Find and remove alias safely (handling potential trailing spaces)
             var aliasToRemove = primary.Aliases.FirstOrDefault(a => a != null && a.Trim().Equals(request.AliasName.Trim(), StringComparison.OrdinalIgnoreCase));

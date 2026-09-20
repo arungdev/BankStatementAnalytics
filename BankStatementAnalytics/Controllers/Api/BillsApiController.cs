@@ -47,7 +47,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public IActionResult GetBillTransactions(int id)
         {
             var bill = DbHelper.GetById<RecurringBill>(id);
-            if (!Owns(bill)) return NotFound();
+            if (bill is null || !Owns(bill)) return NotFound();
 
             return Ok(_service.GetMatchingTransactions(CurrentUserId, bill));
         }
@@ -155,7 +155,7 @@ namespace BankStatementAnalytics.Controllers.Api
             using var tx = session.BeginTransaction();
 
             var bill = session.Get<RecurringBill>(id);
-            if (!Owns(bill)) return NotFound();
+            if (bill is null || !Owns(bill)) return NotFound();
 
             if (!string.IsNullOrWhiteSpace(req.Name)) bill.Name = req.Name.Trim();
             bill.ExpectedAmount = req.ExpectedAmount;
@@ -178,7 +178,7 @@ namespace BankStatementAnalytics.Controllers.Api
             using var tx = session.BeginTransaction();
 
             var bill = session.Get<RecurringBill>(id);
-            if (!Owns(bill)) return NotFound();
+            if (bill is null || !Owns(bill)) return NotFound();
 
             await session.DeleteAsync(bill);
             await tx.CommitAsync();

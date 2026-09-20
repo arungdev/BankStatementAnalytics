@@ -380,7 +380,7 @@ namespace BankStatementAnalytics.Services.Parser
                 if (refIdx > 0)
                 {
                     tx.UpiReference = parts[refIdx].Trim();
-                    tx.BankCode = refIdx >= 2 ? parts[refIdx - 1].Trim().ToUpper() : null;
+                    tx.BankCode = refIdx >= 2 ? parts[refIdx - 1].Trim().ToUpper() : null!;
 
                     string? vpa = parts.FirstOrDefault(p => p.Contains('@'))?.Trim();
                     int vpaIdx = vpa != null

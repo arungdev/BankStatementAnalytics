@@ -17,11 +17,13 @@ namespace BankStatementAnalytics.Controllers.Api
     {
         private readonly ReportService _reports;
         private readonly ReportPdfService _pdf;
+        private readonly AnnualSummaryService _annualSummary;
 
-        public ReportsApiController(ReportService reports, ReportPdfService pdf)
+        public ReportsApiController(ReportService reports, ReportPdfService pdf, AnnualSummaryService annualSummary)
         {
             _reports = reports;
             _pdf = pdf;
+            _annualSummary = annualSummary;
         }
 
         // GET: api/reports?type=month&year=2026&month=7&accountIds=1,2
@@ -31,7 +33,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string type,
             [FromQuery] int year,
             [FromQuery] int month = 0,
-            [FromQuery] string accountIds = null)
+            [FromQuery] string? accountIds = null)
         {
             var yearly = string.Equals(type, "year", StringComparison.OrdinalIgnoreCase);
             if (!yearly && !string.Equals(type, "month", StringComparison.OrdinalIgnoreCase))
@@ -60,7 +62,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string type,
             [FromQuery] int year,
             [FromQuery] int month = 0,
-            [FromQuery] string accountIds = null)
+            [FromQuery] string? accountIds = null)
         {
             var yearly = string.Equals(type, "year", StringComparison.OrdinalIgnoreCase);
             if (!yearly && !string.Equals(type, "month", StringComparison.OrdinalIgnoreCase))
@@ -109,8 +111,8 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string type,
             [FromQuery] int year,
             [FromQuery] int month = 0,
-            [FromQuery] string accountIds = null,
-            [FromQuery] string kind = null)
+            [FromQuery] string? accountIds = null,
+            [FromQuery] string? kind = null)
         {
             var yearly = string.Equals(type, "year", StringComparison.OrdinalIgnoreCase);
             if (!yearly && !string.Equals(type, "month", StringComparison.OrdinalIgnoreCase))
@@ -130,6 +132,17 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var rows = await _reports.GetTransactionsAsync(ids, yearly, year, month, kind?.ToLowerInvariant());
             return Ok(rows);
+        }
+
+        // GET: api/reports/annual?year=2026&accountId=1&accountIds=1,2
+        [HttpGet("annual")]
+        public IActionResult GetAnnualSummary([FromQuery] int year, [FromQuery] int? accountId = null, [FromQuery] string? accountIds = null)
+        {
+            if (year < 1970 || year > 2100)
+                year = DateTime.Now.Year;
+
+            var summary = _annualSummary.GenerateAnnualSummary(CurrentUserId, year, accountId, accountIds);
+            return Ok(summary);
         }
 
         // GET: api/reports/periods — every calendar month and year from the user's earliest

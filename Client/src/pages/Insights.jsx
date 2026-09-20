@@ -11,6 +11,7 @@ import DateRangePicker from '../components/Daterangepicker';
 import { FilterGroup, FilterPill } from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
+import { FiDownload } from "react-icons/fi";
 import { getToken } from "../theme/chartTheme";
 import { currencyFormatter as fmt, currencyFormatterFull as fmtFull, isAmountMasked, MASKED_AMOUNT, maskName } from '../utils/format';
 
@@ -289,6 +290,28 @@ export default function Insights() {
     }),
   };
 
+  const handleExportBreakdown = () => {
+    if (!chartData.length) return;
+    const headers = [groupSingular, "Transactions", "Total Spend", "Share (%)"];
+    const csvRows = [headers.join(",")];
+    chartData.forEach(item => {
+      const share = grandTotal > 0 ? ((item.total / grandTotal) * 100).toFixed(2) : 0;
+      csvRows.push([
+        `"${(item.name || '').replace(/"/g, '""')}"`,
+        item.count ?? 0,
+        item.total.toFixed(2),
+        share
+      ].join(","));
+    });
+    const blob = new Blob([csvRows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `insights_${groupLabel.toLowerCase()}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', overflow: 'visible' }}>
       <div style={{ ...s.page, flex: 1, marginRight: trayOpen ? drawerWidth : 0 }}>
@@ -436,7 +459,17 @@ export default function Insights() {
 
             {/* Breakdown table */}
             <div style={s.card}>
-              <p style={s.cardTitle}>Full Breakdown</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+                <p style={{ ...s.cardTitle, margin: 0 }}>Full Breakdown</p>
+                <button
+                  className="btn"
+                  onClick={handleExportBreakdown}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '5px 12px', height: 'auto', background: 'var(--surface-2)', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', color: 'var(--text-main)' }}
+                  title="Export this breakdown to CSV"
+                >
+                  <FiDownload size={13} /> Export CSV
+                </button>
+              </div>
               <div style={s.tableScroll}>
               <table style={s.table}>
                 <thead>

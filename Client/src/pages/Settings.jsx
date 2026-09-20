@@ -11,6 +11,7 @@ import { Badge, Drawer, FONT_SIZE_OPTIONS, Switch, useAuth, useTheme } from "@co
 import { usePrivacy } from "../context/usePrivacy";
 import ProfileSettings from "../components/ProfileSettings";
 import ConfirmDialog from "../components/ConfirmDialog";
+import RulesManager from "../components/RulesManager";
 import { getBackupStatus, downloadBackup, restoreBackup, readApiError } from "../api/backup";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
 import { currencyFormatterFull, formatDate } from "../utils/format";
@@ -22,6 +23,7 @@ import "./Settings.css";
 const SECTIONS = [
   { id: 'accounts', label: 'Accounts', hint: 'Banks, cards & auto-import', icon: <FiCreditCard size={17} />, title: 'Accounts', subtitle: 'Your linked bank accounts, card details, and automatic statement imports.' },
   { id: 'categories', label: 'Categories', hint: 'How spending is grouped', icon: <FiTag size={17} />, title: 'Categories', subtitle: 'Organize your spending into categories and sub-categories.' },
+  { id: 'rules', label: 'Rules', hint: 'Auto-categorization & tagging', icon: <FiZap size={17} />, title: 'Categorization Rules', subtitle: 'Automatically categorize, tag, and annotate transactions on import.' },
   { id: 'reminders', label: 'Reminders', hint: 'Bill due alerts', icon: <FiBell size={17} />, title: 'Bill reminders', subtitle: 'Get a desktop notification when a recurring bill is due soon.' },
   { id: 'privacy', label: 'Privacy', hint: 'What the eye icon hides', icon: <FiEyeOff size={17} />, title: 'Privacy', subtitle: 'Control what is hidden on screen when someone is looking over your shoulder.' },
   { id: 'appearance', label: 'Appearance', hint: 'Theme & text size', icon: <FiSun size={17} />, title: 'Appearance', subtitle: 'Choose how the app looks on this device.' },
@@ -1651,6 +1653,7 @@ export default function Settings() {
               <div className="settings-panel-body">
                 {activeTab === 'accounts' && renderAccounts()}
                 {activeTab === 'categories' && renderCategories()}
+                {activeTab === 'rules' && <RulesManager />}
                 {activeTab === 'reminders' && renderReminders()}
                 {activeTab === 'privacy' && renderPrivacy()}
                 {activeTab === 'appearance' && renderAppearance()}

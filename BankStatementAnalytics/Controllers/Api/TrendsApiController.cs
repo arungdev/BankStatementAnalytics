@@ -18,7 +18,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public async Task<IActionResult> GetTrends(
             [FromQuery] int accountId,
-            [FromQuery] string accountIds = null,
+            [FromQuery] string? accountIds = null,
             [FromQuery] string period = "week",
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null)
@@ -159,10 +159,10 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("transactions")]
         public async Task<IActionResult> GetTrendTransactions(
             [FromQuery] int accountId,
-            [FromQuery] string accountIds = null,
+            [FromQuery] string? accountIds = null,
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null,
-            [FromQuery] string kind = null)
+            [FromQuery] string? kind = null)
         {
             using var session = DbHelper.GetSession();
 
@@ -211,6 +211,54 @@ namespace BankStatementAnalytics.Controllers.Api
                 .ToListAsync();
 
             return Ok(rows);
+        }
+
+        // GET: api/trends/daily-spend?year=2026 — daily spending aggregation for spending heatmap calendar
+        [HttpGet("daily-spend")]
+        public async Task<IActionResult> GetDailySpend(
+            [FromQuery] int accountId,
+            [FromQuery] string? accountIds = null,
+            [FromQuery] int? year = null)
+        {
+            using var session = DbHelper.GetSession();
+
+            var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
+            var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
+            if (status == AccountAccess.ScopeStatus.NotFound)
+                return NotFound();
+            if (ids.Count == 0)
+                return Ok(new List<object>());
+
+            var targetYear = year ?? DateTime.Today.Year;
+            var start = new DateTime(targetYear, 1, 1);
+            var endExclusive = start.AddYears(1);
+
+            var query = session.Query<BankTransaction>()
+                .ExcludeOwnMoneyMoves()
+                .Where(t => ids.Contains(t.AccountId) && t.Debit > 0);
+
+            query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) >= start && (t.EffectiveDate ?? t.TransactionDate) < endExclusive);
+
+            var rows = await query
+                .Select(t => new
+                {
+                    Date = t.EffectiveDate ?? t.TransactionDate,
+                    Debit = t.Debit
+                })
+                .ToListAsync();
+
+            var result = rows
+                .GroupBy(t => t.Date.Date)
+                .OrderBy(g => g.Key)
+                .Select(g => new
+                {
+                    date = g.Key.ToString("yyyy-MM-dd"),
+                    totalDebit = g.Sum(x => x.Debit),
+                    count = g.Count()
+                })
+                .ToList();
+
+            return Ok(result);
         }
 
         private static DateTime GetStartOfWeek(DateTime dt)

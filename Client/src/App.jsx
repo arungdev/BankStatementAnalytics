@@ -4,9 +4,10 @@ import api from "./api/client";
 import { useAccount } from "./context/useAccount";
 import { Modal, useAuth, usePersistedState } from "@common/client";
 import { usePrivacy } from "./context/usePrivacy";
-import { FiHelpCircle } from "react-icons/fi";
+import { FiHelpCircle, FiSearch } from "react-icons/fi";
 import CreateAccount from "./components/CreateAccount";
 import OnboardingGuide from "./components/OnboardingGuide";
+import SearchModal from "./components/SearchModal";
 import Settings from "./pages/Settings";
 import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
@@ -29,6 +30,7 @@ import Insights from "./pages/Insights";
 import Bills from "./pages/Bills";
 import Transfers from "./pages/Transfers";
 import Budgets from "./pages/Budgets";
+import Goals from "./pages/Goals";
 import Investments from "./pages/Investments";
 import Reports from "./pages/Reports";
 import useBillReminders, { useImportFailureNotifications } from "./hooks/useBillReminders";
@@ -76,6 +78,7 @@ function AuthGate() {
         <Route path="/insights" element={<Insights />} />
         <Route path="/bills" element={<Bills />} />
         <Route path="/budgets" element={<Budgets />} />
+        <Route path="/goals" element={<Goals />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
@@ -94,6 +97,7 @@ const PAGE_META = {
   '/insights': { title: 'Spending Insights', subtitle: 'Where your money goes' },
   '/bills': { title: 'Bills & Reminders', subtitle: 'Upcoming recurring bills' },
   '/budgets': { title: 'Budgets', subtitle: 'Monthly limits by category' },
+  '/goals': { title: 'Savings Goals', subtitle: 'Track progress toward financial targets' },
   '/investments': { title: 'Investments', subtitle: 'Recurring & fixed deposits' },
   '/reports': { title: 'Reports', subtitle: 'Monthly & yearly summary' },
   '/settings': { title: 'Settings', subtitle: 'Accounts, categories, and preferences' },
@@ -156,9 +160,21 @@ function Layout() {
   // ── Transactions filter state (lifted so header row & page share it) ──
   const [transactionsRange, setTransactionsRange] = usePersistedRange('transactionsRange');
 
-  // ── Reports filter state (lifted so header row & page share it) ───────
   const [reportType, setReportType] = usePersistedState('reportType', 'month');
   const [reportPeriod, setReportPeriod] = usePersistedState('reportPeriod', '');
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Global Ctrl+K / Cmd+K listener
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Sidebar accounts
   useEffect(() => {
@@ -250,6 +266,29 @@ function Layout() {
             {/* Separates the account scope from the action buttons beside it. */}
             <span style={{ width: '1px', height: '22px', background: 'var(--border-color)', flexShrink: 0 }} />
             <button
+              onClick={() => setSearchOpen(true)}
+              className="btn icon"
+              style={{
+                borderRadius: '8px',
+                height: '36px',
+                padding: '0 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                color: 'var(--text-muted)',
+                background: 'var(--surface)',
+                border: '1px solid var(--border-color)',
+                fontSize: '12px',
+                flexShrink: 0,
+              }}
+              title="Global Smart Search (Ctrl+K)"
+              aria-label="Search"
+            >
+              <FiSearch size={14} />
+              <span className="hidden-mobile">Search</span>
+              <kbd style={{ fontSize: '10px', background: 'var(--surface-2)', padding: '1px 5px', borderRadius: '4px', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>Ctrl K</kbd>
+            </button>
+            <button
               onClick={() => setGuideOpen(true)}
               className="btn icon"
               style={{ borderRadius: '50%', width: '36px', height: '36px', color: 'var(--text-muted)', flexShrink: 0 }}
@@ -261,6 +300,11 @@ function Layout() {
             <PrivacyToggle masked={maskAmounts} onToggle={() => setMaskAmounts(m => !m)} />
             <NotificationBell onDockChange={setRemindersDock} accounts={accounts} />
           </>}
+        />
+
+        <SearchModal
+          isOpen={searchOpen}
+          onClose={() => setSearchOpen(false)}
         />
 
         <OnboardingGuide

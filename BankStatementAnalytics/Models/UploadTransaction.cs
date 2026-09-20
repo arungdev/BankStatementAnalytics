@@ -10,7 +10,7 @@ namespace BankStatementAnalytics.Models
 
         public virtual decimal? Amount { get; set; }
 
-        public virtual string Description { get; set; }
+        public virtual string Description { get; set; } = string.Empty;
 
         public virtual DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }

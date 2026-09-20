@@ -264,6 +264,92 @@ namespace BankStatementAnalytics.Controllers.Api
                       .Select(t => t.ToLowerInvariant())
                       .Distinct()
                       .ToList();
+
+        // GET: api/transactions/splits?bankRef=...&bankType=...&accountId=...
+        [HttpGet("splits")]
+        public async Task<IActionResult> GetSplits(
+            [FromQuery] string bankRef,
+            [FromQuery] string bankType,
+            [FromQuery] long accountId)
+        {
+            var account = await DbHelper.GetByIdAsync<Account>(accountId);
+            if (!Owns(account)) return NotFound();
+
+            using var session = DbHelper.GetSession();
+
+            var splits = await session.Query<TransactionSplit>()
+                .Where(s => s.ParentAccountId == accountId &&
+                            s.ParentBankReference == bankRef &&
+                            s.ParentBankType == bankType)
+                .OrderBy(s => s.Id)
+                .ToListAsync();
+
+            return Ok(splits);
+        }
+
+        // POST: api/transactions/split
+        [HttpPost("split")]
+        public async Task<IActionResult> SaveSplits([FromBody] SaveSplitsRequest req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.BankReference))
+                return BadRequest("BankReference is required.");
+
+            var account = await DbHelper.GetByIdAsync<Account>(req.AccountId);
+            if (!Owns(account)) return NotFound();
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            // Remove existing splits
+            var existing = await session.Query<TransactionSplit>()
+                .Where(s => s.ParentAccountId == req.AccountId &&
+                            s.ParentBankReference == req.BankReference &&
+                            s.ParentBankType == req.BankType)
+                .ToListAsync();
+
+            foreach (var e in existing)
+                await session.DeleteAsync(e);
+
+            if (req.Splits != null && req.Splits.Count > 0)
+            {
+                foreach (var item in req.Splits)
+                {
+                    if (item.Amount <= 0) continue;
+                    var split = new TransactionSplit
+                    {
+                        OwnerUserId = CurrentUserId,
+                        ParentAccountId = req.AccountId,
+                        ParentBankReference = req.BankReference,
+                        ParentBankType = req.BankType,
+                        Amount = item.Amount,
+                        Category = item.Category?.Trim(),
+                        SubCategory = item.SubCategory?.Trim(),
+                        Note = item.Note?.Trim(),
+                        CreatedOn = DateTime.Now
+                    };
+                    await session.SaveAsync(split);
+                }
+            }
+
+            await tx.CommitAsync();
+            return Ok(new { success = true });
+        }
+    }
+
+    public class SaveSplitsRequest
+    {
+        public long AccountId { get; set; }
+        public string BankReference { get; set; } = string.Empty;
+        public string BankType { get; set; } = string.Empty;
+        public List<SplitItemDto> Splits { get; set; } = new();
+    }
+
+    public class SplitItemDto
+    {
+        public decimal Amount { get; set; }
+        public string? Category { get; set; }
+        public string? SubCategory { get; set; }
+        public string? Note { get; set; }
     }
 
     public class BulkUpdateTransactionsRequest

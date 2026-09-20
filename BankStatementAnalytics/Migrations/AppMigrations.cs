@@ -87,20 +87,26 @@ namespace BankStatementAnalytics.Migrations
                       "UPDATE bank_transactions SET upivpa = NULL WHERE upivpa = ''");
               });
 
-            // ── Add future versions below this line ───────────────────────────────────
-            //
-            // mb.ForVersion(3)
-            //   .AddStep("Short description", ctx =>
-            //   {
-            //       // DDL example — guard with ColumnExists for idempotency:
-            //       if (!ctx.ColumnExists("some_table", "new_col"))
-            //           ctx.Execute("ALTER TABLE some_table ADD COLUMN new_col TEXT NULL");
-            //   })
-            //   .AddStep("Another step in the same transaction", ctx =>
-            //   {
-            //       // Data example:
-            //       ctx.Execute("UPDATE some_table SET new_col = 'default' WHERE new_col IS NULL");
-            //   });
+            // ── Version 3 ────────────────────────────────────────────────────────────
+            // Multi-currency and Forex tracking columns on bank_transactions
+            mb.ForVersion(3)
+              .AddStep("Guard: originalcurrency on bank_transactions", ctx =>
+              {
+                  if (ctx.ColumnExists("bank_transactions", "originalcurrency")) return;
+                  ctx.Execute("ALTER TABLE bank_transactions ADD COLUMN originalcurrency VARCHAR(10) NULL");
+              })
+              .AddStep("Guard: originalamount on bank_transactions", ctx =>
+              {
+                  if (ctx.ColumnExists("bank_transactions", "originalamount")) return;
+                  var colType = ctx.Provider == DatabaseProvider.PostgreSQL ? "NUMERIC(18,4)" : "DECIMAL(18,4)";
+                  ctx.Execute($"ALTER TABLE bank_transactions ADD COLUMN originalamount {colType} NULL");
+              })
+              .AddStep("Guard: forexmarkuppercent on bank_transactions", ctx =>
+              {
+                  if (ctx.ColumnExists("bank_transactions", "forexmarkuppercent")) return;
+                  var colType = ctx.Provider == DatabaseProvider.PostgreSQL ? "NUMERIC(5,2)" : "DECIMAL(5,2)";
+                  ctx.Execute($"ALTER TABLE bank_transactions ADD COLUMN forexmarkuppercent {colType} NULL");
+              });
         }
     }
 }

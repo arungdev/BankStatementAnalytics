@@ -103,7 +103,13 @@ builder.Services.AddScoped<TransactionRepositoryFactory>();
 builder.Services.AddScoped<CounterPartyService>();
 builder.Services.AddScoped<RecurringBillService>();
 builder.Services.AddScoped<TransferDetectionService>();
+builder.Services.AddScoped<DuplicateDetectionService>();
+builder.Services.AddScoped<AnomalyDetectionService>();
 builder.Services.AddScoped<DepositService>();
+builder.Services.AddScoped<ForecastService>();
+builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddScoped<RuleEngineService>();
+builder.Services.AddScoped<AnnualSummaryService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<ReportPdfService>();
 // Whole-instance backup/restore lives in Common.Framework; everything app-specific about it is

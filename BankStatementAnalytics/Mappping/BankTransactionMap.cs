@@ -1,4 +1,4 @@
-﻿using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Models;
 using Common.Framework.Types;
 using NHibernate.Mapping.ByCode;
 using NHibernate.Mapping.ByCode.Conformist;
@@ -58,6 +58,9 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.SubCategoryOverride);
             Property(x => x.Tags);
             Property(x => x.Note, m => m.Length(2000));
+            Property(x => x.OriginalCurrency, m => m.Length(10));
+            Property(x => x.OriginalAmount);
+            Property(x => x.ForexMarkupPercent);
 
             ManyToOne(x => x.CounterParty, m =>
             {

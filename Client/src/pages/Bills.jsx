@@ -36,6 +36,8 @@ export default function Bills() {
   const [bills, setBills] = useState([]);
   const [cardBills, setCardBills] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [subSummary, setSubSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("due");
   const [editing, setEditing] = useState(null); // bill being edited
@@ -50,11 +52,14 @@ export default function Bills() {
       api.get("/bills").then((r) => r.data || []),
       api.get("/bills/suggestions").then((r) => r.data || []),
       getCardReminders().then((r) => r.data || []).catch(() => []),
+      api.get("/subscriptions").then((r) => r.data || null).catch(() => null),
     ])
-      .then(([b, s, c]) => {
+      .then(([b, s, c, subs]) => {
         setBills(b);
         setSuggestions(s);
         setCardBills(c);
+        setSubscriptions(subs?.subscriptions || []);
+        setSubSummary(subs);
       })
       .catch((err) => console.error("Failed to load bills", err))
       .finally(() => setLoading(false));
@@ -182,6 +187,7 @@ export default function Bills() {
     { key: "due", label: "Due soon", count: dueSoon.length },
     { key: "bills", label: "Your bills", count: bills.length },
     { key: "suggestions", label: "Suggested", count: suggestions.length },
+    { key: "subscriptions", label: "Subscriptions", count: subscriptions.length },
   ];
 
   return (
@@ -430,6 +436,87 @@ export default function Bills() {
           </div>
         )}
       </section>
+      )}
+
+      {/* ── Subscriptions ── */}
+      {activeTab === "subscriptions" && (
+        <section>
+          {subSummary && (
+            <div style={{ display: "flex", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
+              <StatCard
+                label="Monthly Subscriptions"
+                value={currencyFormatter.format(subSummary.totalMonthly)}
+                sub="Normalized monthly run-rate"
+              />
+              <StatCard
+                label="Annual Subscriptions"
+                value={currencyFormatter.format(subSummary.totalAnnual)}
+                sub="Projected 12-month cost"
+              />
+              <StatCard
+                label="Tracked Services"
+                value={String(subSummary.count)}
+                sub="Streaming, cloud, & software"
+              />
+            </div>
+          )}
+
+          {subscriptions.length === 0 ? (
+            <EmptyState
+              icon="📦"
+              title="No subscriptions detected"
+              message="Recurring monthly services like Netflix, Spotify, or software subscriptions will appear here automatically."
+            />
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" }}>
+              {subscriptions.map((s) => (
+                <div
+                  key={s.id}
+                  onClick={() => openBill(s)}
+                  style={{ ...cardBase, cursor: "pointer" }}
+                  title="Click to view payment history"
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                      <Avatar name={maskName(s.name)} />
+                      <div style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-main)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {maskName(s.name)}
+                      </div>
+                    </div>
+                    <Badge variant="secondary">{s.cadence}</Badge>
+                  </div>
+
+                  <div className="tnum" style={{ fontSize: "22px", fontWeight: 800, color: "var(--text-main)", letterSpacing: "-0.5px" }}>
+                    {currencyFormatter.format(s.amount)}
+                    <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-muted)", marginLeft: "4px" }}>
+                      /{s.cadence === "Yearly" ? "yr" : "mo"}
+                    </span>
+                  </div>
+
+                  {s.priceChange && (
+                    <div style={{
+                      marginTop: "10px",
+                      padding: "6px 10px",
+                      borderRadius: "8px",
+                      background: s.priceChange.isIncrease ? "rgba(239, 68, 68, 0.1)" : "rgba(16, 185, 129, 0.1)",
+                      border: `1px solid ${s.priceChange.isIncrease ? "var(--danger)" : "var(--success)"}`,
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      color: s.priceChange.isIncrease ? "var(--danger)" : "var(--success)",
+                    }}>
+                      {s.priceChange.isIncrease ? "⚠️ Price increased" : "🎉 Price decreased"} from {currencyFormatter.format(s.priceChange.previousAmount)}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", fontSize: "12px", color: "var(--text-muted)" }}>
+                    <span>Next: {fmtDate(s.nextDueDate)}</span>
+                    {s.lastChargedDate && <span>Last: {fmtDate(s.lastChargedDate)}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {/* ── Edit modal ── */}

@@ -12,8 +12,8 @@ namespace BankStatementAnalytics.Services
     public class BankParserConfig
     {
         public Bank Bank { get; set; }
-        public string FileExt { get; set; }  // ".txt", ".csv" or ".pdf"
-        public Type ParserType { get; set; }  // must implement IBankParser
+        public string FileExt { get; set; } = string.Empty;  // ".txt", ".csv" or ".pdf"
+        public Type ParserType { get; set; } = null!;  // must implement IBankParser
     }
 
     // ── Registry — add/remove banks here only ────────────────────────────
@@ -37,15 +37,18 @@ namespace BankStatementAnalytics.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly CounterPartyService _counterPartyService;
         private readonly PdfStatementReader _pdfReader;
+        private readonly RuleEngineService _ruleEngine;
 
         public TextService(
             IServiceProvider serviceProvider,
             CounterPartyService counterPartyService,
-            PdfStatementReader pdfReader)
+            PdfStatementReader pdfReader,
+            RuleEngineService ruleEngine)
         {
             _serviceProvider = serviceProvider;
             _counterPartyService = counterPartyService;
             _pdfReader = pdfReader;
+            _ruleEngine = ruleEngine;
         }
 
         /// <summary>
@@ -103,6 +106,13 @@ namespace BankStatementAnalytics.Services
             // Resolve all counterparty names to merchants in a single batch (one session /
             // transaction) instead of a session per parsed row.
             _counterPartyService.ResolveOrCreateBatch(accountId, transactions);
+
+            // Apply custom auto-categorization and annotation rules
+            var account = DbHelper.GetById<Account>((long)accountId);
+            if (account?.OwnerUserId != null)
+            {
+                _ruleEngine.ApplyRules(account.OwnerUserId.Value, transactions);
+            }
 
             int newCount = 0;
             using (var session = DbHelper.GetSession())
@@ -224,7 +234,7 @@ namespace BankStatementAnalytics.Services
         {
             using var session = DbHelper.GetSession();
             var account = session.Get<Account>((long)accountId);
-            return (Bank)account?.BankName;
+            return account?.BankName ?? throw new InvalidOperationException($"Account {accountId} not found.");
         }
 
         // ── Fallback: detect from file content ───────────────────────────

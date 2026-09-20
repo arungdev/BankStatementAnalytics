@@ -5,13 +5,13 @@ namespace BankStatementAnalytics.Models
     {
         public virtual Guid Id { get; set; }
 
-        public virtual string FileName { get; set; }
+        public virtual string FileName { get; set; } = string.Empty;
 
-        public virtual string StoredName { get; set; }
+        public virtual string StoredName { get; set; } = string.Empty;
 
         public virtual int? AccountId { get; set; }
 
-        public virtual string Path { get; set; }
+        public virtual string Path { get; set; } = string.Empty;
 
         public virtual DateTime UploadedAt { get; set; } = DateTime.UtcNow;
 

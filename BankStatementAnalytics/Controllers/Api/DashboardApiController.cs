@@ -18,7 +18,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public async Task<IActionResult> GetDashboardData(
             [FromQuery] int accountId,
-            [FromQuery] string accountIds = null)
+            [FromQuery] string? accountIds = null)
         {
             using var session = DbHelper.GetSession();
 
@@ -47,7 +47,7 @@ namespace BankStatementAnalytics.Controllers.Api
             var topMerchants = await analyticsQuery
                 .Where(t => t.Debit > 0 && t.CounterParty != null
                          && t.CounterParty.Name != null && t.CounterParty.Name != "")
-                .GroupBy(t => t.CounterParty.Name)
+                .GroupBy(t => t.CounterParty!.Name)
                 .Select(g => new { name = g.Key, amount = g.Sum(t => t.Debit) })
                 .OrderByDescending(x => x.amount)
                 .Take(5)
@@ -68,7 +68,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("recent")]
         public async Task<IActionResult> GetRecentActivity(
             [FromQuery] int accountId,
-            [FromQuery] string accountIds = null,
+            [FromQuery] string? accountIds = null,
             [FromQuery] int skip = 0,
             [FromQuery] int take = RecentPageSize)
         {
@@ -102,8 +102,8 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("transactions")]
         public async Task<IActionResult> GetTileTransactions(
             [FromQuery] int accountId,
-            [FromQuery] string accountIds = null,
-            [FromQuery] string kind = null,
+            [FromQuery] string? accountIds = null,
+            [FromQuery] string? kind = null,
             [FromQuery] int skip = 0,
             [FromQuery] int take = TilePageSize)
         {
@@ -174,10 +174,10 @@ namespace BankStatementAnalytics.Controllers.Api
         // full entity (and a lazy CounterParty load per row) never leaves the DB.
         private sealed class RecentRow
         {
-            public string Id { get; set; }
-            public string Name { get; set; }
+            public string Id { get; set; } = string.Empty;
+            public string? Name { get; set; }
             public DateTime Date { get; set; }
-            public string Mode { get; set; }
+            public string? Mode { get; set; }
             public decimal Income { get; set; }
             public decimal Spend { get; set; }
         }
@@ -298,7 +298,7 @@ namespace BankStatementAnalytics.Controllers.Api
     [FromQuery] string accountIds,
     [FromQuery] string groupBy,
     // Optional: groupBy=all spans every group, so it carries no value to match on.
-    [FromQuery] string groupValue = null,
+    [FromQuery] string? groupValue = null,
     [FromQuery] DateTime? startDate = null,
     [FromQuery] DateTime? endDate = null)
         {

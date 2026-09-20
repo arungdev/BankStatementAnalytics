@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace BankStatementAnalytics.Models
 {
@@ -52,6 +52,11 @@ namespace BankStatementAnalytics.Models
         public virtual string? SubCategoryOverride { get; set; }
         public virtual string? Tags { get; set; } // comma-separated e.g. "food,rent,bills"
         public virtual string? Note { get; set; } // user-entered free-text annotation
+
+        // Multi-currency and Forex support
+        public virtual string? OriginalCurrency { get; set; } // e.g. "USD", "EUR", "GBP"
+        public virtual decimal? OriginalAmount { get; set; }
+        public virtual decimal? ForexMarkupPercent { get; set; } // e.g. 3.5%
 
         // Transient (not mapped, not serialized): the counterparty name a parser extracted from the
         // narration, resolved to a Merchant in a single batch after parsing rather than per-row.

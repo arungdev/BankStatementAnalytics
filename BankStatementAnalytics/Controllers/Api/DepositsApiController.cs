@@ -26,7 +26,7 @@ namespace BankStatementAnalytics.Controllers.Api
         // selected account's transactions, merged with saved metadata, plus roll-up totals.
         // No account params = every owned account ("All accounts").
         [HttpGet]
-        public IActionResult GetSummary([FromQuery] long accountId = 0, [FromQuery] string accountIds = null)
+        public IActionResult GetSummary([FromQuery] long accountId = 0, [FromQuery] string? accountIds = null)
         {
             var (ok, ids) = ResolveScope(accountId, accountIds);
             if (!ok)
@@ -42,7 +42,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string kind,
             [FromQuery] string matchKey,
             [FromQuery] long accountId = 0,
-            [FromQuery] string accountIds = null)
+            [FromQuery] string? accountIds = null)
         {
             if (string.IsNullOrWhiteSpace(matchKey))
                 return BadRequest("matchKey is required.");
@@ -56,7 +56,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // Owned-account resolution shared by the two read endpoints. Null ids means "no account
         // requested" — the service reads that as every owned account ("All accounts").
-        private (bool Ok, List<long>? Ids) ResolveScope(long accountId, string accountIds)
+        private (bool Ok, List<long>? Ids) ResolveScope(long accountId, string? accountIds)
         {
             using var session = DbHelper.GetSession();
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);

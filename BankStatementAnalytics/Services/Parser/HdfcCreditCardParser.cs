@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -179,7 +179,7 @@ namespace BankStatementAnalytics.Services.Parser
                 if (refIdx > 0)
                 {
                     tx.UpiReference = parts[refIdx].Trim();
-                    tx.BankCode = refIdx >= 2 ? parts[refIdx - 1].Trim().ToUpper() : null;
+                    tx.BankCode = refIdx >= 2 ? parts[refIdx - 1].Trim().ToUpper() : null!;
 
                     int vpaIdx = vpa != null
                         ? Array.IndexOf(parts, parts.First(p => p.Contains('@')))

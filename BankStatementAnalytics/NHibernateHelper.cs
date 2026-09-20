@@ -59,6 +59,9 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<RecurringBillMap>();
                         mapper.AddMapping<BudgetMap>();
                         mapper.AddMapping<DepositMap>();
+                        mapper.AddMapping<SavingsGoalMap>();
+                        mapper.AddMapping<CategorizationRuleMap>();
+                        mapper.AddMapping<TransactionSplitMap>();
                     }, null,
                     isPostgres
                         ? db =>

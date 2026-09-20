@@ -24,7 +24,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public IActionResult GetSummary(int accountId)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
-            if (!Owns(account) || account.BankName != Bank.HDFCCreditCard)
+            if (account is null || !Owns(account) || account.BankName != Bank.HDFCCreditCard)
                 return NotFound();
 
             using var session = DbHelper.GetSession();
@@ -135,7 +135,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public IActionResult GetCycles(int accountId, [FromQuery] int count = 6)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
-            if (!Owns(account) || account.BankName != Bank.HDFCCreditCard)
+            if (account is null || !Owns(account) || account.BankName != Bank.HDFCCreditCard)
                 return NotFound();
 
             count = Math.Clamp(count, 1, 24);
@@ -195,7 +195,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public async System.Threading.Tasks.Task<IActionResult> UpdateSettings(int accountId, [FromBody] CardSettingsRequest request)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
-            if (!Owns(account) || account.BankName != Bank.HDFCCreditCard)
+            if (account is null || !Owns(account) || account.BankName != Bank.HDFCCreditCard)
                 return NotFound();
 
             if (request.StatementDay is < 1 or > 31)
@@ -209,7 +209,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     return BadRequest("A card cannot share its own limit.");
 
                 var target = DbHelper.GetById<Account>(request.SharedLimitAccountId.Value);
-                if (!Owns(target) || target.BankName != Bank.HDFCCreditCard)
+                if (target is null || !Owns(target) || target.BankName != Bank.HDFCCreditCard)
                     return BadRequest("The linked card must be one of your credit card accounts.");
 
                 // Groups stay one level deep: linking to a card that itself shares

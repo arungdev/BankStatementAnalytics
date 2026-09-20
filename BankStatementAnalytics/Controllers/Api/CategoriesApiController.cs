@@ -25,7 +25,7 @@ namespace BankStatementAnalytics.Controllers.Api
         // "Food  Delivery" and "Food Delivery" can't coexist as two categories that look
         // identical in every list, then rejects what can't be stored or displayed.
         // `what` names the thing in the message ("Category" / "Sub-category").
-        private static bool TryNormalizeName(string raw, string what, out string name, out string error)
+        private static bool TryNormalizeName(string? raw, string what, out string name, out string? error)
         {
             name = Regex.Replace((raw ?? string.Empty).Trim(), @"\s+", " ");
             error = null;

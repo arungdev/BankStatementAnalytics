@@ -20,6 +20,7 @@ import StatCard from '../components/StatCard';
 import { Drawer, EmptyState } from "@common/client";
 import { useChartTheme } from "../theme/chartTheme";
 import { currencyFormatter, isAmountMasked, isNameMasked, maskName } from '../utils/format';
+import SpendingHeatmap from '../components/SpendingHeatmap';
 import './Trends.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -595,6 +596,39 @@ const Trends = () => {
         </div>
         <div className="chart-wrapper">{renderChart()}</div>
       </div>
+
+      {/* Spending Heatmap Calendar */}
+      <SpendingHeatmap
+        accountId={isAllAccounts ? null : selectedAccountId}
+        accountIds={isAllAccounts ? accounts.map(a => a.id).join(',') : null}
+        onSelectDay={(dateStr) => {
+          const formatted = new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          setDrillDown({
+            label: `Spends on ${formatted}`,
+            kind: 'spend',
+            start: dateStr,
+            end: dateStr,
+          });
+          setDrillLoading(true);
+          setDrillTransactions([]);
+
+          const params = new URLSearchParams({
+            kind: 'spend',
+            startDate: dateStr,
+            endDate: dateStr,
+          });
+          if (isAllAccounts) params.append('accountIds', accounts.map(a => a.id).join(','));
+          else params.append('accountId', selectedAccountId);
+
+          api.get(`/trends/transactions?${params.toString()}`)
+            .then(res => setDrillTransactions(Array.isArray(res.data) ? res.data : []))
+            .catch(err => {
+              console.error('Failed to fetch day transactions', err);
+              setDrillTransactions([]);
+            })
+            .finally(() => setDrillLoading(false));
+        }}
+      />
 
       {/* Drill-down — RHS slide-in drawer (shared shell with Transactions) */}
       <Drawer

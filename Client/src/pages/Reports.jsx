@@ -12,6 +12,7 @@ import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
 import { getToken } from "../theme/chartTheme";
 import { FiDownload, FiCalendar, FiArrowRight } from 'react-icons/fi';
 import { currencyFormatter as fmt, maskName } from '../utils/format';
+import AnnualSummaryView from '../components/AnnualSummaryView';
 import './Reports.css';
 
 /* ─── Design tokens — mapped to the global CSS variable system. DOM inline
@@ -57,7 +58,7 @@ export function ReportsFilters({ reportType, setReportType, reportPeriod, setRep
 
   // Months render under a per-year header with month-only rows; the trigger
   // still shows the full "June 2026" label. Years stay a flat list.
-  const options = reportType === 'year'
+  const options = (reportType === 'year' || reportType === 'annual')
     ? (periods.years || []).map(y => ({ value: String(y), label: String(y) }))
     : (periods.months || []).map(m => ({
         value: `${m.year}-${m.month}`,
@@ -81,6 +82,9 @@ export function ReportsFilters({ reportType, setReportType, reportPeriod, setRep
         </FilterPill>
         <FilterPill active={reportType === 'year'} onClick={() => setReportType('year')}>
           Yearly
+        </FilterPill>
+        <FilterPill active={reportType === 'annual'} onClick={() => setReportType('annual')}>
+          Year-in-Review
         </FilterPill>
       </FilterGroup>
 
@@ -233,7 +237,7 @@ export default function Reports() {
     const p = new URLSearchParams();
     p.append('type', type);
     p.append('accountIds', accountIdsParam);
-    if (type === 'year') {
+    if (type === 'year' || type === 'annual') {
       p.append('year', period);
     } else {
       const [y, m] = period.split('-');
@@ -248,11 +252,12 @@ export default function Reports() {
     const p = buildParams();
     if (!p) return;
     setLoading(true);
-    api.get(`/reports?${p.toString()}`)
+    const endpoint = type === 'annual' ? `/reports/annual?${p.toString()}` : `/reports?${p.toString()}`;
+    api.get(endpoint)
       .then(res => setReport(res.data))
       .catch(err => console.error('Failed to fetch report', err))
       .finally(() => setLoading(false));
-  }, [buildParams]);
+  }, [buildParams, type]);
 
   useEffect(() => { fetchReport(); }, [fetchReport]);
 
@@ -313,7 +318,7 @@ export default function Reports() {
   const openingBal = summary?.openingBalance ?? null;
   const closingBal = summary?.closingBalance ?? openingBal;
   const balanceChange = openingBal == null ? 0 : closingBal - openingBal;
-  const isEmpty    = !loading && report && (summary?.transactionCount ?? 0) === 0;
+  const isEmpty    = !loading && report && (type === 'annual' ? ((report.totalIncome ?? 0) === 0 && (report.totalSpend ?? 0) === 0) : (summary?.transactionCount ?? 0) === 0);
 
   const s = {
     page: {
@@ -388,14 +393,13 @@ export default function Reports() {
     setDownloading(true);
     try {
       const res = await api.get(`/reports/pdf?${p.toString()}`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${report?.label ?? 'Report'} ${type === 'year' ? 'Annual' : 'Monthly'} Report.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `statement-report-${type}-${period}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     } catch (err) {
       console.error('Failed to download PDF', err);
     } finally {
@@ -404,9 +408,9 @@ export default function Reports() {
   };
 
   return (
-    <div className="report-shell" style={{ display: 'flex', minHeight: '100vh', overflow: 'visible' }}>
+    <div style={{ display: 'flex', position: 'relative', overflow: 'hidden' }}>
       <div
-        className="report-page"
+        className="report-shell"
         style={{ ...s.page, flex: 1, minWidth: 0, marginRight: trayOpen ? drawerWidth : 0 }}
       >
 
@@ -414,18 +418,18 @@ export default function Reports() {
       <div className="no-print" style={s.topRow}>
         <div>
           <p style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: T.text }}>
-            {report?.label ?? '—'} {type === 'year' ? 'Annual' : 'Monthly'} Report
+            {type === 'annual' ? `${period || ''} Year-in-Review` : `${report?.label ?? '—'} ${type === 'year' ? 'Annual' : 'Monthly'} Report`}
           </p>
           <p style={{ margin: '2px 0 0', fontSize: '12px', color: T.muted }}>{scopeLabel}</p>
         </div>
         <button
           className="btn primary"
-          onClick={downloadPdf}
-          disabled={!report || loading || downloading}
+          onClick={type === 'annual' ? () => window.print() : downloadPdf}
+          disabled={!report || loading || (type !== 'annual' && downloading)}
           style={{ display: 'flex', alignItems: 'center', gap: '7px' }}
-          title="Download this report as a PDF file"
+          title={type === 'annual' ? 'Print or Save Year-in-Review' : 'Download this report as a PDF file'}
         >
-          <FiDownload size={15} /> {downloading ? 'Preparing…' : 'Download PDF'}
+          <FiDownload size={15} /> {type === 'annual' ? 'Print / Save' : downloading ? 'Preparing…' : 'Download PDF'}
         </button>
       </div>
 
@@ -434,7 +438,7 @@ export default function Reports() {
         {/* ── Report header (print only) ── */}
         <div className="report-print-header">
           <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: T.text }}>
-            Bank Analytics — {report?.label} {type === 'year' ? 'Annual' : 'Monthly'} Report
+            Bank Analytics — {type === 'annual' ? `${period || ''} Year-in-Review` : `${report?.label} ${type === 'year' ? 'Annual' : 'Monthly'} Report`}
           </h1>
           <p style={{ margin: '4px 0 16px', fontSize: '12px', color: T.muted }}>
             {scopeLabel} · Generated {fmtDate(new Date())}
@@ -453,6 +457,8 @@ export default function Reports() {
           <div style={{ ...s.card, padding: 0 }}>
             <EmptyState icon="📄" title="Nothing in this period" subtitle="No transactions were found for the selected period and accounts." />
           </div>
+        ) : type === 'annual' ? (
+          <AnnualSummaryView data={report} palette={palette} chartC={chartC} />
         ) : (
           <>
             {/* ── Summary ── */}

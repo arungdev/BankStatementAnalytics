@@ -22,7 +22,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public IActionResult GetSupportedFormats(int id)
         {
             var account = DbHelper.GetById<Account>((long)id);
-            if (!Owns(account)) return NotFound();
+            if (account is null || !Owns(account)) return NotFound();
 
             // Registry-driven so new parser registrations (e.g. PDF) flow to the
             // client's file-picker accept attribute automatically.
@@ -115,7 +115,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public IActionResult GetById(int id)
         {
             var account = DbHelper.GetById<Account>((long)id);
-            if (!Owns(account))
+            if (account is null || !Owns(account))
                 return NotFound();
 
             var dto = new { account.Id, account.AccountHolderName, account.BankName, account.StatementDay, MaskedAccountNumber = account.MaskedAccountNumber };
@@ -144,7 +144,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public async Task<IActionResult> Update(int id, [FromBody] UpdateAccountRequest request)
         {
             var account = DbHelper.GetById<Account>((long)id);
-            if (!Owns(account))
+            if (account is null || !Owns(account))
                 return NotFound();
 
             var name = request?.AccountHolderName?.Trim();
@@ -242,7 +242,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromServices] WatchFolderImportService watcher)
         {
             var account = DbHelper.GetById<Account>((long)id);
-            if (!Owns(account))
+            if (account is null || !Owns(account))
                 return NotFound();
 
             // Trim quotes so Explorer's "Copy as path" (which wraps in ") pastes cleanly.
@@ -302,7 +302,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public async Task<IActionResult> Delete(int id)
         {
             var account = DbHelper.GetById<Account>((long)id);
-            if (!Owns(account))
+            if (account is null || !Owns(account))
                 return NotFound();
 
             using var session = DbHelper.GetSession();
@@ -332,7 +332,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 ? new HashSet<int>()
                 : session.Query<BankTransaction>()
                     .Where(t => t.CounterParty != null && merchantIds.Contains(t.CounterParty.Id))
-                    .Select(t => t.CounterParty.Id)
+                    .Select(t => t.CounterParty!.Id)
                     .Distinct()
                     .ToList()
                     .ToHashSet();

@@ -129,7 +129,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{accountId}")]
         public async Task<IActionResult> GetTransactions(
      int accountId,
-     [FromQuery] string accountIds = null,
+     [FromQuery] string? accountIds = null,
      [FromQuery] int page = 1,
      [FromQuery] int pageSize = 0,
      [FromQuery] int? year = null,
@@ -137,17 +137,17 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] DateTime? startDate = null,
      [FromQuery] DateTime? endDate = null,
      [FromQuery] bool uncategorizedOnly = false,
-     [FromQuery] string search = null,
+     [FromQuery] string? search = null,
      [FromQuery] Guid? uploadId = null,
-     [FromQuery] string sortBy = null,
-     [FromQuery] string sortDir = null,
+     [FromQuery] string? sortBy = null,
+     [FromQuery] string? sortDir = null,
      [FromQuery] decimal? minAmount = null,
      [FromQuery] decimal? maxAmount = null,
-     [FromQuery] string category = null)
+     [FromQuery] string? category = null)
         {
             using var session = DbHelper.GetSession();
 
-            Account account = null;
+            Account? account = null;
             IQueryable<BankTransaction> query;
 
             if (!string.IsNullOrWhiteSpace(accountIds))
@@ -163,7 +163,7 @@ namespace BankStatementAnalytics.Controllers.Api
             else
             {
                 account = DbHelper.GetById<Account>((long)accountId);
-                if (!Owns(account))
+                if (account is null || !Owns(account))
                     return NotFound();
 
                 var bankType = BankTypeCode.For(account.BankName);
@@ -370,7 +370,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 return NotFound();
 
             var account = DbHelper.GetById<Account>((long)history.AccountId);
-            if (!Owns(account))
+            if (account is null || !Owns(account))
                 return NotFound();
 
             if (string.IsNullOrEmpty(history.SourcePath) || !System.IO.File.Exists(history.SourcePath))
@@ -483,7 +483,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public async Task<IActionResult> Upload(IFormFile file, [FromForm] int accountId, [FromForm] string? password = null)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
-            if (!Owns(account))
+            if (account is null || !Owns(account))
                 return NotFound();
 
             if (file == null || file.Length == 0)

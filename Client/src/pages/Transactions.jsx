@@ -4,7 +4,7 @@ import api from "../api/client";
 import { Avatar, Badge, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState } from "@common/client";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
-import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle } from "react-icons/fi";
+import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
 import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
@@ -12,6 +12,7 @@ import DateRangePicker from "../components/Daterangepicker";
 import { FilterGroup } from "../components/PageHeader";
 import Pagination from "../components/Pagination";
 import CategoryPicker from "../components/CategoryPicker";
+import SplitTransactionModal from "../components/SplitTransactionModal";
 import { currencyFormatter, maskName } from "../utils/format";
 import { validateCategoryName, findExistingName } from "../utils/categoryName";
 
@@ -76,6 +77,7 @@ export default function Transactions() {
 
   const [tx, setTx] = useState([]);
   const [loading, setLoading] = useState(effectiveAccountId == null);
+  const [splitModalTx, setSplitModalTx] = useState(null);
   // Full-page loader only before the first load — later refetches (search typing,
   // paging) keep the list mounted so the search input doesn't lose focus.
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -1447,7 +1449,18 @@ export default function Transactions() {
                 <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{maskName(selectedTx.description) || '-'}</div>
               </div>
               <div style={{ gridColumn: 'span 2' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
+                  <button
+                    type="button"
+                    className="btn small"
+                    onClick={() => setSplitModalTx(selectedTx)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', padding: '3px 8px' }}
+                    title="Split into multiple categories"
+                  >
+                    <FiScissors size={13} /> Split
+                  </button>
+                </div>
                 <div style={{ marginTop: '8px' }}>
                   <CategoryPicker
                     value={selectedTx.subCategory || selectedTx.category || ''}
@@ -1659,6 +1672,17 @@ export default function Transactions() {
       <Modal open={showUpload} onClose={() => setShowUpload(false)} width={760}>
         <UploadStatement onUploaded={() => { setShowUpload(false); setRefreshKey(k => k + 1); }} showHistory={false} />
       </Modal>
+
+      <SplitTransactionModal
+        open={!!splitModalTx}
+        onClose={() => setSplitModalTx(null)}
+        transaction={splitModalTx}
+        categories={categories}
+        onSaved={() => {
+          setSelectedTx(null);
+          setRefreshKey(k => k + 1);
+        }}
+      />
     </div>
   );
 }
