@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -9,7 +9,7 @@
          UninstallDisplayIcon and Start-menu/desktop shortcut icons (all point at the exe). -->
     <ApplicationIcon>icons\AppIcon.ico</ApplicationIcon>
     <!-- Single source of truth for the app/installer version - bump this per release. -->
-    <Version>1.0.0</Version>
+    <Version>2.0.0</Version>
     <!-- Disable the SDK's static-web-assets Brotli/gzip precompression. The React client is built
          straight into wwwroot with hashed filenames (Vite emptyOutDir), and that hash churn desyncs
          the compression fingerprint cache in obj\ across repeated publishes, failing the build with

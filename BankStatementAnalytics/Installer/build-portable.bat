@@ -24,7 +24,7 @@ if not exist "%PUBLISH_DIR%" (
 rem Same <Version> the installer uses, read from the same .csproj.
 set "APPVERSION="
 for /f "usebackq tokens=* delims=" %%V in (`powershell -NoProfile -Command "(Select-String -Path '%PROJECT%' -Pattern '<Version>(.*)</Version>').Matches.Groups[1].Value"`) do set "APPVERSION=%%V"
-if not defined APPVERSION set "APPVERSION=1.0.0"
+if not defined APPVERSION set "APPVERSION=2.0.0"
 
 echo.
 echo ============================================
