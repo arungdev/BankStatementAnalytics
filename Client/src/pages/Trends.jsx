@@ -141,7 +141,6 @@ const Trends = () => {
   const [loading, setLoading] = useState(true);
   const { selectedAccountId } = useAccount();
   const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
-  const isCreditCard = accounts.find(a => a.id === selectedAccountId)?.bankName === 'HDFCCreditCard';
 
   // Theme-resolved chart colors — shared token hook, recomputed on theme flip.
   const T = useChartTheme();
