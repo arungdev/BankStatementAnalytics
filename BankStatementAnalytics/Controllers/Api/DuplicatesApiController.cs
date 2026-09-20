@@ -16,12 +16,11 @@ namespace BankStatementAnalytics.Controllers.Api
             _service = service;
         }
 
-        // GET: api/duplicates — list potential duplicate charges detected in last 90 days
+        // GET: api/duplicates — disabled
         [HttpGet]
         public IActionResult GetDuplicates([FromQuery] int lookbackDays = 90)
         {
-            var duplicates = _service.DetectDuplicates(CurrentUserId, lookbackDays);
-            return Ok(duplicates);
+            return Ok(new System.Collections.Generic.List<object>());
         }
     }
 }

@@ -1456,6 +1456,23 @@ export default function Transactions() {
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Description</div>
                 <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500 }}>{maskName(selectedTx.description) || '-'}</div>
               </div>
+              {selectedTx.originalCurrency && selectedTx.originalAmount && (
+                <div style={{ gridColumn: 'span 2', background: 'var(--surface-2)', padding: '12px 14px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase' }}>
+                    🌐 Foreign Currency Transaction
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)' }}>
+                      {selectedTx.originalCurrency} {Number(selectedTx.originalAmount).toFixed(2)}
+                    </span>
+                    {selectedTx.forexMarkupPercent && (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        Markup fee: ~{selectedTx.forexMarkupPercent}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
               <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>

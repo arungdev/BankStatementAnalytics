@@ -1,11 +1,19 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../api/client';
 import { currencyFormatter, isAmountMasked, MASKED_AMOUNT } from '../utils/format';
-import { FiChevronLeft, FiChevronRight, FiCalendar } from 'react-icons/fi';
+import { FiChevronLeft, FiChevronRight, FiCalendar, FiTrendingUp, FiCheckCircle } from 'react-icons/fi';
 import './SpendingHeatmap.css';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Format a local Date object to YYYY-MM-DD safely without timezone shifts
+const formatDateKey = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 
 export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) {
   const currentYear = new Date().getFullYear();
@@ -18,7 +26,7 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
     if (!accountId && !accountIds) return;
     setLoading(true);
 
-    const params = new URLSearchParams({ year });
+    const params = new URLSearchParams({ year: String(year) });
     if (accountIds) params.append('accountIds', accountIds);
     else if (accountId) params.append('accountId', accountId);
 
@@ -53,22 +61,32 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
     return Math.max(sorted[p90Index] || sorted[sorted.length - 1], 500);
   }, [data]);
 
-  // Year stats
+  // Summary statistics for badges
   const stats = useMemo(() => {
     const total = data.reduce((sum, d) => sum + d.totalDebit, 0);
     const activeDays = data.filter(d => d.totalDebit > 0).length;
     const avgDaily = activeDays > 0 ? total / activeDays : 0;
-    return { total, activeDays, avgDaily };
+    
+    let maxDaySpend = 0;
+    let maxDayDate = null;
+    data.forEach(d => {
+      if (d.totalDebit > maxDaySpend) {
+        maxDaySpend = d.totalDebit;
+        maxDayDate = d.date;
+      }
+    });
+
+    return { total, activeDays, avgDaily, maxDaySpend, maxDayDate };
   }, [data]);
 
-  // Build grid data: weeks array for the selected year
-  const grid = useMemo(() => {
+  // Build grid data: 52-53 weeks for the selected year
+  const { weeks, monthHeaders } = useMemo(() => {
     const start = new Date(year, 0, 1);
     const end = new Date(year, 11, 31);
-    const weeks = [];
+    const resultWeeks = [];
     let currentWeek = [];
 
-    // Pad first week if Jan 1 is not Sunday (day 0)
+    // Pad first week with nulls if Jan 1 is not Sunday
     const firstDayOfWeek = start.getDay();
     for (let i = 0; i < firstDayOfWeek; i++) {
       currentWeek.push(null);
@@ -76,7 +94,7 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
 
     const cur = new Date(start);
     while (cur <= end) {
-      const dateStr = cur.toISOString().split('T')[0];
+      const dateStr = formatDateKey(cur);
       const spend = spendMap.get(dateStr);
       currentWeek.push({
         date: dateStr,
@@ -86,7 +104,7 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
       });
 
       if (currentWeek.length === 7) {
-        weeks.push(currentWeek);
+        resultWeeks.push(currentWeek);
         currentWeek = [];
       }
       cur.setDate(cur.getDate() + 1);
@@ -96,54 +114,60 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
       while (currentWeek.length < 7) {
         currentWeek.push(null);
       }
-      weeks.push(currentWeek);
+      resultWeeks.push(currentWeek);
     }
 
-    return weeks;
-  }, [year, spendMap]);
-
-  // Determine month label positions along columns
-  const monthLabels = useMemo(() => {
-    const labels = [];
+    // Determine month headers aligned per week column
+    const headers = [];
     let lastMonth = -1;
 
-    grid.forEach((week, weekIdx) => {
-      // Find the first non-null day in this week
-      const firstDay = week.find(d => d !== null);
-      if (firstDay) {
-        const month = parseInt(firstDay.date.split('-')[1], 10) - 1;
-        if (month !== lastMonth) {
-          labels.push({ month: MONTH_NAMES[month], weekIdx });
-          lastMonth = month;
+    resultWeeks.forEach((w) => {
+      // Find the first valid day in this week
+      const validDay = w.find(d => d !== null);
+      if (validDay) {
+        const monthIndex = parseInt(validDay.date.split('-')[1], 10) - 1;
+        if (monthIndex !== lastMonth) {
+          headers.push(MONTH_NAMES[monthIndex]);
+          lastMonth = monthIndex;
+        } else {
+          headers.push(null);
         }
+      } else {
+        headers.push(null);
       }
     });
 
-    return labels;
-  }, [grid]);
+    return { weeks: resultWeeks, monthHeaders: headers };
+  }, [year, spendMap]);
 
   const getColorTier = (amount) => {
     if (!amount || amount <= 0) return 'tier-0';
     const ratio = amount / maxSpend;
-    if (ratio < 0.2) return 'tier-1';
-    if (ratio < 0.45) return 'tier-2';
-    if (ratio < 0.75) return 'tier-3';
+    if (ratio < 0.20) return 'tier-1';
+    if (ratio < 0.50) return 'tier-2';
+    if (ratio < 0.80) return 'tier-3';
     return 'tier-4';
   };
 
   return (
     <div className="spending-heatmap-card">
+      {/* ── Header ── */}
       <div className="spending-heatmap-header">
         <div className="spending-heatmap-title-group">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <FiCalendar style={{ color: 'var(--primary)' }} size={16} />
-            <h3 className="spending-heatmap-title">Daily Spending Heatmap</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+            <div className="heatmap-icon-box">
+              <FiCalendar size={18} />
+            </div>
+            <div>
+              <h3 className="spending-heatmap-title">Daily Spending Heatmap</h3>
+              <p className="spending-heatmap-desc">
+                Activity distribution across all 365 days for {year}
+              </p>
+            </div>
           </div>
-          <span className="spending-heatmap-subtitle">
-            {stats.activeDays} spend days • Total {isAmountMasked() ? MASKED_AMOUNT : currencyFormatter.format(stats.total)}
-          </span>
         </div>
 
+        {/* Year Selector */}
         <div className="spending-heatmap-controls">
           <button
             className="heatmap-nav-btn"
@@ -166,46 +190,82 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
         </div>
       </div>
 
+      {/* ── Stat Badges Row ── */}
+      <div className="heatmap-stats-strip">
+        <div className="heatmap-stat-item">
+          <span className="heatmap-stat-label">Total Outflow</span>
+          <span className="heatmap-stat-value tnum">
+            {isAmountMasked() ? MASKED_AMOUNT : currencyFormatter.format(stats.total)}
+          </span>
+        </div>
+        <div className="heatmap-stat-divider" />
+        <div className="heatmap-stat-item">
+          <span className="heatmap-stat-label">Active Spend Days</span>
+          <span className="heatmap-stat-value">
+            {stats.activeDays} <span className="heatmap-stat-sub">/ 365</span>
+          </span>
+        </div>
+        <div className="heatmap-stat-divider" />
+        <div className="heatmap-stat-item">
+          <span className="heatmap-stat-label">Daily Average</span>
+          <span className="heatmap-stat-value tnum">
+            {isAmountMasked() ? MASKED_AMOUNT : currencyFormatter.format(stats.avgDaily)}
+          </span>
+        </div>
+        {stats.maxDaySpend > 0 && (
+          <>
+            <div className="heatmap-stat-divider" />
+            <div className="heatmap-stat-item">
+              <span className="heatmap-stat-label">Peak Spend Day</span>
+              <span className="heatmap-stat-value tnum" style={{ color: 'var(--primary)' }}>
+                {isAmountMasked() ? MASKED_AMOUNT : currencyFormatter.format(stats.maxDaySpend)}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── Main Heatmap Grid ── */}
       <div className="heatmap-scroll-area">
         <div className="heatmap-grid-container">
-          {/* Month Labels Row */}
+          {/* Months Track (each cell aligns with the week column) */}
           <div className="heatmap-months-row">
             <div className="heatmap-day-label-spacer" />
-            <div className="heatmap-months-track">
-              {monthLabels.map(({ month, weekIdx }) => (
-                <span
-                  key={`${month}-${weekIdx}`}
-                  className="heatmap-month-label"
-                  style={{ left: `${weekIdx * 14}px` }}
-                >
-                  {month}
-                </span>
+            <div className="heatmap-columns-row">
+              {monthHeaders.map((m, idx) => (
+                <div key={idx} className="heatmap-month-cell">
+                  {m && <span className="heatmap-month-text">{m}</span>}
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Grid Rows (Days 0-6: Sun-Sat) */}
+          {/* Grid Body */}
           <div className="heatmap-body">
+            {/* Day of Week Labels (Mon, Wed, Fri) */}
             <div className="heatmap-days-col">
               {DAY_LABELS.map((label, idx) => (
                 <span key={label} className="heatmap-day-label">
-                  {idx % 2 === 1 ? label : ''}
+                  {idx === 1 ? 'Mon' : idx === 3 ? 'Wed' : idx === 5 ? 'Fri' : ''}
                 </span>
               ))}
             </div>
 
+            {/* Week Columns Grid */}
             <div className="heatmap-cells-grid">
-              {grid.map((week, wIdx) => (
+              {weeks.map((week, wIdx) => (
                 <div key={wIdx} className="heatmap-week-col">
                   {week.map((day, dIdx) => {
                     if (!day) {
                       return <div key={`empty-${dIdx}`} className="heatmap-cell empty" />;
                     }
                     const tier = getColorTier(day.totalDebit);
+                    const isSelected = hoveredCell?.date === day.date;
+
                     return (
                       <div
                         key={day.date}
-                        className={`heatmap-cell ${tier}`}
+                        className={`heatmap-cell ${tier} ${isSelected ? 'selected' : ''}`}
                         onClick={() => onSelectDay?.(day.date, day.totalDebit)}
                         onMouseEnter={(e) => {
                           const rect = e.currentTarget.getBoundingClientRect();
@@ -228,24 +288,30 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
         </div>
       </div>
 
-      {/* Footer Legend */}
+      {/* ── Footer / Legend ── */}
       <div className="heatmap-footer">
+        <span className="heatmap-hint-text">
+          💡 Click any day to inspect its full transaction list
+        </span>
         <div className="heatmap-legend">
           <span className="heatmap-legend-label">Less</span>
-          <div className="heatmap-cell tier-0" />
-          <div className="heatmap-cell tier-1" />
-          <div className="heatmap-cell tier-2" />
-          <div className="heatmap-cell tier-3" />
-          <div className="heatmap-cell tier-4" />
+          <span className="heatmap-cell tier-0 legend-sample" />
+          <span className="heatmap-cell tier-1 legend-sample" />
+          <span className="heatmap-cell tier-2 legend-sample" />
+          <span className="heatmap-cell tier-3 legend-sample" />
+          <span className="heatmap-cell tier-4 legend-sample" />
           <span className="heatmap-legend-label">More</span>
         </div>
       </div>
 
-      {/* Floating Tooltip */}
+      {/* ── Floating Hover Tooltip ── */}
       {hoveredCell && (
         <div
           className="heatmap-tooltip"
-          style={{ left: `${hoveredCell.x}px`, top: `${hoveredCell.y}px` }}
+          style={{
+            left: `${hoveredCell.x}px`,
+            top: `${hoveredCell.y}px`,
+          }}
         >
           <div className="heatmap-tooltip-date">
             {new Date(hoveredCell.date).toLocaleDateString('en-IN', {
@@ -255,14 +321,14 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
               year: 'numeric',
             })}
           </div>
-          <div className="heatmap-tooltip-amount">
+          <div className="heatmap-tooltip-amount tnum">
             {hoveredCell.totalDebit > 0
               ? (isAmountMasked() ? MASKED_AMOUNT : currencyFormatter.format(hoveredCell.totalDebit))
               : 'No spend'}
           </div>
           {hoveredCell.count > 0 && (
             <div className="heatmap-tooltip-count">
-              {hoveredCell.count} transaction{hoveredCell.count > 1 ? 's' : ''} • Click to view
+              {hoveredCell.count} {hoveredCell.count === 1 ? 'transaction' : 'transactions'}
             </div>
           )}
         </div>

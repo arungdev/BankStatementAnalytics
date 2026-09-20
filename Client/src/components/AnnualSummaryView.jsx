@@ -21,15 +21,33 @@ export default function AnnualSummaryView({ data, palette, chartC }) {
     totalSpend = 0,
     netSavings = 0,
     savingsRate = 0,
-    highestSpendMonthAmount = 0,
-    highestSpendMonthName = '—',
-    lowestSpendMonthAmount = 0,
-    lowestSpendMonthName = '—',
-    avgMonthlySpend = 0,
-    monthly = [],
     topCategories = [],
     topMerchants = [],
   } = data;
+
+  const monthly = data.monthlyBreakdown?.length
+    ? data.monthlyBreakdown
+    : data.monthly?.length
+    ? data.monthly
+    : [];
+
+  const highestSpendMonthName = data.highestSpendMonthName && data.highestSpendMonthName !== '—'
+    ? data.highestSpendMonthName
+    : data.busiestMonth || '—';
+
+  const lowestSpendMonthName = data.lowestSpendMonthName && data.lowestSpendMonthName !== '—'
+    ? data.lowestSpendMonthName
+    : data.quietestMonth || '—';
+
+  const highestSpendMonthAmount = data.highestSpendMonthAmount ||
+    (monthly.find(m => m.monthName === highestSpendMonthName)?.spend ?? 0);
+
+  const lowestSpendMonthAmount = data.lowestSpendMonthAmount ||
+    (monthly.find(m => m.monthName === lowestSpendMonthName)?.spend ?? 0);
+
+  const activeMonths = monthly.filter(m => m.spend > 0);
+  const avgMonthlySpend = data.avgMonthlySpend ||
+    (activeMonths.length > 0 ? (totalSpend / activeMonths.length) : (totalSpend > 0 ? totalSpend / 12 : 0));
 
   const netPositive = netSavings >= 0;
 
@@ -261,34 +279,38 @@ export default function AnnualSummaryView({ data, palette, chartC }) {
             <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No category data available.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {topCategories.map((c, i) => (
-                <div key={c.category}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
+              {topCategories.map((c, i) => {
+                const catName = c.category && c.category.trim() ? c.category.trim() : 'Uncategorized';
+                const catPct = c.percentage ?? (totalSpend > 0 ? ((c.totalSpend / totalSpend) * 100).toFixed(1) : 0);
+                return (
+                  <div key={catName + i}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: palette[i % palette.length],
+                          marginRight: '8px',
+                        }} />
+                        {catName}
+                      </span>
+                      <span className="tnum" style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                        {fmt.format(c.totalSpend)} <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 500 }}>({catPct}%)</span>
+                      </span>
+                    </div>
+                    <div style={{ height: '6px', background: 'var(--border-subtle)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${Math.min(Math.max(Number(catPct), 2), 100)}%`,
+                        height: '100%',
                         background: palette[i % palette.length],
-                        marginRight: '8px',
+                        borderRadius: '4px',
                       }} />
-                      {c.category}
-                    </span>
-                    <span className="tnum" style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                      {fmt.format(c.totalSpend)} <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 500 }}>({c.percentage}%)</span>
-                    </span>
+                    </div>
                   </div>
-                  <div style={{ height: '6px', background: 'var(--border-subtle)', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${Math.min(Math.max(c.percentage, 2), 100)}%`,
-                      height: '100%',
-                      background: palette[i % palette.length],
-                      borderRadius: '4px',
-                    }} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -307,45 +329,49 @@ export default function AnnualSummaryView({ data, palette, chartC }) {
             <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No merchant data available.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {topMerchants.map((m, i) => (
-                <div key={m.merchant} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 14px',
-                  background: 'var(--surface-2)',
-                  borderRadius: '10px',
-                  border: '1px solid var(--border-subtle)',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '6px',
-                      background: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#b45309' : 'var(--border-color)',
-                      color: '#fff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                    }}>
-                      {i + 1}
-                    </span>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                        {maskName(m.merchant)}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {m.transactionCount} transactions · {m.percentage}% of spend
+              {topMerchants.map((m, i) => {
+                const merchName = m.merchant && m.merchant.trim() ? m.merchant.trim() : 'Other';
+                const merchPct = m.percentage ?? (totalSpend > 0 ? ((m.totalSpend / totalSpend) * 100).toFixed(1) : 0);
+                return (
+                  <div key={merchName + i} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    background: 'var(--surface-2)',
+                    borderRadius: '10px',
+                    border: '1px solid var(--border-subtle)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '6px',
+                        background: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#b45309' : 'var(--border-color)',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                      }}>
+                        {i + 1}
+                      </span>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
+                          {maskName(merchName)}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {m.transactionCount} transactions · {merchPct}% of spend
+                        </div>
                       </div>
                     </div>
+                    <div className="tnum" style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>
+                      {fmt.format(m.totalSpend)}
+                    </div>
                   </div>
-                  <div className="tnum" style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>
-                    {fmt.format(m.totalSpend)}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

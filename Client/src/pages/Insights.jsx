@@ -38,6 +38,7 @@ const GROUP_TABS = [
   { key: 'byCategory', label: 'Categories', singular: 'Category' },
   { key: 'byMerchant', label: 'Merchants',  singular: 'Merchant'  },
   { key: 'byTag',      label: 'Tags',       singular: 'Tag'       },
+  { key: 'byForex',    label: 'Forex / Intl', singular: 'Currency' },
 ];
 
 const fmtK = v => isAmountMasked()

@@ -121,6 +121,7 @@ const Skeleton = ({ w = '100%', h = 16, r = 6 }) => (
 
 export default function Overview() {
   const { selectedAccountId } = useAccount();
+  const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
   const { accounts = [], openSettings } = useOutletContext() ?? {};
   const navigate = useNavigate();
   const { theme } = useTheme();

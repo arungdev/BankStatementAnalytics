@@ -7,6 +7,7 @@ using NHibernate.Linq;
 using Common.Framework.Data;
 using Common.Framework.Web;
 using BankStatementAnalytics.Models;
+using BankStatementAnalytics.Services;
 
 namespace BankStatementAnalytics.Controllers.Api
 {
@@ -84,9 +85,9 @@ namespace BankStatementAnalytics.Controllers.Api
 
             // 2. Merchants search
             var merchantResults = await session.Query<Merchant>()
-                .Where(m => m.UserId == CurrentUserId && (
+                .Where(m => (m.OwnerUserId == null || m.OwnerUserId == CurrentUserId) && (
                     m.Name.ToLower().Contains(lower) ||
-                    m.Category.ToLower().Contains(lower) ||
+                    (m.Category != null && m.Category.ToLower().Contains(lower)) ||
                     (m.SubCategory != null && m.SubCategory.ToLower().Contains(lower))
                 ))
                 .Take(5)
@@ -94,9 +95,9 @@ namespace BankStatementAnalytics.Controllers.Api
                 {
                     id = m.Id,
                     name = m.Name,
+                    friendlyName = m.FriendlyName,
                     category = m.Category,
-                    subCategory = m.SubCategory,
-                    autoCategorize = m.AutoCategorize
+                    subCategory = m.SubCategory
                 })
                 .ToListAsync();
 

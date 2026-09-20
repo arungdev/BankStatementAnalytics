@@ -68,13 +68,16 @@ namespace BankStatementAnalytics.Services
             }
 
             var activeMonths = monthly.Where(m => m.Spend > 0).ToList();
-            var busiestMonth = activeMonths.OrderByDescending(m => m.Spend).FirstOrDefault()?.MonthName;
-            var quietestMonth = activeMonths.OrderBy(m => m.Spend).FirstOrDefault()?.MonthName;
+            var highestMonth = activeMonths.OrderByDescending(m => m.Spend).FirstOrDefault();
+            var lowestMonth = activeMonths.OrderBy(m => m.Spend).FirstOrDefault();
+            var avgMonthlySpend = activeMonths.Count > 0
+                ? Math.Round(totalSpend / activeMonths.Count, 2)
+                : (totalSpend > 0 ? Math.Round(totalSpend / 12, 2) : 0);
 
             // Top categories
             var topCategories = rows
                 .Where(r => r.Debit > 0)
-                .GroupBy(r => r.Category)
+                .GroupBy(r => string.IsNullOrWhiteSpace(r.Category) ? "Uncategorized" : r.Category.Trim())
                 .Select(g => new CategoryRankItem
                 {
                     Category = g.Key,
@@ -94,7 +97,8 @@ namespace BankStatementAnalytics.Services
                 {
                     Merchant = g.Key,
                     TotalSpend = g.Sum(x => x.Debit),
-                    TransactionCount = g.Count()
+                    TransactionCount = g.Count(),
+                    Percentage = totalSpend > 0 ? Math.Round((double)(g.Sum(x => x.Debit) / totalSpend) * 100, 1) : 0
                 })
                 .OrderByDescending(m => m.TotalSpend)
                 .Take(10)
@@ -109,7 +113,8 @@ namespace BankStatementAnalytics.Services
                 {
                     Merchant = g.Key,
                     TotalSpend = g.Sum(x => x.Debit),
-                    TransactionCount = g.Count()
+                    TransactionCount = g.Count(),
+                    Percentage = totalSpend > 0 ? Math.Round((double)(g.Sum(x => x.Debit) / totalSpend) * 100, 1) : 0
                 })
                 .FirstOrDefault();
 
@@ -134,12 +139,18 @@ namespace BankStatementAnalytics.Services
                 NetSavings = netSavings,
                 SavingsRate = savingsRate,
                 TotalTransactions = rows.Count,
-                BusiestMonth = busiestMonth,
-                QuietestMonth = quietestMonth,
+                HighestSpendMonthAmount = highestMonth?.Spend ?? 0,
+                HighestSpendMonthName = highestMonth?.MonthName ?? "—",
+                LowestSpendMonthAmount = lowestMonth?.Spend ?? 0,
+                LowestSpendMonthName = lowestMonth?.MonthName ?? "—",
+                AvgMonthlySpend = avgMonthlySpend,
+                BusiestMonth = highestMonth?.MonthName,
+                QuietestMonth = lowestMonth?.MonthName,
                 TopCategories = topCategories,
                 TopMerchants = topMerchants,
                 MostFrequentMerchant = mostFrequent,
                 BiggestSpend = biggestSpend,
+                Monthly = monthly,
                 MonthlyBreakdown = monthly
             };
         }
@@ -153,12 +164,18 @@ namespace BankStatementAnalytics.Services
         public decimal NetSavings { get; set; }
         public double SavingsRate { get; set; }
         public int TotalTransactions { get; set; }
+        public decimal HighestSpendMonthAmount { get; set; }
+        public string HighestSpendMonthName { get; set; } = "—";
+        public decimal LowestSpendMonthAmount { get; set; }
+        public string LowestSpendMonthName { get; set; } = "—";
+        public decimal AvgMonthlySpend { get; set; }
         public string? BusiestMonth { get; set; }
         public string? QuietestMonth { get; set; }
         public List<CategoryRankItem> TopCategories { get; set; } = new();
         public List<MerchantRankItem> TopMerchants { get; set; } = new();
         public MerchantRankItem? MostFrequentMerchant { get; set; }
         public BiggestSpendItem? BiggestSpend { get; set; }
+        public List<MonthlySummaryItem> Monthly { get; set; } = new();
         public List<MonthlySummaryItem> MonthlyBreakdown { get; set; } = new();
     }
 
@@ -175,6 +192,7 @@ namespace BankStatementAnalytics.Services
         public string Merchant { get; set; } = string.Empty;
         public decimal TotalSpend { get; set; }
         public int TransactionCount { get; set; }
+        public double Percentage { get; set; }
     }
 
     public class BiggestSpendItem

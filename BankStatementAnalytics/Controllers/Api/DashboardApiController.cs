@@ -246,7 +246,9 @@ namespace BankStatementAnalytics.Controllers.Api
                     t.CategoryOverride,
                     MerchantName = t.CounterParty != null ? t.CounterParty.Name : null,
                     MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null,
-                    t.Tags
+                    t.Tags,
+                    t.OriginalCurrency,
+                    t.OriginalAmount
                 })
                 .ToListAsync();
 
@@ -291,7 +293,21 @@ namespace BankStatementAnalytics.Controllers.Api
                 .OrderByDescending(x => x.total)
                 .ToList();
 
-            return Ok(new { byCategory, byMerchant, byTag });
+            // By Forex Currency
+            var byForex = rows
+                .Where(t => !string.IsNullOrWhiteSpace(t.OriginalCurrency))
+                .GroupBy(t => t.OriginalCurrency!)
+                .Select(g => new
+                {
+                    name = g.Key,
+                    total = g.Sum(t => t.Debit),
+                    foreignTotal = g.Sum(t => t.OriginalAmount ?? 0),
+                    count = g.Count()
+                })
+                .OrderByDescending(x => x.total)
+                .ToList();
+
+            return Ok(new { byCategory, byMerchant, byTag, byForex });
         }
         [HttpGet("insights/transactions")]
         public async Task<IActionResult> GetInsightTransactions(
@@ -343,6 +359,10 @@ namespace BankStatementAnalytics.Controllers.Api
 
                 case "byTag":
                     break; // handled in memory below
+
+                case "byForex":
+                    query = query.Where(t => t.OriginalCurrency == groupValue);
+                    break;
 
                 // Every spend in the range, ungrouped — backs the "Total Spent" tile,
                 // whose denominator is the whole chart rather than one slice.

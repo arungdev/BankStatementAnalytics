@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiBell, FiCalendar, FiCheck, FiRotateCcw, FiAlertCircle, FiCopy } from "react-icons/fi";
+import { FiBell, FiCalendar, FiCheck, FiRotateCcw, FiAlertCircle } from "react-icons/fi";
 import api from "../api/client";
 import { getAutoImports } from "../api/statements";
 import { useAccount } from "../context/useAccount";
@@ -34,8 +34,6 @@ const reminderKey = (b) => {
 const notificationKey = (n) =>
   n.kind === "import"
     ? `import.${n.id}.${n.createdAt}`
-    : n.kind === "duplicate"
-    ? `duplicate.${n.id}`
     : n.kind === "anomaly"
     ? `anomaly.${n.id}`
     : reminderKey(n);
@@ -81,18 +79,16 @@ export default function NotificationBell({ onDockChange, accounts = [] }) {
       getAutoImports()
         .then((res) => (res.data || []).filter((h) => h.status === "Failed"))
         .catch(() => []),
-      api.get("/duplicates").then((res) => res.data || []).catch(() => []),
       api.get("/anomalies").then((res) => res.data || []).catch(() => []),
-    ]).then(([bills, cards, fails, dups, anoms]) => {
+    ]).then(([bills, cards, fails, anoms]) => {
       const due = [...bills, ...cards]
         .map((b) => ({ ...b, kind: "bill" }))
         .sort((a, b) => a.daysUntilDue - b.daysUntilDue);
       const failed = fails
         .map((f) => ({ ...f, kind: "import" }))
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      const duplicates = (dups || []).map((d) => ({ ...d, kind: "duplicate" }));
       const anomalies = (anoms || []).map((a) => ({ ...a, kind: "anomaly" }));
-      setItems([...failed, ...anomalies, ...duplicates, ...due]);
+      setItems([...failed, ...anomalies, ...due]);
     });
 
   useEffect(() => {
@@ -119,11 +115,6 @@ export default function NotificationBell({ onDockChange, accounts = [] }) {
       // account first, or its history drawer would open on a different one.
       if (n.accountId != null) setSelectedAccountId(n.accountId);
       navigate("/transactions?uploads=1");
-      return;
-    }
-    if (n.kind === "duplicate") {
-      if (n.accountId1 != null) setSelectedAccountId(n.accountId1);
-      navigate(`/transactions?search=${encodeURIComponent(n.merchant || "")}`);
       return;
     }
     if (n.kind === "anomaly") {
@@ -231,13 +222,12 @@ export default function NotificationBell({ onDockChange, accounts = [] }) {
             {items.map((n) => {
               const read = isRead(n);
               const isImport = n.kind === "import";
-              const isDuplicate = n.kind === "duplicate";
               const isAnomaly = n.kind === "anomaly";
               const accent = read
                 ? "var(--border-color)"
                 : isImport || (isAnomaly && n.severity === "critical")
                 ? "var(--danger)"
-                : isDuplicate || isAnomaly
+                : isAnomaly
                 ? "var(--warning)"
                 : n.daysUntilDue <= 2
                 ? "var(--danger)"
@@ -271,7 +261,7 @@ export default function NotificationBell({ onDockChange, accounts = [] }) {
                   {/* Clickable body */}
                   <button
                     onClick={() => goToItem(n)}
-                    title={isImport ? "Open upload history to retry" : isDuplicate ? "Search transaction to verify" : isAnomaly ? "Inspect transaction" : "View bill"}
+                    title={isImport ? "Open upload history to retry" : isAnomaly ? "Inspect transaction" : "View bill"}
                     style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}
                   >
                     {isImport ? (
@@ -290,18 +280,6 @@ export default function NotificationBell({ onDockChange, accounts = [] }) {
                         )}
                         <div style={{ fontSize: "11px", marginTop: "6px", color: "var(--text-faint)" }}>
                           {fmtDateTime(n.createdAt)}
-                        </div>
-                      </>
-                    ) : isDuplicate ? (
-                      <>
-                        <div style={{ fontWeight: read ? 500 : 700, fontSize: "14px", color: "var(--text-main)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {maskName(n.merchant)}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", marginTop: "4px", color: "var(--primary)", fontWeight: 600 }}>
-                          <FiCopy size={12} /> Possible Duplicate Charge
-                        </div>
-                        <div style={{ fontSize: "11px", marginTop: "4px", color: "var(--text-muted)" }}>
-                          {fmtDate(n.date1)} & {fmtDate(n.date2)} {n.daysApart === 0 ? "• same day" : `• ${n.daysApart}d apart`}
                         </div>
                       </>
                     ) : isAnomaly ? (
@@ -330,8 +308,8 @@ export default function NotificationBell({ onDockChange, accounts = [] }) {
 
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
                     {!isImport && (
-                      <div style={{ fontWeight: 800, fontSize: "15px", color: (isDuplicate || isAnomaly) ? "var(--danger)" : "var(--text-main)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                        {currencyFormatter.format(isDuplicate || isAnomaly ? n.amount : n.expectedAmount)}
+                      <div style={{ fontWeight: 800, fontSize: "15px", color: isAnomaly ? "var(--danger)" : "var(--text-main)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                        {currencyFormatter.format(isAnomaly ? n.amount : n.expectedAmount)}
                       </div>
                     )}
                     <button

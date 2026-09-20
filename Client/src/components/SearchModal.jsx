@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiSearch, FiArrowRight, FiTag, FiCalendar, FiX } from 'react-icons/fi';
 import api from '../api/client';
-import { currencyFormatter as fmt, maskName } from '../utils/format';
-import { isAmountMasked, MASKED_AMOUNT } from '../utils/privacy';
+import { currencyFormatter as fmt, maskName, isAmountMasked, MASKED_AMOUNT } from '../utils/format';
 
 export default function SearchModal({ isOpen, onClose }) {
   const [query, setQuery] = useState('');
