@@ -31,12 +31,16 @@ namespace BankStatementAnalytics.Services
 
             var rows = query.Select(t => new
             {
+                t.AccountId,
+                t.BankReference,
+                t.BankType,
                 Date = t.EffectiveDate ?? t.TransactionDate,
                 t.Debit,
                 t.Credit,
                 t.Description,
                 Merchant = t.CounterParty != null ? t.CounterParty.Name : null,
                 Category = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : "Uncategorized"),
+                t.SubCategoryOverride
             }).ToList();
 
             if (rows.Count == 0)
@@ -75,15 +79,28 @@ namespace BankStatementAnalytics.Services
                 : (totalSpend > 0 ? Math.Round(totalSpend / 12, 2) : 0);
 
             // Top categories
-            var topCategories = rows
+            var splitsLookup = TransactionSplitHelper.GetSplitsLookupAsync(session, ids).GetAwaiter().GetResult();
+
+            var expandedDebits = rows
                 .Where(r => r.Debit > 0)
+                .SelectMany(r => TransactionSplitHelper.ExpandSpend(
+                    r.AccountId,
+                    r.BankReference,
+                    r.BankType,
+                    r.Debit,
+                    r.Category,
+                    r.SubCategoryOverride,
+                    splitsLookup))
+                .ToList();
+
+            var topCategories = expandedDebits
                 .GroupBy(r => string.IsNullOrWhiteSpace(r.Category) ? "Uncategorized" : r.Category.Trim())
                 .Select(g => new CategoryRankItem
                 {
                     Category = g.Key,
-                    TotalSpend = g.Sum(x => x.Debit),
+                    TotalSpend = g.Sum(x => x.Amount),
                     TransactionCount = g.Count(),
-                    Percentage = totalSpend > 0 ? Math.Round((double)(g.Sum(x => x.Debit) / totalSpend) * 100, 1) : 0
+                    Percentage = totalSpend > 0 ? Math.Round((double)(g.Sum(x => x.Amount) / totalSpend) * 100, 1) : 0
                 })
                 .OrderByDescending(c => c.TotalSpend)
                 .Take(6)

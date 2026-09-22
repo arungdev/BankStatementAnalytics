@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { FiCreditCard, FiTag, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle, FiSearch, FiCornerDownLeft, FiType, FiLock, FiRefreshCw, FiDatabase, FiDownload, FiUploadCloud, FiHelpCircle, FiGithub, FiZap, FiExternalLink } from "react-icons/fi";
+import { FiCreditCard, FiTag, FiBookmark, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle, FiSearch, FiCornerDownLeft, FiType, FiLock, FiRefreshCw, FiDatabase, FiDownload, FiUploadCloud, FiHelpCircle, FiGithub, FiZap, FiExternalLink } from "react-icons/fi";
 import api from "../api/client";
 import { updateCardSettings } from "../api/cards";
 import { updateAutoImport, browseFolders } from "../api/accounts";
@@ -23,6 +23,7 @@ import "./Settings.css";
 const SECTIONS = [
   { id: 'accounts', label: 'Accounts', hint: 'Banks, cards & auto-import', icon: <FiCreditCard size={17} />, title: 'Accounts', subtitle: 'Your linked bank accounts, card details, and automatic statement imports.' },
   { id: 'categories', label: 'Categories', hint: 'How spending is grouped', icon: <FiTag size={17} />, title: 'Categories', subtitle: 'Organize your spending into categories and sub-categories.' },
+  { id: 'tags', label: 'Tags', hint: 'Labels & transaction flags', icon: <FiBookmark size={17} />, title: 'Tags', subtitle: 'Manage tags used to label and filter your transactions.' },
   { id: 'rules', label: 'Rules', hint: 'Auto-categorization & tagging', icon: <FiZap size={17} />, title: 'Categorization Rules', subtitle: 'Automatically categorize, tag, and annotate transactions on import.' },
   { id: 'reminders', label: 'Reminders', hint: 'Bill due alerts', icon: <FiBell size={17} />, title: 'Bill reminders', subtitle: 'Get a desktop notification when a recurring bill is due soon.' },
   { id: 'privacy', label: 'Privacy', hint: 'What the eye icon hides', icon: <FiEyeOff size={17} />, title: 'Privacy', subtitle: 'Control what is hidden on screen when someone is looking over your shoulder.' },
@@ -42,6 +43,7 @@ const SETTINGS_INDEX = [
   { section: 'accounts', anchor: 'auto-import', title: 'Auto-import folder', desc: 'Watch a folder and import new statements automatically', keywords: 'auto import automatic watch folder statement pdf password protected browse import now history retry failed' },
   { section: 'accounts', anchor: 'card-details', title: 'Credit limit & statement day', desc: 'Card details used for utilization and billing cycles', keywords: 'credit card limit utilization statement day billing cycle shared limit add-on' },
   { section: 'categories', anchor: 'categories-list', title: 'Categories & sub-categories', desc: 'Add, rename, or delete spending categories', keywords: 'category categories sub-category subcategory spending group tag rename delete add' },
+  { section: 'tags', anchor: 'tags-list', title: 'Tags', desc: 'Add, rename, or delete transaction tags', keywords: 'tag tags label flags marker rename delete add remove' },
   { section: 'reminders', anchor: 'reminders-enable', title: 'Desktop notifications', desc: 'Turn bill reminders on and send a test notification', keywords: 'notification desktop reminder alert toast bill due test enable permission blocked' },
   { section: 'reminders', anchor: 'reminder-window', title: 'Reminder window', desc: 'How many days before a bill is due to remind you', keywords: 'reminder window days before due lead time' },
   { section: 'privacy', anchor: 'privacy-amounts', title: 'Hide amounts', desc: 'Mask every rupee value on screen', keywords: 'privacy hide amount mask money rupee blur eye incognito shoulder' },
@@ -202,6 +204,14 @@ export default function Settings() {
   const [newSubCatName, setNewSubCatName] = useState("");
   const [newSubCatNameError, setNewSubCatNameError] = useState("");
   const [activeSubCatInputId, setActiveSubCatInputId] = useState(null);
+
+  // Tag states
+  const [tags, setTags] = useState([]);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagError, setNewTagError] = useState("");
+  const [editingTagId, setEditingTagId] = useState(null);
+  const [editTagName, setEditTagName] = useState("");
+  const [editTagNameError, setEditTagNameError] = useState("");
 
   // Account states
   const [editingAccountId, setEditingAccountId] = useState(null);
@@ -441,8 +451,18 @@ export default function Settings() {
     }
   };
 
+  const fetchTags = async () => {
+    try {
+      const res = await api.get("/tags");
+      setTags(res.data || []);
+    } catch (err) {
+      console.error("Failed to load tags", err);
+    }
+  };
+
   useEffect(() => {
     fetchCategories();
+    fetchTags();
   }, []);
 
   const handleAddCategory = async () => {
@@ -539,6 +559,80 @@ export default function Settings() {
         } catch (err) {
           console.error(err);
           alert(err.response?.data || "Failed to delete sub-category. Please try again.");
+        }
+      },
+    });
+  };
+
+  const cleanTagName = (val) => {
+    let s = (val || "").trim();
+    if (s.startsWith("#")) s = s.slice(1).trim();
+    return s;
+  };
+
+  const handleAddTag = async () => {
+    const name = cleanTagName(newTagName);
+    if (!name) {
+      setNewTagError("Tag name is required.");
+      return;
+    }
+    if (name.length > 50) {
+      setNewTagError("Tag name can be at most 50 characters.");
+      return;
+    }
+    if (tags.some(t => t.name.toLowerCase() === name.toLowerCase())) {
+      setNewTagError(`A tag named "${name}" already exists.`);
+      return;
+    }
+    setNewTagError("");
+    try {
+      const res = await api.post("/tags", { name });
+      setTags(prev => [...prev, res.data].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewTagName("");
+    } catch (err) {
+      console.error("Failed to add tag", err);
+      setNewTagError(err.response?.data || "Failed to add tag. Please try again.");
+    }
+  };
+
+  const handleUpdateTag = async (id) => {
+    const name = cleanTagName(editTagName);
+    if (!name) {
+      setEditTagNameError("Tag name is required.");
+      return;
+    }
+    if (name.length > 50) {
+      setEditTagNameError("Tag name can be at most 50 characters.");
+      return;
+    }
+    if (tags.some(t => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) {
+      setEditTagNameError(`A tag named "${name}" already exists.`);
+      return;
+    }
+    setEditTagNameError("");
+    try {
+      await api.put(`/tags/${id}`, { name });
+      setTags(prev => prev.map(t => t.id === id ? { ...t, name } : t).sort((a, b) => a.name.localeCompare(b.name)));
+      setEditingTagId(null);
+    } catch (err) {
+      console.error("Failed to update tag", err);
+      setEditTagNameError(err.response?.data || "Failed to update tag. Please try again.");
+    }
+  };
+
+  const handleDeleteTag = (id, name, usageCount) => {
+    setConfirmDialog({
+      title: "Delete tag?",
+      message: `Delete tag "#${name}"? It will be removed from ${usageCount || 0} transaction${usageCount === 1 ? '' : 's'}.`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/tags/${id}`);
+          setTags(prev => prev.filter(t => t.id !== id));
+        } catch (err) {
+          console.error("Failed to delete tag", err);
+          alert("Failed to delete tag. Please try again.");
         }
       },
     });
@@ -1524,6 +1618,113 @@ export default function Settings() {
     </>
   );
 
+  const renderTags = () => (
+    <>
+      {isAdmin && (
+        <div className="settings-add-card">
+          <label className="settings-add-card-label" htmlFor="new-tag">Add a new tag</label>
+          <div className="settings-add-row">
+            <input
+              id="new-tag"
+              type="text"
+              placeholder="e.g. Tax, Medical, Trip, Reimbursable…"
+              value={newTagName}
+              onChange={(e) => { setNewTagName(e.target.value); setNewTagError(""); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddTag(); }}
+              maxLength={50}
+              className="field-input"
+              style={{ flex: 1 }}
+            />
+            <button className="btn primary" style={{ whiteSpace: 'nowrap' }} onClick={handleAddTag}>
+              <FiPlus size={15} /> Add
+            </button>
+          </div>
+          {newTagError && <p className="settings-field-error">{newTagError}</p>}
+        </div>
+      )}
+
+      {tags.length === 0 ? (
+        <div className="settings-empty">
+          <FiBookmark size={36} />
+          <div className="settings-empty-title">No tags defined</div>
+          <div className="settings-empty-sub">
+            {isAdmin ? 'Add one above to start labeling your transactions.' : 'No tags have been added.'}
+          </div>
+        </div>
+      ) : (
+        <div className="settings-stack" id="set-tags-list">
+          {tags.map(tag => (
+            <section key={tag.id} className="setting-card">
+              <div className="setting-card-head">
+                {editingTagId === tag.id ? (
+                  <div style={{ flex: 1 }}>
+                    <div className="settings-inline-edit">
+                      <input
+                        type="text"
+                        value={editTagName}
+                        onChange={(e) => { setEditTagName(e.target.value); setEditTagNameError(""); }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleUpdateTag(tag.id);
+                          if (e.key === 'Escape') { e.stopPropagation(); setEditingTagId(null); setEditTagNameError(""); }
+                        }}
+                        maxLength={50}
+                        autoFocus
+                        className="field-input"
+                        style={{ flex: 1 }}
+                        aria-label="Tag name"
+                      />
+                      <button className="btn primary small" onClick={() => handleUpdateTag(tag.id)}>Save</button>
+                      <button className="btn small" onClick={() => { setEditingTagId(null); setEditTagNameError(""); }}>Cancel</button>
+                    </div>
+                    {editTagNameError && <p className="settings-field-error">{editTagNameError}</p>}
+                  </div>
+                ) : (
+                  <>
+                    <div className="setting-card-text">
+                      <h3 className="setting-card-title">
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          backgroundColor: 'var(--primary-light, rgba(99, 102, 241, 0.08))',
+                          color: 'var(--primary)',
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                        }}>
+                          #{tag.name}
+                        </span>
+                        {isAdmin && (
+                          <button
+                            className="settings-edit-link"
+                            title="Rename tag"
+                            aria-label={`Rename ${tag.name}`}
+                            onClick={() => { setEditingTagId(tag.id); setEditTagName(tag.name); setEditTagNameError(""); }}
+                          >
+                            <FiEdit2 size={14} />
+                          </button>
+                        )}
+                      </h3>
+                      <p className="setting-card-desc">
+                        {tag.usageCount || 0} transaction{tag.usageCount === 1 ? '' : 's'} with this tag
+                      </p>
+                    </div>
+                    {isAdmin && (
+                      <div className="setting-card-control">
+                        <button className="btn danger small" onClick={() => handleDeleteTag(tag.id, tag.name, tag.usageCount)}>Delete</button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="settings-page">
       <div className="settings-shell">
@@ -1648,11 +1849,17 @@ export default function Settings() {
                     <FiRefreshCw size={14} /> Refresh
                   </button>
                 )}
+                {activeTab === 'tags' && (
+                  <button className="btn small" onClick={fetchTags} title="Reload tags">
+                    <FiRefreshCw size={14} /> Refresh
+                  </button>
+                )}
               </header>
 
               <div className="settings-panel-body">
                 {activeTab === 'accounts' && renderAccounts()}
                 {activeTab === 'categories' && renderCategories()}
+                {activeTab === 'tags' && renderTags()}
                 {activeTab === 'rules' && <RulesManager />}
                 {activeTab === 'reminders' && renderReminders()}
                 {activeTab === 'privacy' && renderPrivacy()}

@@ -238,12 +238,16 @@ namespace BankStatementAnalytics.Controllers.Api
             if (endDate.HasValue)
                 query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) <= endDate.Value.Date.AddDays(1).AddTicks(-1));
 
-            // Narrow projection: only the five fields the groupings need, not whole entities.
+            // Narrow projection: only the fields the groupings need, not whole entities.
             var rows = await query
                 .Select(t => new
                 {
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
                     t.Debit,
                     t.CategoryOverride,
+                    t.SubCategoryOverride,
                     MerchantName = t.CounterParty != null ? t.CounterParty.Name : null,
                     MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null,
                     t.Tags,
@@ -252,13 +256,26 @@ namespace BankStatementAnalytics.Controllers.Api
                 })
                 .ToListAsync();
 
+            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, ids);
+
+            var expandedRows = rows
+                .SelectMany(t => TransactionSplitHelper.ExpandSpend(
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
+                    t.Debit,
+                    t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized",
+                    t.SubCategoryOverride,
+                    splitsLookup))
+                .ToList();
+
             // By Category
-            var byCategory = rows
-                .GroupBy(t => t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized")
+            var byCategory = expandedRows
+                .GroupBy(t => t.Category)
                 .Select(g => new
                 {
                     name = g.Key,
-                    total = g.Sum(t => t.Debit),
+                    total = g.Sum(t => t.Amount),
                     count = g.Count()
                 })
                 .OrderByDescending(x => x.total)
@@ -309,14 +326,18 @@ namespace BankStatementAnalytics.Controllers.Api
 
             return Ok(new { byCategory, byMerchant, byTag, byForex });
         }
+
+        // GET: api/dashboard/insights/transactions — the rows behind a chart slice in Insights,
+        // for the drill-down drawer. Filtered to the same accounts, date window and own-money-move
+        // exclusion as GetInsights. groupBy is "byMerchant" | "byCategory" | "byTag" | "byForex" | "all";
+        // groupValue is the slice label (e.g. "Swiggy", "Groceries", "#groceries", "USD").
         [HttpGet("insights/transactions")]
         public async Task<IActionResult> GetInsightTransactions(
-    [FromQuery] string accountIds,
-    [FromQuery] string groupBy,
-    // Optional: groupBy=all spans every group, so it carries no value to match on.
-    [FromQuery] string? groupValue = null,
-    [FromQuery] DateTime? startDate = null,
-    [FromQuery] DateTime? endDate = null)
+            [FromQuery] string accountIds,
+            [FromQuery] string groupBy,
+            [FromQuery] string groupValue,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null)
         {
             if (string.IsNullOrWhiteSpace(accountIds))
                 return BadRequest("accountIds is required.");
@@ -339,38 +360,28 @@ namespace BankStatementAnalytics.Controllers.Api
             if (endDate.HasValue)
                 query = query.Where(t => (t.EffectiveDate ?? t.TransactionDate) <= endDate.Value.Date.AddDays(1).AddTicks(-1));
 
-            // Push the merchant/category group filter into SQL; only byTag needs in-memory
-            // splitting of the CSV Tags column.
-            switch (groupBy)
+            var isCategory = groupBy == "byCategory";
+            if (!isCategory)
             {
-                case "byMerchant":
-                    query = query.Where(t => t.CounterParty != null && t.CounterParty.Name == groupValue);
-                    break;
+                switch (groupBy)
+                {
+                    case "byMerchant":
+                        query = query.Where(t => t.CounterParty != null && t.CounterParty.Name == groupValue);
+                        break;
 
-                case "byCategory" when groupValue == "Uncategorized":
-                    query = query.Where(t => t.CategoryOverride == null
-                        && (t.CounterParty == null || t.CounterParty.Category == null));
-                    break;
+                    case "byTag":
+                        break; // handled in memory below
 
-                case "byCategory":
-                    query = query.Where(t => t.CategoryOverride == groupValue
-                        || (t.CategoryOverride == null && t.CounterParty != null && t.CounterParty.Category == groupValue));
-                    break;
+                    case "byForex":
+                        query = query.Where(t => t.OriginalCurrency == groupValue);
+                        break;
 
-                case "byTag":
-                    break; // handled in memory below
+                    case "all":
+                        break;
 
-                case "byForex":
-                    query = query.Where(t => t.OriginalCurrency == groupValue);
-                    break;
-
-                // Every spend in the range, ungrouped — backs the "Total Spent" tile,
-                // whose denominator is the whole chart rather than one slice.
-                case "all":
-                    break;
-
-                default:
-                    return Ok(new List<object>());
+                    default:
+                        return Ok(new List<object>());
+                }
             }
 
             var projected = query
@@ -378,14 +389,49 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Select(t => new
                 {
                     id = t.BankReference,
+                    bankType = t.BankType,
                     date = t.TransactionDate,
                     description = t.CounterParty != null ? t.CounterParty.Name : t.BankReference,
                     accountId = t.AccountId,
                     amount = t.Debit,
-                    tags = t.Tags
+                    tags = t.Tags,
+                    categoryOverride = t.CategoryOverride,
+                    subCategoryOverride = t.SubCategoryOverride,
+                    merchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
                 });
 
             var rows = await projected.ToListAsync();
+
+            if (isCategory)
+            {
+                var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, ids);
+                var categoryRows = rows.SelectMany(r =>
+                {
+                    var expanded = TransactionSplitHelper.ExpandSpend(
+                        r.accountId,
+                        r.id,
+                        r.bankType,
+                        r.amount,
+                        r.categoryOverride ?? r.merchantCategory ?? "Uncategorized",
+                        r.subCategoryOverride,
+                        splitsLookup);
+
+                    return expanded
+                        .Where(e => string.Equals(e.Category, groupValue, StringComparison.OrdinalIgnoreCase))
+                        .Select(e => new
+                        {
+                            id = r.id,
+                            date = r.date,
+                            description = e.IsSplit
+                                ? $"{r.description} (Split: {e.Category}{(string.IsNullOrWhiteSpace(e.Note) ? "" : $" - {e.Note}")})"
+                                : r.description,
+                            accountId = r.accountId,
+                            amount = e.Amount
+                        });
+                }).ToList();
+
+                return Ok(categoryRows);
+            }
 
             IEnumerable<object> result = groupBy == "byTag"
                 ? rows.Where(t => !string.IsNullOrWhiteSpace(t.tags)
