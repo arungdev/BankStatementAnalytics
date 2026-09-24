@@ -7,6 +7,7 @@ using Common.Framework.Web;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using BankStatementAnalytics.Services;
 
 namespace BankStatementAnalytics.Controllers.Api
 {
@@ -53,26 +54,42 @@ namespace BankStatementAnalytics.Controllers.Api
                 })
                 .ToListAsync();
 
-            var result = rows.Select(t => new
+            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, accountId);
+
+            var result = rows.Select(t =>
             {
-                t.AccountId,
-                t.BankReference,
-                t.BankType,
-                t.TransactionDate,
-                t.Description,
-                t.Debit,
-                t.Credit,
-                t.Balance,
-                t.Mode,
-                t.UpiReference,
-                Merchant = t.MerchantName,
-                Category = t.CategoryOverride ?? t.MerchantCategory,
-                SubCategory = t.SubCategoryOverride ?? t.MerchantSubCategory,
-                HasCategoryOverride = !string.IsNullOrEmpty(t.CategoryOverride),
-                t.Note,
-                t.OriginalCurrency,
-                t.OriginalAmount,
-                t.ForexMarkupPercent
+                var splits = splitsLookup[new TransactionSplitHelper.SplitParentKey(t.AccountId, t.BankReference, t.BankType ?? string.Empty)].ToList();
+                return new
+                {
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
+                    t.TransactionDate,
+                    t.Description,
+                    t.Debit,
+                    t.Credit,
+                    t.Balance,
+                    t.Mode,
+                    t.UpiReference,
+                    Merchant = t.MerchantName,
+                    Category = t.CategoryOverride ?? t.MerchantCategory,
+                    SubCategory = t.SubCategoryOverride ?? t.MerchantSubCategory,
+                    HasCategoryOverride = !string.IsNullOrEmpty(t.CategoryOverride),
+                    HasSplits = splits.Count > 0,
+                    SplitsCount = splits.Count,
+                    SplitCategories = splits.Select(s => s.Category).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList(),
+                    Splits = splits.Select(s => new
+                    {
+                        s.Amount,
+                        s.Category,
+                        s.SubCategory,
+                        s.Note
+                    }).ToList(),
+                    t.Note,
+                    t.OriginalCurrency,
+                    t.OriginalAmount,
+                    t.ForexMarkupPercent
+                };
             });
 
             return Ok(result);

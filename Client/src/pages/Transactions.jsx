@@ -4,7 +4,7 @@ import api from "../api/client";
 import { Avatar, Badge, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState } from "@common/client";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
-import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors } from "react-icons/fi";
+import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors, FiTag } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
 import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
@@ -13,6 +13,8 @@ import { FilterGroup } from "../components/PageHeader";
 import Pagination from "../components/Pagination";
 import CategoryPicker from "../components/CategoryPicker";
 import SplitTransactionModal from "../components/SplitTransactionModal";
+import TagPicker from "../components/TagPicker";
+import ManageTagsModal from "../components/ManageTagsModal";
 import { currencyFormatter, maskName } from "../utils/format";
 import { validateCategoryName, findExistingName } from "../utils/categoryName";
 
@@ -165,6 +167,8 @@ export default function Transactions() {
   const [selectedTx, setSelectedTx] = useState(null);
   const [sidebarWidth, setSidebarWidth] = useState(450);
   const [tags, setTags] = useState([]);
+  const [recentTags, setRecentTags] = useState([]);
+  const [manageTagsModalOpen, setManageTagsModalOpen] = useState(false);
   const [tagEditRowId, setTagEditRowId] = useState(null);   // row whose inline "+ tag" input is open
   const [noteEditRowId, setNoteEditRowId] = useState(null); // row whose inline note input is open
 
@@ -316,6 +320,10 @@ export default function Transactions() {
     api.get('/tags')
       .then(res => setTags(res.data || []))
       .catch(err => console.error("Failed to load tags", err));
+
+    api.get('/tags/recent')
+      .then(res => setRecentTags(res.data || []))
+      .catch(err => console.error("Failed to load recent tags", err));
   }, []);
 
   // ── Helper: Date → "yyyy-MM-dd" string in local time ──────────────────
@@ -595,11 +603,48 @@ export default function Transactions() {
 
   const handleTagChange = (updatedTags) => updateTags(selectedTx, updatedTags);
 
+  const handleSelectTag = (tagName) => {
+    if (!selectedTx) return;
+    const current = selectedTx.tags || [];
+    if (!current.includes(tagName)) {
+      handleTagChange([...current, tagName]);
+      setRecentTags(prev => [tagName, ...prev.filter(t => t.toLowerCase() !== tagName.toLowerCase())]);
+    }
+  };
+
+  const handleCreateTag = async (raw, targetTx = selectedTx) => {
+    let name = (raw || '').trim();
+    if (name.startsWith('#')) name = name.slice(1).trim();
+    if (!name) return;
+    try {
+      const res = await api.post('/tags', { name });
+      const created = res.data;
+      setTags(prev => {
+        if (prev.some(t => t.name.toLowerCase() === created.name.toLowerCase())) return prev;
+        return [...prev, created].sort((a, b) => a.name.localeCompare(b.name));
+      });
+      setRecentTags(prev => [created.name, ...prev.filter(t => t.toLowerCase() !== created.name.toLowerCase())]);
+      if (targetTx) {
+        const current = targetTx.tags || [];
+        if (!current.includes(created.name)) {
+          updateTags(targetTx, [...current, created.name]);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create tag", err);
+      alert(err.response?.data || "Failed to create tag.");
+    }
+  };
+
   const addRowTag = (t, value) => {
-    const newTag = (value || '').trim().toLowerCase();
+    let newTag = (value || '').trim().toLowerCase();
+    if (newTag.startsWith('#')) newTag = newTag.slice(1).trim();
     if (!newTag) return;
     const current = t.tags || [];
-    if (!current.includes(newTag)) updateTags(t, [...current, newTag]);
+    if (!current.includes(newTag)) {
+      updateTags(t, [...current, newTag]);
+      setRecentTags(prev => [newTag, ...prev.filter(x => x.toLowerCase() !== newTag.toLowerCase())]);
+    }
   };
 
   const handleRemoveTag = (tagToRemove) => {
@@ -1364,14 +1409,41 @@ export default function Transactions() {
                   </div>
 
                   <div className="tx-col-cat" onClick={(e) => e.stopPropagation()}>
-                    <CategoryPicker
-                      value={catValue}
-                      categories={categories}
-                      frequentCategories={frequentCategories}
-                      onChange={(val) => handleCategoryChange(t, val)}
-                      onCreate={isAdmin ? (name) => handleCreateCategory(t, name) : undefined}
-                      size="sm"
-                    />
+                    {(t.hasSplits || t.HasSplits) ? (
+                      <button
+                        type="button"
+                        onClick={() => setSplitModalTx(t)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '12px',
+                          padding: '4px 8px',
+                          background: 'var(--primary-light)',
+                          color: 'var(--primary)',
+                          border: '1px solid var(--primary)',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                        title={`Split into ${t.splitsCount || t.SplitsCount} categories: ${(t.splitCategories || t.SplitCategories || []).join(', ')}. Click to edit.`}
+                      >
+                        <FiScissors size={12} /> Split ({t.splitsCount || t.SplitsCount})
+                      </button>
+                    ) : (
+                      <CategoryPicker
+                        value={catValue}
+                        categories={categories}
+                        frequentCategories={frequentCategories}
+                        onChange={(val) => handleCategoryChange(t, val)}
+                        onCreate={isAdmin ? (name) => handleCreateCategory(t, name) : undefined}
+                        size="sm"
+                      />
+                    )}
                   </div>
 
                   <div className="tnum" style={{ textAlign: 'right', fontSize: '15px', fontWeight: 800, color: isCredit ? T.green : T.red, letterSpacing: '-0.3px' }}>
@@ -1475,32 +1547,80 @@ export default function Transactions() {
               )}
               <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Category</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+                    {(selectedTx.hasSplits || selectedTx.HasSplits) ? 'Category (Split)' : 'Category'}
+                  </div>
                   <button
                     type="button"
                     className="btn small"
                     onClick={() => setSplitModalTx(selectedTx)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', padding: '3px 8px' }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontSize: '12px',
+                      padding: '3px 8px',
+                      color: (selectedTx.hasSplits || selectedTx.HasSplits) ? 'var(--primary)' : undefined,
+                      borderColor: (selectedTx.hasSplits || selectedTx.HasSplits) ? 'var(--primary)' : undefined,
+                    }}
                     title="Split into multiple categories"
                   >
-                    <FiScissors size={13} /> Split
+                    <FiScissors size={13} /> {(selectedTx.hasSplits || selectedTx.HasSplits) ? `Edit Splits (${selectedTx.splitsCount || selectedTx.SplitsCount})` : 'Split'}
                   </button>
                 </div>
-                <div style={{ marginTop: '8px' }}>
-                  <CategoryPicker
-                    value={selectedTx.subCategory || selectedTx.category || ''}
-                    categories={categories}
-                    frequentCategories={frequentCategories}
-                    onChange={(val) => handleCategoryChange(selectedTx, val)}
-                    onCreate={isAdmin ? (name) => handleCreateCategory(selectedTx, name) : undefined}
-                    disabled={!isAdmin}
-                    size="md"
-                  />
-                </div>
+                {(selectedTx.hasSplits || selectedTx.HasSplits) && (selectedTx.splits || selectedTx.Splits)?.length > 0 ? (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border-color)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}>
+                    {((selectedTx.splits || selectedTx.Splits)).map((sp, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                          {sp.category || sp.Category || 'Uncategorized'}
+                          {(sp.note || sp.Note) && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11px', marginLeft: '6px' }}>({sp.note || sp.Note})</span>}
+                        </span>
+                        <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                          {currencyFormatter.format(sp.amount || sp.Amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: '8px' }}>
+                    <CategoryPicker
+                      value={selectedTx.subCategory || selectedTx.category || ''}
+                      categories={categories}
+                      frequentCategories={frequentCategories}
+                      onChange={(val) => handleCategoryChange(selectedTx, val)}
+                      onCreate={isAdmin ? (name) => handleCreateCategory(selectedTx, name) : undefined}
+                      disabled={!isAdmin}
+                      size="md"
+                    />
+                  </div>
+                )}
               </div>
 
               <div style={{ gridColumn: 'span 2' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Tags</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Tags</div>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="btn small"
+                      onClick={() => setManageTagsModalOpen(true)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', padding: '3px 8px' }}
+                      title="Manage all tags"
+                    >
+                      <FiTag size={13} /> Manage
+                    </button>
+                  )}
+                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                   {(selectedTx.tags || []).map(tag => (
                     <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', padding: '3px 8px', borderRadius: 'var(--radius-full)', fontSize: '12px', fontWeight: 600 }}>
@@ -1512,36 +1632,19 @@ export default function Transactions() {
                   ))}
                 </div>
                 {isAdmin && (
-                <input
-                  type="text"
-                  list={`tags-list-${selectedTx.id}`}
-                  placeholder="+ Add a tag"
-                  className="field-input"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.target.value.trim()) {
-                      const newTag = e.target.value.trim().toLowerCase();
-                      const currentTags = selectedTx.tags || [];
-                      if (!currentTags.includes(newTag)) handleTagChange([...currentTags, newTag]);
-                      e.target.value = '';
-                      e.preventDefault();
-                    }
-                  }}
-                  onChange={(e) => {
-                    const matched = tags.find(t => t.name.toLowerCase() === e.target.value.toLowerCase());
-                    if (matched) {
-                      const currentTags = selectedTx.tags || [];
-                      if (!currentTags.includes(matched.name)) handleTagChange([...currentTags, matched.name]);
-                      e.target.value = '';
-                    }
-                  }}
-                  style={{ marginTop: '8px' }}
-                />
+                  <div style={{ marginTop: '8px' }}>
+                    <TagPicker
+                      tags={tags}
+                      recentTags={recentTags}
+                      selectedTags={selectedTx.tags || []}
+                      onSelect={handleSelectTag}
+                      onCreate={(name) => handleCreateTag(name, selectedTx)}
+                      onManage={() => setManageTagsModalOpen(true)}
+                      disabled={!isAdmin}
+                      size="md"
+                    />
+                  </div>
                 )}
-                <datalist id={`tags-list-${selectedTx.id}`}>
-                  {tags.filter(tag => !(selectedTx.tags || []).includes(tag.name)).map(tag => (
-                    <option key={tag.id} value={tag.name} />
-                  ))}
-                </datalist>
               </div>
 
               <div style={{ gridColumn: 'span 2' }}>
@@ -1706,6 +1809,35 @@ export default function Transactions() {
         onSaved={() => {
           setSelectedTx(null);
           setRefreshKey(k => k + 1);
+        }}
+      />
+
+      <ManageTagsModal
+        open={manageTagsModalOpen}
+        onClose={() => setManageTagsModalOpen(false)}
+        tags={tags}
+        onTagsUpdated={setTags}
+        onTagRenamed={(oldName, newName) => {
+          setRecentTags(prev => prev.map(t => t.toLowerCase() === oldName.toLowerCase() ? newName : t));
+          setSelectedTx(prev => {
+            if (!prev || !prev.tags) return prev;
+            return { ...prev, tags: prev.tags.map(t => t.toLowerCase() === oldName.toLowerCase() ? newName : t) };
+          });
+          setTx(prev => prev.map(item => {
+            if (!item.tags) return item;
+            return { ...item, tags: item.tags.map(t => t.toLowerCase() === oldName.toLowerCase() ? newName : t) };
+          }));
+        }}
+        onTagDeleted={(deletedName) => {
+          setRecentTags(prev => prev.filter(t => t.toLowerCase() !== deletedName.toLowerCase()));
+          setSelectedTx(prev => {
+            if (!prev || !prev.tags) return prev;
+            return { ...prev, tags: prev.tags.filter(t => t.toLowerCase() !== deletedName.toLowerCase()) };
+          });
+          setTx(prev => prev.map(item => {
+            if (!item.tags) return item;
+            return { ...item, tags: item.tags.filter(t => t.toLowerCase() !== deletedName.toLowerCase()) };
+          }));
         }}
       />
     </div>

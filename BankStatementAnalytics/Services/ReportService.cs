@@ -51,10 +51,14 @@ namespace BankStatementAnalytics.Services
                          && (t.EffectiveDate ?? t.TransactionDate) < end)
                 .Select(t => new ReportRow
                 {
+                    AccountId = t.AccountId,
+                    BankReference = t.BankReference,
+                    BankType = t.BankType,
                     Credit = t.Credit,
                     Debit = t.Debit,
                     Date = t.EffectiveDate ?? t.TransactionDate,
                     CategoryOverride = t.CategoryOverride,
+                    SubCategoryOverride = t.SubCategoryOverride,
                     MerchantName = t.CounterParty != null ? t.CounterParty.Name : null,
                     MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
                 })
@@ -92,9 +96,22 @@ namespace BankStatementAnalytics.Services
 
             var debits = txns.Where(t => t.Debit > 0).ToList();
 
-            report.ByCategory = debits
-                .GroupBy(t => t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized")
-                .Select(g => new ReportGroupTotal { Name = g.Key, Total = g.Sum(t => t.Debit), Count = g.Count() })
+            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, accountIds);
+
+            var expandedDebits = debits
+                .SelectMany(t => TransactionSplitHelper.ExpandSpend(
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
+                    t.Debit,
+                    t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized",
+                    t.SubCategoryOverride,
+                    splitsLookup))
+                .ToList();
+
+            report.ByCategory = expandedDebits
+                .GroupBy(t => t.Category)
+                .Select(g => new ReportGroupTotal { Name = g.Key, Total = g.Sum(t => t.Amount), Count = g.Count() })
                 .OrderByDescending(x => x.Total)
                 .ToList();
 
@@ -140,11 +157,12 @@ namespace BankStatementAnalytics.Services
                 _ => query,
             };
 
-            return await query
+            var rawList = await query
                 .OrderByDescending(t => t.EffectiveDate ?? t.TransactionDate)
-                .Select(t => new ReportTransaction
+                .Select(t => new
                 {
                     Id = t.BankReference,
+                    BankType = t.BankType,
                     Date = t.EffectiveDate ?? t.TransactionDate,
                     AccountId = t.AccountId,
                     Description = t.Description,
@@ -154,6 +172,28 @@ namespace BankStatementAnalytics.Services
                     Credit = t.Credit,
                 })
                 .ToListAsync();
+
+            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, accountIds);
+
+            return rawList.Select(t =>
+            {
+                var splits = splitsLookup[new TransactionSplitHelper.SplitParentKey(t.AccountId, t.Id, t.BankType ?? string.Empty)].ToList();
+                return new ReportTransaction
+                {
+                    Id = t.Id,
+                    Date = t.Date,
+                    AccountId = t.AccountId,
+                    Description = t.Description,
+                    Merchant = t.Merchant,
+                    Category = splits.Count > 0
+                        ? string.Join(", ", splits.Select(s => s.Category).Where(c => !string.IsNullOrEmpty(c)).Distinct())
+                        : t.Category,
+                    Debit = t.Debit,
+                    Credit = t.Credit,
+                    HasSplits = splits.Count > 0,
+                    SplitsCount = splits.Count
+                };
+            }).ToList();
         }
 
         /// <summary>
@@ -254,15 +294,29 @@ namespace BankStatementAnalytics.Services
                              && (t.EffectiveDate ?? t.TransactionDate) < end)
                     .Select(t => new
                     {
+                        t.AccountId,
+                        t.BankReference,
+                        t.BankType,
                         t.Debit,
                         t.CategoryOverride,
+                        t.SubCategoryOverride,
                         MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
                     })
                     .ToListAsync();
 
+                var budgetSplitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, ownedIds);
+
                 spentByCategory = debits
-                    .GroupBy(t => t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized")
-                    .ToDictionary(g => g.Key, g => g.Sum(t => t.Debit));
+                    .SelectMany(t => TransactionSplitHelper.ExpandSpend(
+                        t.AccountId,
+                        t.BankReference,
+                        t.BankType,
+                        t.Debit,
+                        t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized",
+                        t.SubCategoryOverride,
+                        budgetSplitsLookup))
+                    .GroupBy(t => t.Category)
+                    .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
             }
 
             return budgets.Select(b =>
@@ -285,10 +339,14 @@ namespace BankStatementAnalytics.Services
     // Narrow row shape read out of the DB for report aggregation (avoids hydrating entities).
     internal class ReportRow
     {
+        public long AccountId { get; set; }
+        public string BankReference { get; set; } = string.Empty;
+        public string BankType { get; set; } = string.Empty;
         public decimal Credit { get; set; }
         public decimal Debit { get; set; }
         public DateTime Date { get; set; } // effective (month-attribution) date
         public string? CategoryOverride { get; set; }
+        public string? SubCategoryOverride { get; set; }
         public string? MerchantName { get; set; }
         public string? MerchantCategory { get; set; }
     }
@@ -332,6 +390,8 @@ namespace BankStatementAnalytics.Services
         public string? Category { get; set; }
         public decimal Debit { get; set; }
         public decimal Credit { get; set; }
+        public bool HasSplits { get; set; }
+        public int SplitsCount { get; set; }
     }
 
     public class ReportMonthBucket

@@ -163,31 +163,49 @@ namespace BankStatementAnalytics.Controllers.Api
                     .Select(t => new CategoryRow
                     {
                         Id = t.BankReference,
+                        BankType = t.BankType,
                         Date = t.EffectiveDate ?? t.TransactionDate,
                         AccountId = t.AccountId,
                         Description = t.Description,
                         Merchant = t.CounterParty != null ? t.CounterParty.Name : null,
                         CategoryOverride = t.CategoryOverride,
+                        SubCategoryOverride = t.SubCategoryOverride,
                         MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null,
                         Debit = t.Debit
                     })
                     .ToListAsync();
 
-            // The coalesce can't be expressed in the query, so resolve the category in memory.
-            // Ordinal comparison matches the dictionary lookup GetBudgets does.
+            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, ownedIds);
+
             var transactions = rows
-                .Where(r => string.Equals(
-                    r.CategoryOverride ?? r.MerchantCategory ?? "Uncategorized", budget.Category, StringComparison.Ordinal))
-                .OrderByDescending(r => r.Date)
-                .Select(r => new
+                .SelectMany(r =>
                 {
-                    id = r.Id,
-                    date = r.Date,
-                    accountId = r.AccountId,
-                    description = r.Description,
-                    merchant = r.Merchant,
-                    debit = r.Debit
+                    var expanded = TransactionSplitHelper.ExpandSpend(
+                        r.AccountId,
+                        r.Id,
+                        r.BankType,
+                        r.Debit,
+                        r.CategoryOverride ?? r.MerchantCategory ?? "Uncategorized",
+                        r.SubCategoryOverride,
+                        splitsLookup);
+
+                    return expanded
+                        .Where(e => string.Equals(e.Category, budget.Category, StringComparison.OrdinalIgnoreCase))
+                        .Select(e => new
+                        {
+                            id = r.Id,
+                            date = r.Date,
+                            accountId = r.AccountId,
+                            description = e.IsSplit
+                                ? $"{r.Description} (Split: {e.Category}{(string.IsNullOrWhiteSpace(e.Note) ? "" : $" - {e.Note}")})"
+                                : r.Description,
+                            merchant = r.Merchant,
+                            debit = e.Amount,
+                            isSplit = e.IsSplit,
+                            originalDebit = r.Debit
+                        });
                 })
+                .OrderByDescending(r => r.date)
                 .ToList();
 
             return Ok(new
@@ -299,11 +317,13 @@ namespace BankStatementAnalytics.Controllers.Api
         private sealed class CategoryRow
         {
             public string Id { get; set; } = string.Empty;
+            public string BankType { get; set; } = string.Empty;
             public DateTime Date { get; set; }
             public long AccountId { get; set; }
             public string? Description { get; set; }
             public string? Merchant { get; set; }
             public string? CategoryOverride { get; set; }
+            public string? SubCategoryOverride { get; set; }
             public string? MerchantCategory { get; set; }
             public decimal Debit { get; set; }
         }
@@ -320,20 +340,44 @@ namespace BankStatementAnalytics.Controllers.Api
         private static async Task<List<SpendRow>> SpendRowsAsync(
             NHibernate.ISession session, IReadOnlyCollection<long> ownedIds, DateTime from, DateTime to)
         {
-            return await session.Query<BankTransaction>()
+            var raw = await session.Query<BankTransaction>()
                 .ExcludeOwnMoneyMoves()
                 .Where(t => ownedIds.Contains(t.AccountId)
                          && t.Debit > 0
                          && (t.EffectiveDate ?? t.TransactionDate) >= from
                          && (t.EffectiveDate ?? t.TransactionDate) < to)
-                .Select(t => new SpendRow
+                .Select(t => new
                 {
-                    Debit = t.Debit,
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
+                    t.Debit,
                     Date = t.EffectiveDate ?? t.TransactionDate,
-                    CategoryOverride = t.CategoryOverride,
+                    t.CategoryOverride,
+                    t.SubCategoryOverride,
                     MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
                 })
                 .ToListAsync();
+
+            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, ownedIds);
+
+            return raw
+                .SelectMany(t => TransactionSplitHelper.ExpandSpend(
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
+                    t.Debit,
+                    t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized",
+                    t.SubCategoryOverride,
+                    splitsLookup)
+                    .Select(e => new SpendRow
+                    {
+                        Debit = e.Amount,
+                        Date = t.Date,
+                        CategoryOverride = e.Category,
+                        MerchantCategory = null
+                    }))
+                .ToList();
         }
 
         // Spend per resolved category across all of the user's accounts within [monthStart, monthEnd).
@@ -343,7 +387,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (ownedIds.Count == 0)
                 return new Dictionary<string, decimal>();
 
-            // Narrow projection: only the two fields the category coalesce needs.
+            // Narrow projection: only the fields the category coalesce needs.
             var rows = await session.Query<BankTransaction>()
                 // Own-money moves (CC bill payments, inter-account transfers) don't consume a budget.
                 .ExcludeOwnMoneyMoves()
@@ -353,15 +397,29 @@ namespace BankStatementAnalytics.Controllers.Api
                          && (t.EffectiveDate ?? t.TransactionDate) < monthEnd)
                 .Select(t => new
                 {
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
                     t.Debit,
                     t.CategoryOverride,
+                    t.SubCategoryOverride,
                     MerchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
                 })
                 .ToListAsync();
 
+            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, ownedIds);
+
             return rows
-                .GroupBy(t => t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized")
-                .ToDictionary(g => g.Key, g => g.Sum(t => t.Debit));
+                .SelectMany(t => TransactionSplitHelper.ExpandSpend(
+                    t.AccountId,
+                    t.BankReference,
+                    t.BankType,
+                    t.Debit,
+                    t.CategoryOverride ?? t.MerchantCategory ?? "Uncategorized",
+                    t.SubCategoryOverride,
+                    splitsLookup))
+                .GroupBy(t => t.Category)
+                .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
         }
     }
 
