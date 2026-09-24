@@ -1360,24 +1360,24 @@ export default function Transactions() {
                           </span>
                         ))}
                         {rowTags.length > 2 && <span style={{ fontSize: '11px', color: T.faint }}>+{rowTags.length - 2}</span>}
-                        {tagEditRowId === rowKey ? (
-                          <input
-                            className="tx-tag-input"
-                            list="tx-row-tags-list"
-                            autoFocus
-                            placeholder="tag…"
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => { addRowTag(t, e.target.value); setTagEditRowId(null); }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { addRowTag(t, e.target.value); setTagEditRowId(null); }
-                              else if (e.key === 'Escape') setTagEditRowId(null);
+                        {isAdmin && (
+                          <TagPicker
+                            variant="chip"
+                            tags={tags}
+                            recentTags={recentTags}
+                            selectedTags={rowTags}
+                            onSelect={(tag) => {
+                              if (!rowTags.includes(tag)) {
+                                updateTags(t, [...rowTags, tag]);
+                                setRecentTags(prev => [tag, ...prev.filter(x => x.toLowerCase() !== tag.toLowerCase())]);
+                              }
                             }}
+                            onCreate={(newTag) => {
+                              handleCreateTag(newTag, t);
+                            }}
+                            onManage={() => setManageTagsModalOpen(true)}
+                            size="sm"
                           />
-                        ) : (
-                          <span
-                            className="tx-tag-add"
-                            onClick={(e) => { e.stopPropagation(); setNoteEditRowId(null); setTagEditRowId(rowKey); }}
-                          >+ tag</span>
                         )}
                         {noteEditRowId === rowKey ? (
                           <input

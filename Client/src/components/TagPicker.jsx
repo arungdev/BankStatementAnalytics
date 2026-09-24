@@ -1,16 +1,21 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FiChevronDown, FiSearch, FiClock, FiPlus, FiTag, FiSettings } from "react-icons/fi";
+import { FiChevronDown, FiSearch, FiClock, FiPlus, FiTag, FiSettings, FiX } from "react-icons/fi";
 
 /**
  * TagPicker — a custom, theme-aware popover picker to add tags to a transaction.
- * Features:
- * - Search / filter existing tags
- * - "Recently used" tags section at top (with clock icon)
- * - "All tags" section
- * - Inline "+ Create '#{query}'" affordance for new tags
- * - Shortcut link to "Manage tags…"
- * - Portal positioning to avoid drawer / container clipping
+ *
+ * Props:
+ * - tags: array of tag objects { id, name, usageCount }
+ * - recentTags: array of recent tag names or objects
+ * - selectedTags: array of tag strings currently selected
+ * - onSelect: callback (tagName) => void
+ * - onCreate: callback (newTagName) => void
+ * - onManage: callback () => void
+ * - disabled: boolean
+ * - size: "sm" | "md"
+ * - variant: "default" | "chip"
+ * - placeholder: string (default "+ Add a tag")
  */
 export default function TagPicker({
   tags = [],
@@ -21,6 +26,7 @@ export default function TagPicker({
   onManage,
   disabled = false,
   size = "md",
+  variant = "default",
   placeholder = "+ Add a tag",
 }) {
   const [open, setOpen] = useState(false);
@@ -31,7 +37,7 @@ export default function TagPicker({
   const popRef = useRef(null);
   const searchRef = useRef(null);
 
-  // Position the portal popover relative to the trigger
+  // Position the portal popover relative to the trigger; flip when overflowing bottom
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
     const measure = () => {
@@ -69,10 +75,10 @@ export default function TagPicker({
     };
   }, [open]);
 
-  // Focus search on open
+  // Focus search input on open
   useEffect(() => {
     if (open) {
-      const id = setTimeout(() => searchRef.current?.focus(), 0);
+      const id = setTimeout(() => searchRef.current?.focus(), 20);
       return () => clearTimeout(id);
     }
   }, [open]);
@@ -84,7 +90,9 @@ export default function TagPicker({
   }, [query]);
 
   const selectedLower = useMemo(() => {
-    return (selectedTags || []).map((t) => (typeof t === "string" ? t.toLowerCase() : t?.name?.toLowerCase()));
+    return (selectedTags || []).map((t) =>
+      typeof t === "string" ? t.toLowerCase() : t?.name?.toLowerCase()
+    );
   }, [selectedTags]);
 
   // Filter recently used tags that are not yet selected on this transaction
@@ -99,11 +107,16 @@ export default function TagPicker({
     });
   }, [recentTags, selectedLower, cleanQuery]);
 
-  // Filter all tags that are not yet selected and not already in recentFiltered
+  // Set of recently used tag names in lowercase
   const recentLowerSet = useMemo(() => {
-    return new Set(recentFiltered.map((t) => (typeof t === "string" ? t.toLowerCase() : t.name.toLowerCase())));
+    return new Set(
+      recentFiltered.map((t) =>
+        typeof t === "string" ? t.toLowerCase() : t.name.toLowerCase()
+      )
+    );
   }, [recentFiltered]);
 
+  // Filter all tags that are not yet selected and not in recentFiltered
   const allFiltered = useMemo(() => {
     const q = cleanQuery.toLowerCase();
     return tags.filter((tag) => {
@@ -153,28 +166,56 @@ export default function TagPicker({
     }
   };
 
+  // Clamped horizontal position so menu is never off-screen
+  const popoverLeft = useMemo(() => {
+    if (!rect) return 0;
+    const menuWidth = Math.max(rect.width, 248);
+    const maxLeft = window.innerWidth - menuWidth - 12;
+    return Math.max(12, Math.min(rect.left, maxLeft));
+  }, [rect]);
+
   return (
     <>
       <style>{tagPickerCss}</style>
-      <button
-        type="button"
-        ref={triggerRef}
-        className={`tagp-trigger tagp-${size} ${open ? "is-open" : ""}`}
-        disabled={disabled}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (disabled) return;
-          setQuery("");
-          setOpen((o) => !o);
-        }}
-        title="Add tag"
-      >
-        <span className="tagp-trigger-label">
-          <FiPlus size={size === "sm" ? 12 : 14} style={{ marginRight: 4, opacity: 0.7 }} />
-          {placeholder}
-        </span>
-        <FiChevronDown className="tagp-chevron" size={size === "sm" ? 13 : 15} />
-      </button>
+
+      {variant === "chip" ? (
+        <button
+          type="button"
+          ref={triggerRef}
+          className={`tagp-chip-trigger ${open ? "is-open" : ""}`}
+          disabled={disabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (disabled) return;
+            setQuery("");
+            setOpen((o) => !o);
+          }}
+          title="Add tag"
+        >
+          <FiPlus size={11} style={{ marginRight: 2, opacity: 0.8 }} />
+          tag
+        </button>
+      ) : (
+        <button
+          type="button"
+          ref={triggerRef}
+          className={`tagp-trigger tagp-${size} ${open ? "is-open" : ""}`}
+          disabled={disabled}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (disabled) return;
+            setQuery("");
+            setOpen((o) => !o);
+          }}
+          title="Add tag"
+        >
+          <span className="tagp-trigger-label">
+            <FiPlus size={size === "sm" ? 12 : 14} style={{ marginRight: 4, opacity: 0.7 }} />
+            {placeholder}
+          </span>
+          <FiChevronDown className="tagp-chevron" size={size === "sm" ? 13 : 15} />
+        </button>
+      )}
 
       {open &&
         rect &&
@@ -184,16 +225,17 @@ export default function TagPicker({
             className="tagp-menu"
             style={{
               position: "fixed",
-              left: rect.left,
-              width: Math.max(rect.width, 240),
+              left: popoverLeft,
+              width: Math.max(rect.width, 248),
               ...(flipUp
                 ? { bottom: window.innerHeight - rect.top + 6 }
                 : { top: rect.bottom + 6 }),
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Search Header */}
             <div className="tagp-search">
-              <FiSearch size={14} className="tagp-search-ic" />
+              <FiSearch size={13} className="tagp-search-ic" />
               <input
                 ref={searchRef}
                 value={query}
@@ -202,10 +244,21 @@ export default function TagPicker({
                 placeholder="Search or add tag…"
                 spellCheck={false}
               />
+              {query && (
+                <button
+                  type="button"
+                  className="tagp-search-clear"
+                  onClick={() => setQuery("")}
+                  title="Clear"
+                >
+                  <FiX size={12} />
+                </button>
+              )}
             </div>
 
+            {/* Tags List */}
             <div className="tagp-list">
-              {/* Recently used tags */}
+              {/* Recently used tags section */}
               {recentFiltered.length > 0 && (
                 <div className="tagp-group">
                   <div className="tagp-group-head">
@@ -220,6 +273,7 @@ export default function TagPicker({
                           key={`recent-${name}`}
                           className="tagp-chip-opt"
                           onClick={() => handleSelectTag(tag)}
+                          title={`Add #${name}`}
                         >
                           #{name}
                         </button>
@@ -229,7 +283,7 @@ export default function TagPicker({
                 </div>
               )}
 
-              {/* All remaining tags */}
+              {/* All remaining tags section */}
               {allFiltered.length > 0 && (
                 <div className="tagp-group">
                   <div className="tagp-group-head">
@@ -254,7 +308,7 @@ export default function TagPicker({
                 </div>
               )}
 
-              {/* Create new tag option */}
+              {/* Create new tag inline option */}
               {canCreate && (
                 <button
                   type="button"
@@ -298,6 +352,7 @@ export default function TagPicker({
 }
 
 const tagPickerCss = `
+  /* Default trigger (input-like button) */
   .tagp-trigger {
     display: inline-flex; align-items: center; gap: 6px;
     width: 100%; max-width: 100%;
@@ -337,25 +392,47 @@ const tagPickerCss = `
     transform: rotate(180deg);
   }
 
+  /* Chip trigger for table rows */
+  .tagp-chip-trigger {
+    display: inline-flex; align-items: center;
+    border: 1px dashed var(--border-color); color: var(--text-faint);
+    background: transparent;
+    padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    cursor: pointer; white-space: nowrap; opacity: 0.75;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
+    font-family: inherit;
+    line-height: 1.4;
+  }
+  .tx-row:hover .tagp-chip-trigger, .tagp-chip-trigger.is-open {
+    opacity: 1;
+  }
+  .tagp-chip-trigger:hover, .tagp-chip-trigger.is-open {
+    opacity: 1;
+    color: var(--primary);
+    border-color: var(--primary);
+    background: var(--primary-light, rgba(99, 102, 241, 0.1));
+  }
+
+  /* Popover Menu */
   .tagp-menu {
     background: var(--surface);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
-    box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.18), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.18), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
     display: flex; flex-direction: column;
-    max-height: 360px;
+    max-height: 340px;
     z-index: 10000;
     overflow: hidden;
-    animation: tagpFade 0.12s ease-out;
+    animation: tagpFade 0.12s cubic-bezier(0.16, 1, 0.3, 1);
   }
   @keyframes tagpFade {
-    from { opacity: 0; transform: translateY(-4px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
 
   .tagp-search {
     display: flex; align-items: center; gap: 8px;
-    padding: 8px 10px;
+    padding: 7px 10px;
     border-bottom: 1px solid var(--border-color);
     background: var(--surface-2, var(--surface));
   }
@@ -367,11 +444,19 @@ const tagPickerCss = `
     color: var(--text-main); font-size: 12px; font-family: inherit;
     outline: none;
   }
+  .tagp-search-clear {
+    border: none; background: transparent; color: var(--text-muted);
+    cursor: pointer; padding: 2px; display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+  }
+  .tagp-search-clear:hover {
+    color: var(--text-main);
+  }
 
   .tagp-list {
     overflow-y: auto; padding: 6px;
     display: flex; flex-direction: column; gap: 4px;
-    max-height: 280px;
+    max-height: 250px;
   }
 
   .tagp-group {
@@ -385,26 +470,28 @@ const tagPickerCss = `
   .tagp-group-head {
     font-size: 10px; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.05em; color: var(--text-muted);
-    padding: 4px 8px 2px;
+    padding: 3px 6px 3px;
     display: flex; align-items: center; gap: 5px;
   }
 
   .tagp-chips-grid {
-    display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 4px 4px;
+    display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 4px 6px;
   }
   .tagp-chip-opt {
     display: inline-flex; align-items: center; gap: 4px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--primary-light, rgba(99, 102, 241, 0.25));
     background: var(--primary-light, rgba(99, 102, 241, 0.08));
     color: var(--primary);
     font-size: 11px; font-weight: 600; font-family: inherit;
-    padding: 3px 8px; border-radius: 999px;
-    cursor: pointer; transition: all 0.12s;
+    padding: 3px 9px; border-radius: 999px;
+    cursor: pointer; transition: all 0.12s ease;
   }
   .tagp-chip-opt:hover {
     background: var(--primary);
-    color: #fff;
+    color: #ffffff;
     border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(99, 102, 241, 0.25);
   }
 
   .tagp-opt {
@@ -426,7 +513,8 @@ const tagPickerCss = `
   .tagp-opt-count {
     font-size: 10px; color: var(--text-muted);
     background: var(--surface-2, rgba(0,0,0,0.05));
-    padding: 1px 5px; border-radius: 10px;
+    padding: 1px 6px; border-radius: 10px;
+    font-weight: 600;
   }
 
   .tagp-create {
@@ -437,9 +525,10 @@ const tagPickerCss = `
     padding: 7px 8px;
     border-top: 1px dashed var(--border-color);
     margin-top: 4px;
+    background: var(--primary-light, rgba(99, 102, 241, 0.04));
   }
   .tagp-create:hover {
-    background: var(--primary-light, rgba(99, 102, 241, 0.08));
+    background: var(--primary-light, rgba(99, 102, 241, 0.12));
   }
   .tagp-opt-ic {
     flex-shrink: 0;
