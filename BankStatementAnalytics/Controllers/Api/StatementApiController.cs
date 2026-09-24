@@ -221,9 +221,24 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!string.IsNullOrWhiteSpace(category))
             {
                 var cat = category.Trim();
-                query = query.Where(t =>
-                    (t.CategoryOverride != null && t.CategoryOverride != "" && t.CategoryOverride == cat) ||
-                    ((t.CategoryOverride == null || t.CategoryOverride == "") && t.CounterParty != null && t.CounterParty.Category == cat));
+                var splitRefs = await session.Query<TransactionSplit>()
+                    .Where(s => s.Category == cat)
+                    .Select(s => s.ParentBankReference)
+                    .ToListAsync();
+
+                if (splitRefs.Count > 0)
+                {
+                    query = query.Where(t =>
+                        (t.CategoryOverride != null && t.CategoryOverride != "" && t.CategoryOverride == cat) ||
+                        ((t.CategoryOverride == null || t.CategoryOverride == "") && t.CounterParty != null && t.CounterParty.Category == cat) ||
+                        splitRefs.Contains(t.BankReference));
+                }
+                else
+                {
+                    query = query.Where(t =>
+                        (t.CategoryOverride != null && t.CategoryOverride != "" && t.CategoryOverride == cat) ||
+                        ((t.CategoryOverride == null || t.CategoryOverride == "") && t.CounterParty != null && t.CounterParty.Category == cat));
+                }
             }
 
             // Column sorting — whitelisted fields only; anything else falls back to
@@ -273,13 +288,53 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var paged = await projectedQuery.ToPagedResultAsync(page, pageSize);
 
+            var accountIdsInPage = paged.Items.Select(x => x.AccountId).Distinct().ToList();
+            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, accountIdsInPage);
+
+            var transactions = paged.Items.Select(t =>
+            {
+                var splits = splitsLookup[new TransactionSplitHelper.SplitParentKey(t.AccountId, t.Id, t.BankType ?? string.Empty)].ToList();
+                return new
+                {
+                    t.Id,
+                    BankReference = t.Id,
+                    t.AccountId,
+                    t.TransactionDate,
+                    t.Description,
+                    t.UpiReference,
+                    t.Merchant,
+                    t.Mode,
+                    t.Debit,
+                    t.Credit,
+                    t.Balance,
+                    t.BankType,
+                    Category = splits.Count > 0
+                        ? string.Join(", ", splits.Select(s => s.Category).Where(c => !string.IsNullOrEmpty(c)).Distinct())
+                        : t.Category,
+                    t.SubCategory,
+                    t.Tags,
+                    t.Note,
+                    t.IsTransfer,
+                    HasSplits = splits.Count > 0,
+                    SplitsCount = splits.Count,
+                    SplitCategories = splits.Select(s => s.Category).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList(),
+                    Splits = splits.Select(s => new
+                    {
+                        Amount = s.Amount,
+                        Category = s.Category,
+                        SubCategory = s.SubCategory,
+                        Note = s.Note
+                    }).ToList()
+                };
+            }).ToList();
+
             return Ok(new
             {
                 accountId,
                 AccountNumber = account?.AccountNumber,
                 BankName = account?.BankName,
                 totalCount = paged.TotalCount,
-                transactions = paged.Items
+                transactions
             });
         }
 
