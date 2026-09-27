@@ -25,6 +25,7 @@ const Sidebar = () => {
   const [isOpen, setIsOpen]       = useState(() => typeof window === 'undefined' || window.innerWidth > NARROW_BREAKPOINT);
   const [isDashOpen, setDashOpen] = useState(true);
   const [upcomingBills, setUpcomingBills] = useState(0);
+  const [hasUpdate, setHasUpdate] = useState(false);
   const { username, role, logout } = useAuth();
   const { preference, setPreference } = useTheme();
   const ThemeIcon = THEME_META[preference]?.icon || FiMonitor;
@@ -42,6 +43,13 @@ const Sidebar = () => {
     api.get('/bills/upcoming')
       .then(res => setUpcomingBills((res.data || []).length))
       .catch(() => setUpcomingBills(0));
+  }, []);
+
+  // ── Software update badge ──
+  useEffect(() => {
+    api.get('/update/status')
+      .then(res => setHasUpdate(!!res.data?.updateInfo?.isUpdateAvailable))
+      .catch(() => setHasUpdate(false));
   }, []);
 
   return (
@@ -211,9 +219,27 @@ const Sidebar = () => {
               {username} · {role}
             </p>
           )}
-          <NavLink to="/settings" className="nav-item-header" title="Settings">
+          <NavLink
+            to={hasUpdate ? "/settings?tab=updates" : "/settings"}
+            className="nav-item-header"
+            title={hasUpdate ? "Settings (New version available)" : "Settings"}
+          >
             <FiSettings size={16} />
             {isOpen && <span>Settings</span>}
+            {hasUpdate && (
+              <span
+                style={{
+                  marginLeft: 'auto',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--primary, #6366f1)',
+                  boxShadow: '0 0 0 2px var(--surface, #fff)',
+                  display: 'inline-block',
+                }}
+                title="Update available"
+              />
+            )}
           </NavLink>
           <button
             className="nav-item-header"

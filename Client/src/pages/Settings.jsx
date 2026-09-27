@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { FiCreditCard, FiTag, FiBookmark, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle, FiSearch, FiCornerDownLeft, FiType, FiLock, FiRefreshCw, FiDatabase, FiDownload, FiUploadCloud, FiHelpCircle, FiGithub, FiZap, FiExternalLink } from "react-icons/fi";
+import { FiCreditCard, FiTag, FiBookmark, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle, FiSearch, FiCornerDownLeft, FiType, FiLock, FiRefreshCw, FiDatabase, FiDownload, FiUploadCloud, FiHelpCircle, FiGithub, FiZap, FiExternalLink, FiWifi } from "react-icons/fi";
 import api from "../api/client";
 import { updateCardSettings } from "../api/cards";
 import { updateAutoImport, browseFolders } from "../api/accounts";
@@ -10,11 +10,13 @@ import { useAccount } from "../context/useAccount";
 import { Badge, Drawer, FONT_SIZE_OPTIONS, Switch, useAuth, useTheme } from "@common/client";
 import { usePrivacy } from "../context/usePrivacy";
 import ProfileSettings from "../components/ProfileSettings";
+import NetworkSettings from "../components/NetworkSettings";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RulesManager from "../components/RulesManager";
 import { getBackupStatus, downloadBackup, restoreBackup, readApiError } from "../api/backup";
+import { getUpdateStatus, checkForUpdates, downloadUpdate, cancelDownload, applyUpdate, downloadUpdateBinary } from "../api/update";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
-import { currencyFormatterFull, formatDate } from "../utils/format";
+import { currencyFormatterFull, formatDate, formatBytes } from "../utils/format";
 import "./Settings.css";
 
 /* Sections of the settings page, in rail order. `hint` is the one-line
@@ -28,8 +30,10 @@ const SECTIONS = [
   { id: 'reminders', label: 'Reminders', hint: 'Bill due alerts', icon: <FiBell size={17} />, title: 'Bill reminders', subtitle: 'Get a desktop notification when a recurring bill is due soon.' },
   { id: 'privacy', label: 'Privacy', hint: 'What the eye icon hides', icon: <FiEyeOff size={17} />, title: 'Privacy', subtitle: 'Control what is hidden on screen when someone is looking over your shoulder.' },
   { id: 'appearance', label: 'Appearance', hint: 'Theme & text size', icon: <FiSun size={17} />, title: 'Appearance', subtitle: 'Choose how the app looks on this device.' },
+  { id: 'network', label: 'Network', hint: 'Access from phone & LAN', icon: <FiWifi size={17} />, title: 'Local Network Access', subtitle: 'Allow or block access from other phones, tablets, or computers on your Wi-Fi network.' },
   { id: 'profile', label: 'Profile', hint: 'Login & users', icon: <FiUser size={17} />, title: 'Profile', subtitle: 'Manage your login and, as an admin, the other users on this app.' },
   { id: 'backup', label: 'Backup', hint: 'Save & restore everything', icon: <FiDatabase size={17} />, title: 'Backup & restore', subtitle: 'Save a copy of everything in this app, and put it back later or on another machine.' },
+  { id: 'updates', label: 'Updates', hint: 'Version & software update', icon: <FiRefreshCw size={17} />, title: 'Software updates', subtitle: 'Check for new releases, view changelogs, and upgrade your installation.' },
   { id: 'help', label: 'Help', hint: 'Report a problem', icon: <FiHelpCircle size={17} />, title: 'Help & feedback', subtitle: 'Hit a bug, or want something the app does not do yet? Raise it on GitHub — every link here opens in a new tab.' },
 ];
 
@@ -50,11 +54,13 @@ const SETTINGS_INDEX = [
   { section: 'privacy', anchor: 'privacy-names', title: 'Hide merchant names', desc: 'Also mask merchant and bill names while hiding is on', keywords: 'privacy hide merchant name payee bill mask anonymize' },
   { section: 'appearance', anchor: 'theme', title: 'Theme', desc: 'Light, dark, or follow your device', keywords: 'theme dark light system appearance colour color night mode' },
   { section: 'appearance', anchor: 'text-size', title: 'Text size', desc: 'Scale all text in the app', keywords: 'text size font bigger smaller zoom scale accessibility readable' },
+  { section: 'network', anchor: 'network-access', title: 'Local network access', desc: 'Enable or disable accessing the app from other devices on the same Wi-Fi', keywords: 'network wifi lan ip remote device phone tablet mobile connect address host' },
   { section: 'profile', anchor: 'profile-account', title: 'Your login', desc: 'Signed-in user and role', keywords: 'profile username role admin signed in login account' },
   { section: 'profile', anchor: 'profile-account', title: 'Change password', desc: 'Set a new password for your login', keywords: 'change password reset credentials security login' },
   { section: 'profile', anchor: 'profile-users', title: 'Users', desc: 'Add, disable, or delete other users', keywords: 'user users add create disable delete role admin permission access' },
   { section: 'backup', anchor: 'backup-download', title: 'Download a backup', desc: 'Save every account, transaction and statement file to one zip', keywords: 'backup download save export zip copy archive data safety disaster move machine' },
   { section: 'backup', anchor: 'backup-restore', title: 'Restore from a backup', desc: 'Replace everything in this app with the contents of a backup', keywords: 'restore import upload recover revert replace rollback zip backup migrate' },
+  { section: 'updates', anchor: 'updates-check', title: 'Check for updates', desc: 'Check GitHub releases for the latest version and release notes', keywords: 'update version upgrade release notes changelog download install patch new auto update' },
   { section: 'help', anchor: 'issue-bug', title: 'Report a problem', desc: 'Raise a bug on GitHub with the details already laid out', keywords: 'issue bug report problem raise complaint broken error crash wrong parse support help feedback github' },
   { section: 'help', anchor: 'issue-feature', title: 'Suggest a feature', desc: 'Ask for a new bank, chart, or anything else missing', keywords: 'feature request suggest idea enhancement wish missing bank add support help feedback github' },
   { section: 'help', anchor: 'issue-browse', title: 'Browse existing issues', desc: 'See what is already reported before opening a new one', keywords: 'issues list open known existing browse github track status' },
@@ -734,6 +740,124 @@ export default function Settings() {
     });
   };
 
+  /* ---- Software updates ---- */
+  const [updateStatus, setUpdateStatus] = useState(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [applyingUpdate, setApplyingUpdate] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState(null);
+  const [updateError, setUpdateError] = useState(null);
+
+  useEffect(() => {
+    let timer;
+    const fetchStatus = async () => {
+      try {
+        const res = await getUpdateStatus();
+        setUpdateStatus(res.data);
+      } catch {
+        // quiet catch
+      }
+    };
+
+    fetchStatus();
+
+    const isBusy =
+      updateStatus?.state === "Downloading" ||
+      updateStatus?.state === 4 ||
+      updateStatus?.state === "Installing" ||
+      updateStatus?.state === 6;
+
+    const interval = isBusy ? 1000 : (activeTab === "updates" ? 5000 : 60000);
+    timer = setInterval(fetchStatus, interval);
+    return () => clearInterval(timer);
+  }, [activeTab, updateStatus?.state]);
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateError(null);
+    setUpdateMessage(null);
+    try {
+      const res = await checkForUpdates();
+      setUpdateStatus(res.data);
+      if (res.data?.updateInfo?.isUpdateAvailable) {
+        setUpdateMessage(`New version v${res.data.updateInfo.latestVersion} is available!`);
+      } else {
+        setUpdateMessage(`You are running the latest version (v${res.data?.updateInfo?.currentVersion || "2.0.0"}).`);
+      }
+    } catch (err) {
+      setUpdateError(err?.response?.data?.message || "Failed to check for updates. Check internet connectivity.");
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    setUpdateError(null);
+    setUpdateMessage(null);
+    try {
+      const res = await downloadUpdate();
+      setUpdateStatus(res.data?.status || res.data);
+    } catch (err) {
+      setUpdateError(err?.response?.data?.message || "Failed to start download.");
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    try {
+      const res = await cancelDownload();
+      setUpdateStatus(res.data);
+    } catch (err) {
+      console.error("Failed to cancel download", err);
+    }
+  };
+
+  const handleApplyUpdate = () => {
+    setConfirmDialog({
+      title: "Apply update and restart?",
+      message:
+        `Upgrade to v${updateStatus?.updateInfo?.latestVersion || ""}?\n\n` +
+        "The application service will stop, update its program files, apply any database migrations, and restart automatically.\n\n" +
+        "Your statements, database, and uploads in Data/ will be preserved. Do you wish to continue?",
+      confirmLabel: "Install & Restart",
+      danger: false,
+      onConfirm: async () => {
+        setApplyingUpdate(true);
+        setUpdateError(null);
+        try {
+          const res = await applyUpdate(true);
+          setUpdateMessage(res.data?.message || "Update started. Application is restarting...");
+
+          let attempts = 0;
+          const pollRestart = setInterval(async () => {
+            attempts++;
+            try {
+              const check = await getUpdateStatus();
+              if (check.status === 200) {
+                clearInterval(pollRestart);
+                window.location.reload();
+              }
+            } catch {
+              if (attempts > 30) {
+                clearInterval(pollRestart);
+                setApplyingUpdate(false);
+              }
+            }
+          }, 2500);
+        } catch (err) {
+          setApplyingUpdate(false);
+          setUpdateError(err?.response?.data?.message || "Failed to launch installer.");
+        }
+      },
+    });
+  };
+
+  const handleSaveFileDirectly = async () => {
+    try {
+      await downloadUpdateBinary();
+    } catch {
+      setUpdateError("Failed to download setup file to browser.");
+    }
+  };
+
   /* ---- Search ---- */
 
   const q = query.trim().toLowerCase();
@@ -820,6 +944,7 @@ export default function Settings() {
     appearance: THEME_OPTIONS.find(t => t.id === preference)?.label,
     profile: null,
     backup: isAdmin ? null : 'Admin',
+    updates: updateStatus?.updateInfo?.isUpdateAvailable ? 'New' : null,
     help: null,
   };
 
@@ -1126,6 +1251,177 @@ export default function Settings() {
             once the restore finishes.
           </p>
         </SettingCard>
+      </div>
+    );
+  };
+
+  const renderUpdates = () => {
+    const info = updateStatus?.updateInfo;
+    const currentVer = info?.currentVersion || '2.0.0';
+    const latestVer = info?.latestVersion || currentVer;
+    const isAvailable = !!info?.isUpdateAvailable;
+    const state = updateStatus?.state;
+    const isDownloading = state === 'Downloading' || state === 4;
+    const isReady = state === 'ReadyToInstall' || state === 5;
+    const isInstalling = state === 'Installing' || state === 6;
+    const percent = updateStatus?.progressPercentage ?? 0;
+    const bytesDownloaded = updateStatus?.bytesDownloaded ?? 0;
+    const totalBytes = updateStatus?.totalBytes ?? 0;
+
+    return (
+      <div className="settings-stack">
+        {updateError && (
+          <p className="setting-note danger">
+            <FiAlertCircle size={14} />
+            {updateError}
+          </p>
+        )}
+
+        {updateMessage && (
+          <p className="setting-note" style={{ color: 'var(--success, #16a34a)', borderColor: 'var(--success-border, rgba(22, 163, 74, 0.2))' }}>
+            <FiCheckCircle size={14} />
+            {updateMessage}
+          </p>
+        )}
+
+        {isInstalling && (
+          <div className="card" style={{ padding: '20px', textAlign: 'center', borderColor: 'var(--primary)' }}>
+            <FiRefreshCw size={28} className="spin" color="var(--primary)" style={{ margin: '0 auto 12px' }} />
+            <h3 style={{ margin: '0 0 6px', fontSize: '16px' }}>Upgrading Bank Statement Analytics...</h3>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+              The application service is stopping, applying update files and database migrations, and restarting.
+              This page will automatically reload once the server is back online.
+            </p>
+          </div>
+        )}
+
+        {/* Current status card */}
+        <SettingCard
+          anchor="updates-check"
+          icon={<FiRefreshCw size={18} />}
+          title={`Version v${currentVer}`}
+          status={
+            isAvailable
+              ? <Badge variant="blue">Update available: v{latestVer}</Badge>
+              : (state === 'Checking' ? <Badge variant="gray">Checking…</Badge> : <Badge variant="green">Up to date</Badge>)
+          }
+          description={
+            isAvailable
+              ? `A newer version (v${latestVer}) was released on ${info?.publishedAt ? formatDate(info.publishedAt) : 'GitHub'}. Upgrade to get the latest features and bug fixes.`
+              : `You are running the latest version of Bank Statement Analytics. The app checks for new releases daily.`
+          }
+          control={
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                className="btn small"
+                onClick={handleCheckUpdate}
+                disabled={checkingUpdate || isDownloading || isInstalling}
+                title="Query GitHub Releases for the latest version"
+              >
+                <FiRefreshCw size={14} className={checkingUpdate ? 'spin' : ''} />
+                {checkingUpdate ? 'Checking…' : 'Check for updates'}
+              </button>
+            </div>
+          }
+        >
+          {updateStatus?.lastCheckedAt && (
+            <p className="setting-note">
+              Last checked: {new Date(updateStatus.lastCheckedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on {new Date(updateStatus.lastCheckedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+            </p>
+          )}
+        </SettingCard>
+
+        {/* If update available, show update package card */}
+        {isAvailable && (
+          <section className="setting-card" style={{ borderColor: 'var(--primary-light, rgba(99, 102, 241, 0.3))' }}>
+            <div className="setting-card-head">
+              <div className="setting-card-icon" style={{ background: 'var(--primary-light, rgba(99, 102, 241, 0.1))', color: 'var(--primary)' }}>
+                <FiZap size={18} />
+              </div>
+              <div className="setting-card-text">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <h3 className="setting-card-title">Release v{latestVer}</h3>
+                  {info?.releaseName && <Badge variant="purple">{info.releaseName}</Badge>}
+                  {isReady && <Badge variant="green">Downloaded & ready</Badge>}
+                </div>
+                <p className="setting-card-desc">
+                  {info?.fileName ? `${info.fileName} (${formatBytes(info.fileSize || 0)})` : 'Windows Installer'}
+                </p>
+              </div>
+              <div className="setting-card-control" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {isReady ? (
+                  <button
+                    className="btn primary small"
+                    onClick={handleApplyUpdate}
+                    disabled={isInstalling || applyingUpdate}
+                  >
+                    <FiZap size={14} /> Install & Restart
+                  </button>
+                ) : isDownloading ? (
+                  <button
+                    className="btn small"
+                    onClick={handleCancelDownload}
+                  >
+                    <FiX size={14} /> Cancel
+                  </button>
+                ) : (
+                  <button
+                    className="btn primary small"
+                    onClick={handleDownloadUpdate}
+                    disabled={checkingUpdate || !info?.downloadUrl}
+                  >
+                    <FiDownloadCloud size={14} /> Download update
+                  </button>
+                )}
+
+                <button
+                  className="btn small"
+                  onClick={handleSaveFileDirectly}
+                  title="Download installer .exe directly to this computer"
+                >
+                  <FiDownload size={14} /> Download setup (.exe)
+                </button>
+
+                {info?.htmlUrl && (
+                  <a
+                    className="btn small"
+                    href={info.htmlUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="View release notes on GitHub"
+                  >
+                    <FiGithub size={14} /> GitHub <FiExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Download progress bar */}
+            {isDownloading && (
+              <div style={{ marginTop: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  <span>Downloading installer…</span>
+                  <span>{percent}% ({formatBytes(bytesDownloaded)} / {formatBytes(totalBytes)})</span>
+                </div>
+                <div className="update-progress-track">
+                  <div className="update-progress-fill" style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            )}
+
+            {/* Release notes */}
+            {info?.releaseNotes && (
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  Release notes:
+                </div>
+                <div className="update-release-notes">
+                  {info.releaseNotes}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
       </div>
     );
   };
@@ -1854,6 +2150,16 @@ export default function Settings() {
                     <FiRefreshCw size={14} /> Refresh
                   </button>
                 )}
+                {activeTab === 'updates' && (
+                  <button
+                    className="btn small"
+                    onClick={handleCheckUpdate}
+                    disabled={checkingUpdate}
+                    title="Check for software updates"
+                  >
+                    <FiRefreshCw size={14} className={checkingUpdate ? 'spin' : ''} /> Check now
+                  </button>
+                )}
               </header>
 
               <div className="settings-panel-body">
@@ -1864,8 +2170,10 @@ export default function Settings() {
                 {activeTab === 'reminders' && renderReminders()}
                 {activeTab === 'privacy' && renderPrivacy()}
                 {activeTab === 'appearance' && renderAppearance()}
+                {activeTab === 'network' && <NetworkSettings />}
                 {activeTab === 'profile' && <div id="set-profile-account"><ProfileSettings /></div>}
                 {activeTab === 'backup' && renderBackup()}
+                {activeTab === 'updates' && renderUpdates()}
                 {activeTab === 'help' && renderHelp()}
               </div>
             </>

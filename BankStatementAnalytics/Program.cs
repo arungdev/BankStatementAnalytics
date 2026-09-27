@@ -10,6 +10,8 @@ using System.Text.Json.Serialization;
 using Common.Framework.Auth;
 using Common.Framework.Data;
 using Common.Framework.Logging;
+using Common.Framework.Network;
+using Common.Framework.Updates;
 using Common.Framework.Web;
 using System;
 using System.IO;
@@ -124,6 +126,22 @@ builder.Services.AddSingleton(new BackupOptions
     DefaultDatabaseName = "bankstatements",
 });
 builder.Services.AddScoped<BackupService>();
+
+// Reusable software update subsystem from Common.Framework.
+var updateSection = builder.Configuration.GetSection("Updates");
+var updateOptions = new UpdateOptions
+{
+    AppName = "BankStatementAnalytics",
+    GitHubRepo = updateSection["GitHubRepo"] ?? "arungdev/BankStatementAnalytics",
+    FeedUrl = updateSection["FeedUrl"],
+    CheckIntervalHours = updateSection.GetValue("CheckIntervalHours", 24),
+    AutoCheckOnStartup = updateSection.GetValue("AutoCheckOnStartup", true),
+    AssetPattern = "*Setup*.exe",
+    ResolveStorageDirectory = () => Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Data", "Updates")
+};
+builder.Services.AddSingleton(updateOptions);
+builder.Services.AddSingleton<UpdateService>();
+builder.Services.AddHostedService<UpdateBackgroundService>();
 // ── Auto-register all parsers from registry ──────────────────────────────
 foreach (var config in BankParserRegistry.Parsers)
 {
@@ -139,21 +157,8 @@ var allowedOrigins = new[]
     "http://localhost:5080",
 };
 
-// Accepts loopback and any RFC1918 private-LAN origin (10.x, 172.16-31.x, 192.168.x),
-// so phones/tablets on the same Wi-Fi work without hardcoding the PC's IP, which
-// changes on DHCP renewal. IPv4 only - extend if you need IPv6 LAN access.
-static bool IsPrivateNetworkOrigin(string origin)
-{
-    if (!Uri.TryCreate(origin, UriKind.Absolute, out var u)) return false;
-    if (u.IsLoopback) return true;
-    if (!System.Net.IPAddress.TryParse(u.Host, out var ip)) return false;
-    if (ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) return false;
-
-    var b = ip.GetAddressBytes();
-    return b[0] == 10
-        || (b[0] == 192 && b[1] == 168)
-        || (b[0] == 172 && b[1] >= 16 && b[1] <= 31);
-}
+var networkAccessService = new NetworkAccessService(builder.Configuration);
+builder.Services.AddSingleton(networkAccessService);
 
 builder.Services.AddCors(options =>
 {
@@ -161,13 +166,13 @@ builder.Services.AddCors(options =>
     {
         policy.AllowAnyHeader().AllowAnyMethod().AllowCredentials();
 
-        // Dev keeps its existing loopback-only rule (Vite's port varies).
-        // Production now also accepts named allowedOrigins OR any private-LAN origin,
-        // so your phone works regardless of which IP DHCP hands your PC.
+        // Loopback origins and predefined origins are always accepted.
+        // Private-LAN origins (e.g. http://10.97.213.230:5007 or phone IP) are accepted
+        // whenever local network access is enabled in Settings.
         policy.SetIsOriginAllowed(o =>
-            builder.Environment.IsDevelopment()
-                ? Uri.TryCreate(o, UriKind.Absolute, out var u) && u.IsLoopback
-                : allowedOrigins.Contains(o) || IsPrivateNetworkOrigin(o));
+            (Uri.TryCreate(o, UriKind.Absolute, out var u) && u.IsLoopback)
+            || allowedOrigins.Contains(o)
+            || networkAccessService.IsOriginAllowed(o));
     });
 });
 builder.Services.AddControllers()
@@ -187,6 +192,11 @@ var app = builder.Build();
 
 app.UseCors("React");
 app.UseSecurityHeaders();
+
+// Reusable network access gate from Common.Framework.
+// When disabled, only loopback connections (from the host computer) are accepted;
+// remote requests from LAN devices are blocked with 403 Forbidden.
+app.UseNetworkAccess();
 
 // ── Defensive cookie policy override ──────────────────────────────────────
 // AddCookieSessionAuth already sets Cookie.SecurePolicy = SameAsRequest, but something
@@ -213,8 +223,9 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 
-    // Move HTTPS redirection here so it doesn't break local HTTP testing
-    app.UseHttpsRedirection();
+    // Only redirect to HTTPS if an HTTPS endpoint is explicitly configured
+    if (app.Configuration["Urls"]?.Contains("https://") == true)
+        app.UseHttpsRedirection();
 }
 
 // Serve wwwroot from the resolved exe directory (spaFileProvider) when available - see the exeDir
@@ -234,13 +245,8 @@ app.UseRoleGate(options =>
 {
     options.FullAccessRoles = new[] { nameof(AppRole.Admin), nameof(AppRole.User) };
     options.AllowedOrigins = allowedOrigins;
-    // In dev the SPA runs on a localhost port that varies (Vite); accept any loopback
-    // origin so uploads/mutations aren't blocked. Also true in Production now so LAN
-    // devices (e.g. phone) aren't blocked - IF RoleGate's loopback check only tests
-    // for 127.0.0.1/::1, this line alone won't cover a real LAN IP like 192.168.x.x.
-    // In that case, add an IsOriginAllowedPredicate-style hook to RoleGateOptions in
-    // Common.Framework.Web and pass IsPrivateNetworkOrigin there instead.
     options.AllowLoopbackOrigins = true;
+    options.IsOriginAllowed = origin => networkAccessService.IsOriginAllowed(origin);
 });
 
 app.UseAuthorization();

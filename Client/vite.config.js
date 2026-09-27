@@ -9,6 +9,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host: true, // Listen on all local IP addresses (0.0.0.0) so other devices on same LAN/Wi-Fi can connect
     port: 5007,
     proxy: {
       "/api": {
@@ -18,6 +19,7 @@ export default defineConfig({
         target: "http://localhost:5000",
         changeOrigin: true,
         secure: false, // Accept self-signed dev certificates from .NET
+        xfwd: true, // Forward X-Forwarded-For, X-Forwarded-Host, X-Forwarded-Port to backend
       },
     },
   },
