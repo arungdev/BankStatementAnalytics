@@ -300,6 +300,7 @@ function Layout() {
             <PrivacyToggle masked={maskAmounts} onToggle={() => setMaskAmounts(m => !m)} />
             <NotificationBell onDockChange={setRemindersDock} accounts={accounts} />
           </>}
+          onSettings={location.pathname === '/settings' ? undefined : goSettings}
         />
 
         <SearchModal

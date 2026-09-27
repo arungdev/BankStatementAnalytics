@@ -186,6 +186,7 @@ export default function SearchModal({ isOpen, onClose }) {
                   { label: 'Goals', path: '/goals' },
                   { label: 'Bills & Subs', path: '/bills' },
                   { label: 'Reports', path: '/reports' },
+                  { label: 'Settings', path: '/settings' },
                 ].map(p => (
                   <button
                     key={p.path}

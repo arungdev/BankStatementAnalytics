@@ -112,12 +112,23 @@ namespace BankStatementAnalytics.Controllers.Api
                 new { title = "Bills & Subscriptions", path = "/bills", description = "Recurring bills, subscriptions tracker, and price alerts" },
                 new { title = "Reports", path = "/reports", description = "Monthly, yearly, and Year-in-Review annual summary" },
                 new { title = "Upload Statement", path = "/upload", description = "Import new bank or credit card statements" },
-                new { title = "Settings", path = "/settings", description = "Auto-categorization rules, preferences, and data management" }
+                new { title = "Settings", path = "/settings", description = "General preferences, linked accounts, and configuration" },
+                new { title = "Settings: Accounts", path = "/settings?tab=accounts", description = "Manage bank accounts, credit cards, and auto-import folder" },
+                new { title = "Settings: Categories", path = "/settings?tab=categories", description = "Manage spending categories and sub-categories" },
+                new { title = "Settings: Tags", path = "/settings?tab=tags", description = "Manage transaction tags and custom labels" },
+                new { title = "Settings: Rules", path = "/settings?tab=rules", description = "Auto-categorization rules, condition matching, and tagging" },
+                new { title = "Settings: Reminders", path = "/settings?tab=reminders", description = "Desktop notifications and bill due alerts" },
+                new { title = "Settings: Privacy", path = "/settings?tab=privacy", description = "Mask amounts and merchant names on screen" },
+                new { title = "Settings: Appearance", path = "/settings?tab=appearance", description = "Theme (dark, light, system) and text size scaling" },
+                new { title = "Settings: Network", path = "/settings?tab=network", description = "Local Wi-Fi and LAN access from phones and tablets" },
+                new { title = "Settings: Profile", path = "/settings?tab=profile", description = "User profile, password change, and user management" },
+                new { title = "Settings: Backup", path = "/settings?tab=backup", description = "Download zip backup or restore database" },
+                new { title = "Settings: Updates", path = "/settings?tab=updates", description = "Software update checks and version changelogs" }
             };
 
             var matchedNav = navItems
                 .Where(n => ((string)n.title).ToLower().Contains(lower) || ((string)n.description).ToLower().Contains(lower))
-                .Take(3)
+                .Take(5)
                 .ToList();
 
             return Ok(new

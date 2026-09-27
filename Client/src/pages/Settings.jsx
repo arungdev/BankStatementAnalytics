@@ -19,22 +19,30 @@ import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from
 import { currencyFormatterFull, formatDate } from "../utils/format";
 import "./Settings.css";
 
+/* Section groupings for organized navigation */
+export const SECTION_GROUPS = [
+  { id: 'finance', label: 'Finance & Data' },
+  { id: 'preferences', label: 'Preferences' },
+  { id: 'system', label: 'System & Security' },
+  { id: 'support', label: 'Help & Support' },
+];
+
 /* Sections of the settings page, in rail order. `hint` is the one-line
    "what lives here" shown under the label so a section can be picked without
    opening it first. */
 const SECTIONS = [
-  { id: 'accounts', label: 'Accounts', hint: 'Banks, cards & auto-import', icon: <FiCreditCard size={17} />, title: 'Accounts', subtitle: 'Your linked bank accounts, card details, and automatic statement imports.' },
-  { id: 'categories', label: 'Categories', hint: 'How spending is grouped', icon: <FiTag size={17} />, title: 'Categories', subtitle: 'Organize your spending into categories and sub-categories.' },
-  { id: 'tags', label: 'Tags', hint: 'Labels & transaction flags', icon: <FiBookmark size={17} />, title: 'Tags', subtitle: 'Manage tags used to label and filter your transactions.' },
-  { id: 'rules', label: 'Rules', hint: 'Auto-categorization & tagging', icon: <FiZap size={17} />, title: 'Categorization Rules', subtitle: 'Automatically categorize, tag, and annotate transactions on import.' },
-  { id: 'reminders', label: 'Reminders', hint: 'Bill due alerts', icon: <FiBell size={17} />, title: 'Bill reminders', subtitle: 'Get a desktop notification when a recurring bill is due soon.' },
-  { id: 'privacy', label: 'Privacy', hint: 'What the eye icon hides', icon: <FiEyeOff size={17} />, title: 'Privacy', subtitle: 'Control what is hidden on screen when someone is looking over your shoulder.' },
-  { id: 'appearance', label: 'Appearance', hint: 'Theme & text size', icon: <FiSun size={17} />, title: 'Appearance', subtitle: 'Choose how the app looks on this device.' },
-  { id: 'network', label: 'Network', hint: 'Access from phone & LAN', icon: <FiWifi size={17} />, title: 'Local Network Access', subtitle: 'Allow or block access from other phones, tablets, or computers on your Wi-Fi network.' },
-  { id: 'profile', label: 'Profile', hint: 'Login & users', icon: <FiUser size={17} />, title: 'Profile', subtitle: 'Manage your login and, as an admin, the other users on this app.' },
-  { id: 'backup', label: 'Backup', hint: 'Save & restore everything', icon: <FiDatabase size={17} />, title: 'Backup & restore', subtitle: 'Save a copy of everything in this app, and put it back later or on another machine.' },
-  { id: 'updates', label: 'Updates', hint: 'Version & software update', icon: <FiRefreshCw size={17} />, title: 'Software updates', subtitle: 'Check for new releases, view changelogs, and upgrade your installation.' },
-  { id: 'help', label: 'Help', hint: 'Report a problem', icon: <FiHelpCircle size={17} />, title: 'Help & feedback', subtitle: 'Hit a bug, or want something the app does not do yet? Raise it on GitHub — every link here opens in a new tab.' },
+  { id: 'accounts', group: 'finance', label: 'Accounts', hint: 'Banks, cards & auto-import', icon: <FiCreditCard size={17} />, title: 'Accounts', subtitle: 'Your linked bank accounts, card details, and automatic statement imports.' },
+  { id: 'categories', group: 'finance', label: 'Categories', hint: 'How spending is grouped', icon: <FiTag size={17} />, title: 'Categories', subtitle: 'Organize your spending into categories and sub-categories.' },
+  { id: 'tags', group: 'finance', label: 'Tags', hint: 'Labels & transaction flags', icon: <FiBookmark size={17} />, title: 'Tags', subtitle: 'Manage tags used to label and filter your transactions.' },
+  { id: 'rules', group: 'finance', label: 'Rules', hint: 'Auto-categorization & tagging', icon: <FiZap size={17} />, title: 'Categorization Rules', subtitle: 'Automatically categorize, tag, and annotate transactions on import.' },
+  { id: 'reminders', group: 'preferences', label: 'Reminders', hint: 'Bill due alerts', icon: <FiBell size={17} />, title: 'Bill reminders', subtitle: 'Get a desktop notification when a recurring bill is due soon.' },
+  { id: 'privacy', group: 'preferences', label: 'Privacy', hint: 'What the eye icon hides', icon: <FiEyeOff size={17} />, title: 'Privacy', subtitle: 'Control what is hidden on screen when someone is looking over your shoulder.' },
+  { id: 'appearance', group: 'preferences', label: 'Appearance', hint: 'Theme & text size', icon: <FiSun size={17} />, title: 'Appearance', subtitle: 'Choose how the app looks on this device.' },
+  { id: 'network', group: 'system', label: 'Network', hint: 'Access from phone & LAN', icon: <FiWifi size={17} />, title: 'Local Network Access', subtitle: 'Allow or block access from other phones, tablets, or computers on your Wi-Fi network.' },
+  { id: 'profile', group: 'system', label: 'Profile', hint: 'Login & users', icon: <FiUser size={17} />, title: 'Profile', subtitle: 'Manage your login and, as an admin, the other users on this app.' },
+  { id: 'backup', group: 'system', label: 'Backup', hint: 'Save & restore everything', icon: <FiDatabase size={17} />, title: 'Backup & restore', subtitle: 'Save a copy of everything in this app, and put it back later or on another machine.' },
+  { id: 'updates', group: 'system', label: 'Updates', hint: 'Version & software update', icon: <FiRefreshCw size={17} />, title: 'Software updates', subtitle: 'Check for new releases, view changelogs, and upgrade your installation.' },
+  { id: 'help', group: 'support', label: 'Help', hint: 'Report a problem', icon: <FiHelpCircle size={17} />, title: 'Help & feedback', subtitle: 'Hit a bug, or want something the app does not do yet? Raise it on GitHub — every link here opens in a new tab.' },
 ];
 
 /* Flat index of every individual setting, so the search box can take you
@@ -48,6 +56,7 @@ const SETTINGS_INDEX = [
   { section: 'accounts', anchor: 'card-details', title: 'Credit limit & statement day', desc: 'Card details used for utilization and billing cycles', keywords: 'credit card limit utilization statement day billing cycle shared limit add-on' },
   { section: 'categories', anchor: 'categories-list', title: 'Categories & sub-categories', desc: 'Add, rename, or delete spending categories', keywords: 'category categories sub-category subcategory spending group tag rename delete add' },
   { section: 'tags', anchor: 'tags-list', title: 'Tags', desc: 'Add, rename, or delete transaction tags', keywords: 'tag tags label flags marker rename delete add remove' },
+  { section: 'rules', anchor: 'rules-list', title: 'Categorization rules', desc: 'Automatically categorize, tag, and annotate transactions on import', keywords: 'rules rule categorize condition match pattern keyword tag auto override annotate regex' },
   { section: 'reminders', anchor: 'reminders-enable', title: 'Desktop notifications', desc: 'Turn bill reminders on and send a test notification', keywords: 'notification desktop reminder alert toast bill due test enable permission blocked' },
   { section: 'reminders', anchor: 'reminder-window', title: 'Reminder window', desc: 'How many days before a bill is due to remind you', keywords: 'reminder window days before due lead time' },
   { section: 'privacy', anchor: 'privacy-amounts', title: 'Hide amounts', desc: 'Mask every rupee value on screen', keywords: 'privacy hide amount mask money rupee blur eye incognito shoulder' },
@@ -466,9 +475,20 @@ export default function Settings() {
     }
   };
 
+  const [rulesCount, setRulesCount] = useState(null);
+  const fetchRulesCount = async () => {
+    try {
+      const res = await api.get("/rules");
+      setRulesCount(Array.isArray(res.data) ? res.data.length : null);
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     fetchCategories();
     fetchTags();
+    fetchRulesCount();
   }, []);
 
   const handleAddCategory = async () => {
@@ -939,9 +959,12 @@ export default function Settings() {
   const navStatus = {
     accounts: accounts.length ? String(accounts.length) : null,
     categories: categories.length ? String(categories.length) : null,
+    tags: tags.length ? String(tags.length) : null,
+    rules: rulesCount !== null ? String(rulesCount) : null,
     reminders: remEnabled ? 'On' : 'Off',
     privacy: maskAmounts ? 'Hiding' : null,
     appearance: THEME_OPTIONS.find(t => t.id === preference)?.label,
+    network: null,
     profile: null,
     backup: isAdmin ? null : 'Admin',
     updates: updateStatus?.updateInfo?.isUpdateAvailable ? 'New' : null,
@@ -949,6 +972,10 @@ export default function Settings() {
   };
 
   const section = SECTIONS.find(s => s.id === activeTab) ?? SECTIONS[0];
+  const activeIndex = SECTIONS.findIndex(s => s.id === section.id);
+  const prevSection = activeIndex > 0 ? SECTIONS[activeIndex - 1] : null;
+  const nextSection = activeIndex < SECTIONS.length - 1 ? SECTIONS[activeIndex + 1] : null;
+  const currentGroup = SECTION_GROUPS.find(g => g.id === section.group);
   const cardAccounts = accounts.filter(a => a.bankName === 'HDFCCreditCard');
 
   /* ---- Panels ---- */
@@ -2058,25 +2085,38 @@ export default function Settings() {
             aria-label="Settings sections"
             onKeyDown={onNavKeyDown}
           >
-            {SECTIONS.map(s => (
-              <button
-                key={s.id}
-                id={`tab-${s.id}`}
-                role="tab"
-                aria-selected={activeTab === s.id}
-                aria-controls="settings-panel"
-                tabIndex={activeTab === s.id ? 0 : -1}
-                className={`settings-nav-item${activeTab === s.id ? ' active' : ''}`}
-                onClick={() => { setQuery(""); setActiveTab(s.id); }}
-              >
-                <span className="settings-nav-icon">{s.icon}</span>
-                <span className="settings-nav-text">
-                  <span className="settings-nav-label">{s.label}</span>
-                  <span className="settings-nav-hint">{s.hint}</span>
-                </span>
-                {navStatus[s.id] && <span className="settings-nav-status">{navStatus[s.id]}</span>}
-              </button>
-            ))}
+            {SECTION_GROUPS.map(group => {
+              const groupSections = SECTIONS.filter(s => s.group === group.id);
+              if (!groupSections.length) return null;
+              return (
+                <div key={group.id} className="settings-nav-group">
+                  <div className="settings-nav-group-header">
+                    <span className="settings-nav-group-title">{group.label}</span>
+                  </div>
+                  <div className="settings-nav-group-items">
+                    {groupSections.map(s => (
+                      <button
+                        key={s.id}
+                        id={`tab-${s.id}`}
+                        role="tab"
+                        aria-selected={activeTab === s.id}
+                        aria-controls="settings-panel"
+                        tabIndex={activeTab === s.id ? 0 : -1}
+                        className={`settings-nav-item${activeTab === s.id ? ' active' : ''}`}
+                        onClick={() => { setQuery(""); setActiveTab(s.id); }}
+                      >
+                        <span className="settings-nav-icon">{s.icon}</span>
+                        <span className="settings-nav-text">
+                          <span className="settings-nav-label">{s.label}</span>
+                          <span className="settings-nav-hint">{s.hint}</span>
+                        </span>
+                        {navStatus[s.id] && <span className="settings-nav-status">{navStatus[s.id]}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </nav>
         </aside>
 
@@ -2109,21 +2149,27 @@ export default function Settings() {
                   </div>
                 ) : (
                   <div className="search-results">
-                    {results.map((item, i) => (
-                      <button key={`${item.section}-${item.title}`} className="search-result" onClick={() => jumpTo(item)}>
-                        <span className="search-result-icon">
-                          {SECTIONS.find(s => s.id === item.section)?.icon}
-                        </span>
-                        <span className="search-result-text">
-                          <span className="search-result-title">{item.title}</span>
-                          <span className="search-result-desc">{item.desc}</span>
-                        </span>
-                        <span className="search-result-section">
-                          {SECTIONS.find(s => s.id === item.section)?.label}
-                        </span>
-                        {i === 0 && <FiCornerDownLeft size={14} className="search-result-enter" />}
-                      </button>
-                    ))}
+                    {results.map((item, i) => {
+                      const sec = SECTIONS.find(s => s.id === item.section);
+                      const grp = SECTION_GROUPS.find(g => g.id === sec?.group);
+                      return (
+                        <button key={`${item.section}-${item.title}`} className="search-result" onClick={() => jumpTo(item)}>
+                          <span className="search-result-icon">
+                            {sec?.icon}
+                          </span>
+                          <span className="search-result-text">
+                            <span className="search-result-title">{item.title}</span>
+                            <span className="search-result-desc">{item.desc}</span>
+                          </span>
+                          <span className="search-result-section">
+                            <span className="search-result-group-tag">{grp?.label}</span>
+                            <span className="search-result-sep">&rsaquo;</span>
+                            <span className="search-result-section-tag">{sec?.label}</span>
+                          </span>
+                          {i === 0 && <FiCornerDownLeft size={14} className="search-result-enter" />}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -2132,6 +2178,13 @@ export default function Settings() {
             <>
               <header className="settings-panel-head">
                 <div className="settings-panel-head-text">
+                  {currentGroup && (
+                    <div className="settings-panel-breadcrumb">
+                      <span>Settings</span>
+                      <span className="settings-breadcrumb-sep">/</span>
+                      <span className="settings-breadcrumb-group">{currentGroup.label}</span>
+                    </div>
+                  )}
                   <h1 className="settings-panel-title">{section.title}</h1>
                   <p className="settings-panel-sub">{section.subtitle}</p>
                 </div>
@@ -2175,6 +2228,30 @@ export default function Settings() {
                 {activeTab === 'backup' && renderBackup()}
                 {activeTab === 'updates' && renderUpdates()}
                 {activeTab === 'help' && renderHelp()}
+
+                {/* Footer navigation for easily moving between sections */}
+                <footer className="settings-panel-footer">
+                  {prevSection ? (
+                    <button
+                      type="button"
+                      className="settings-panel-nav-btn prev"
+                      onClick={() => { setActiveTab(prevSection.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    >
+                      <span className="settings-nav-btn-hint">Previous Section</span>
+                      <span className="settings-nav-btn-label">&larr; {prevSection.label}</span>
+                    </button>
+                  ) : <div />}
+                  {nextSection ? (
+                    <button
+                      type="button"
+                      className="settings-panel-nav-btn next"
+                      onClick={() => { setActiveTab(nextSection.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    >
+                      <span className="settings-nav-btn-hint">Next Section</span>
+                      <span className="settings-nav-btn-label">{nextSection.label} &rarr;</span>
+                    </button>
+                  ) : <div />}
+                </footer>
               </div>
             </>
           )}
