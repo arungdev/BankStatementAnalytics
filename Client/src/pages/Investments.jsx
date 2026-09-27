@@ -51,9 +51,8 @@ const fdProjection = (principal, rate, placedOn, maturityDate) => {
 };
 
 const s = {
-  page: { padding: '28px 32px', background: T.bg, minHeight: '100vh' },
-  statsRow: { display: 'flex', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' },
-  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' },
+  page: { background: T.bg, minHeight: '100%' },
+  statsRow: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '16px', marginBottom: '20px' },
   card: {
     background: T.surface, borderRadius: '14px', padding: '22px 24px',
     border: `1px solid ${T.border}`, boxShadow: 'var(--shadow-sm)',
@@ -175,7 +174,7 @@ export default function Investments() {
   const empty = rds.length === 0 && fds.length === 0;
 
   return (
-    <div style={{ ...s.page, marginRight: selected ? drawerWidth : 0, transition: 'margin-right 0.2s ease' }}>
+    <div style={{ ...s.page, marginRight: selected && (typeof window !== 'undefined' && window.innerWidth > 1024) ? drawerWidth : 0, transition: 'margin-right 0.2s ease' }}>
       {/* ── Stat cards ── */}
       <div style={s.statsRow}>
         <StatCard label="Total invested" value={fmt.format(data?.totalInvested ?? 0)} accent={T.indigoSoft} sub="RD contributions + FD principal" />
@@ -189,7 +188,7 @@ export default function Investments() {
           <EmptyState icon="🏦" title="No deposits detected" subtitle="RD installments and fixed deposits from your statements will show up here automatically." />
         </div>
       ) : (
-        <div style={s.grid}>
+        <div className="layout-equal-2col">
           {/* ── Recurring Deposits ── */}
           <div style={s.card}>
             <p style={s.cardTitle}>Recurring Deposits</p>
@@ -269,7 +268,15 @@ export default function Investments() {
       )}
 
       {/* ── Detail + edit drawer ── */}
-      <Drawer open={!!selected} onClose={closeDrawer} title={selected?.kind === 'FD' ? 'Fixed deposit' : 'Recurring deposit'} width={drawerWidth} onWidthChange={setDrawerWidth} modal={false}>
+      <Drawer
+        open={!!selected}
+        onClose={closeDrawer}
+        title={selected?.kind === 'FD' ? 'Fixed deposit' : 'Recurring deposit'}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : drawerWidth}
+        onWidthChange={setDrawerWidth}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? 280 : 420}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
+      >
         {selected && form && (
           <>
             {/* Summary header */}

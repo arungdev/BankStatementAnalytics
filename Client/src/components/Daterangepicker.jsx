@@ -241,14 +241,25 @@ export default function DateRangePicker({
   const [endH,   setEndH]   = useState(23);
   const [endM,   setEndM]   = useState(59);
 
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const ref = useRef(null);
 
   // Close on outside click
   useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const h = (e) => {
+      if (isMobile) return; // handled by backdrop on mobile
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
-  }, []);
+  }, [isMobile]);
 
   // Sync left/right months so they're always consecutive
   const syncMonths = useCallback((s, e) => {
@@ -373,163 +384,287 @@ export default function DateRangePicker({
 
       {/* ── Dropdown ──────────────────────────────────────────────────── */}
       {open && (
-        <div style={{
-          position: 'absolute', zIndex: 'var(--z-dropdown)', marginTop: 6,
-          [align === 'right' ? 'right' : 'left']: 0,
-          background: 'var(--surface)', borderRadius: 10,
-          border: '1px solid var(--border-color)',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.14)',
-          display: 'flex', flexDirection: 'column',
-          minWidth: dims.dropdownWidth,
-          overflow: 'hidden',
-        }}>
+        <>
+          {isMobile && (
+            <div
+              className="drp-backdrop"
+              onClick={handleCancel}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(15, 23, 42, 0.5)',
+                backdropFilter: 'blur(2px)',
+                zIndex: 1099,
+              }}
+            />
+          )}
 
-          {/* Main body: sidebar + calendars */}
-          <div style={{ display: 'flex' }}>
-
-            {/* ── Preset sidebar ──────────────────────────────────────── */}
-            <div style={{
-              width: dims.sidebarWidth, borderRight: '1px solid var(--border-subtle)',
-              padding: compact ? '8px 6px' : '12px 8px', display: 'flex', flexDirection: 'column', gap: 1,
-              maxHeight: compact ? 400 : 'none', overflowY: compact ? 'auto' : 'visible',
-            }}>
-              {PRESET_GROUPS.map((group, gi) => (
-                <div key={group.title ?? gi} style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: gi === 0 ? 0 : 6 }}>
-                  {group.title && (
-                    <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: dims.sideTitlePad }}>{group.title}</div>
-                  )}
-                  {group.items.map(p => (
+          <div style={isMobile ? {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 1100,
+            background: 'var(--surface)',
+            borderRadius: 14,
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 20px 48px rgba(0,0,0,0.3)',
+            display: 'flex',
+            flexDirection: 'column',
+            width: 'calc(100vw - 24px)',
+            maxWidth: 350,
+            maxHeight: '90vh',
+            overflowY: 'auto',
+          } : {
+            position: 'absolute',
+            zIndex: 'var(--z-dropdown)',
+            marginTop: 6,
+            [align === 'right' ? 'right' : 'left']: 0,
+            background: 'var(--surface)',
+            borderRadius: 10,
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 16px 48px rgba(0,0,0,0.14)',
+            display: 'flex',
+            flexDirection: 'column',
+            minWidth: dims.dropdownWidth,
+            overflow: 'hidden',
+          }}>
+            {isMobile ? (
+              <>
+                {/* Mobile: Horizontal scrollable presets */}
+                <div style={{
+                  display: 'flex',
+                  gap: 6,
+                  overflowX: 'auto',
+                  padding: '10px 12px',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  WebkitOverflowScrolling: 'touch',
+                  scrollbarWidth: 'none',
+                }}>
+                  {PRESETS.map(p => (
                     <button
                       key={p.value}
                       className={`drp-preset${preset === p.value ? ' active' : ''}`}
                       onClick={() => applyPreset(p.value)}
                       style={{
-                        display: 'block', width: '100%', textAlign: 'left',
-                        padding: dims.presetPad, border: 'none', borderRadius: 5,
-                        cursor: 'pointer', fontSize: dims.presetFont,
-                        background: preset === p.value ? 'var(--primary)' : 'transparent',
-                        color: preset === p.value ? '#fff' : 'var(--gray-700)',
-                        fontWeight: preset === p.value ? 700 : 400,
-                        transition: 'background 0.12s',
-                        fontFamily: 'inherit',
-                        lineHeight: 1.3,
+                        padding: '4px 10px',
+                        borderRadius: '999px',
+                        border: '1px solid var(--border-color)',
+                        fontSize: '11px',
+                        fontWeight: preset === p.value ? 700 : 500,
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                        background: preset === p.value ? 'var(--primary)' : 'var(--surface-2)',
+                        color: preset === p.value ? '#fff' : 'var(--text-main)',
+                        cursor: 'pointer',
                       }}
                     >
                       {p.label}
                     </button>
                   ))}
                 </div>
-              ))}
 
-              {/* Last N days custom input */}
-              <div style={{ marginTop: 6, padding: '5px 6px', borderTop: '1px solid var(--border-subtle)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Last</span>
-                  <input
-                    type="number" min={1} value={customN}
-                    onChange={e => setCustomN(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && applyCustomN()}
-                    placeholder="N"
-                    style={{
-                      width: 32, border: '1.5px solid var(--border-color)', borderRadius: 4,
-                      padding: '2px 4px', fontSize: 11, textAlign: 'center',
-                      outline: 'none', fontFamily: 'inherit',
-                    }}
+                <div style={{ padding: '12px 14px' }}>
+                  {/* Date inputs */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>START</div>
+                      <div
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          border: `1.5px solid ${picking === 'start' ? 'var(--primary)' : 'var(--border-color)'}`,
+                          borderRadius: 7, padding: '6px 8px', background: 'var(--surface)',
+                          cursor: 'pointer', fontSize: 11.5, color: selStart ? 'var(--text-main)' : 'var(--text-faint)',
+                          fontWeight: selStart ? 600 : 400,
+                          boxShadow: picking === 'start' ? '0 0 0 3px var(--primary-light)' : 'none',
+                        }}
+                        onClick={() => setPicking('start')}
+                      >
+                        <CalIcon small />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selStart ? fmt(selStart) : 'Start'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>END</div>
+                      <div
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          border: `1.5px solid ${picking === 'end' ? 'var(--primary)' : 'var(--border-color)'}`,
+                          borderRadius: 7, padding: '6px 8px', background: 'var(--surface)',
+                          cursor: 'pointer', fontSize: 11.5, color: selEnd ? 'var(--text-main)' : 'var(--text-faint)',
+                          fontWeight: selEnd ? 600 : 400,
+                          boxShadow: picking === 'end' ? '0 0 0 3px var(--primary-light)' : 'none',
+                        }}
+                        onClick={() => setPicking('end')}
+                      >
+                        <CalIcon small />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selEnd ? fmt(selEnd) : 'End'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Single calendar for mobile */}
+                  <MonthCalendar
+                    year={leftYear} month={leftMonth}
+                    onMonthChange={navigateLeft}
+                    start={selStart} end={selEnd} hovered={hovered}
+                    onDayClick={handleDayClick}
+                    onDayHover={d => { if (selStart && !selEnd) setHovered(d); }}
                   />
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Days</span>
                 </div>
-              </div>
-            </div>
+              </>
+            ) : (
+              /* Desktop: Preset sidebar + Dual calendars */
+              <div style={{ display: 'flex' }}>
+                {/* ── Preset sidebar ──────────────────────────────────────── */}
+                <div style={{
+                  width: dims.sidebarWidth, borderRight: '1px solid var(--border-subtle)',
+                  padding: compact ? '8px 6px' : '12px 8px', display: 'flex', flexDirection: 'column', gap: 1,
+                  maxHeight: compact ? 400 : 'none', overflowY: compact ? 'auto' : 'visible',
+                }}>
+                  {PRESET_GROUPS.map((group, gi) => (
+                    <div key={group.title ?? gi} style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: gi === 0 ? 0 : 6 }}>
+                      {group.title && (
+                        <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: dims.sideTitlePad }}>{group.title}</div>
+                      )}
+                      {group.items.map(p => (
+                        <button
+                          key={p.value}
+                          className={`drp-preset${preset === p.value ? ' active' : ''}`}
+                          onClick={() => applyPreset(p.value)}
+                          style={{
+                            display: 'block', width: '100%', textAlign: 'left',
+                            padding: dims.presetPad, border: 'none', borderRadius: 5,
+                            cursor: 'pointer', fontSize: dims.presetFont,
+                            background: preset === p.value ? 'var(--primary)' : 'transparent',
+                            color: preset === p.value ? '#fff' : 'var(--gray-700)',
+                            fontWeight: preset === p.value ? 700 : 400,
+                            transition: 'background 0.12s',
+                            fontFamily: 'inherit',
+                            lineHeight: 1.3,
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
 
-            {/* ── Calendars ───────────────────────────────────────────── */}
-            <div style={{ flex: 1, padding: dims.bodyPad }}>
-
-              {/* Date inputs */}
-              <div style={{ display: 'flex', gap: dims.gapBetweenFields, marginBottom: 10 }}>
-                {/* Start */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>START DATE</div>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    border: `1.5px solid ${picking === 'start' ? 'var(--primary)' : 'var(--border-color)'}`,
-                    borderRadius: 7, padding: dims.dateFieldPad, background: 'var(--surface)',
-                    cursor: 'pointer', fontSize: dims.dateFieldFont, color: selStart ? 'var(--text-main)' : 'var(--text-faint)',
-                    fontWeight: selStart ? 600 : 400,
-                    boxShadow: picking === 'start' ? '0 0 0 3px var(--primary-light)' : 'none',
-                  }} onClick={() => setPicking('start')}>
-                    <CalIcon small />
-                    {selStart ? fmt(selStart) : 'Start date'}
+                  {/* Last N days custom input */}
+                  <div style={{ marginTop: 6, padding: '5px 6px', borderTop: '1px solid var(--border-subtle)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11 }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Last</span>
+                      <input
+                        type="number" min={1} value={customN}
+                        onChange={e => setCustomN(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && applyCustomN()}
+                        placeholder="N"
+                        style={{
+                          width: 32, border: '1.5px solid var(--border-color)', borderRadius: 4,
+                          padding: '2px 4px', fontSize: 11, textAlign: 'center',
+                          outline: 'none', fontFamily: 'inherit',
+                        }}
+                      />
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Days</span>
+                    </div>
                   </div>
-                  {showTime && selStart && (
-                    <TimeInput hours={startH} minutes={startM} onChange={(t,v) => t==='h' ? setStartH(v) : setStartM(v)} />
-                  )}
                 </div>
 
-                {/* End */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>END DATE</div>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    border: `1.5px solid ${picking === 'end' ? 'var(--primary)' : 'var(--border-color)'}`,
-                    borderRadius: 7, padding: dims.dateFieldPad, background: 'var(--surface)',
-                    cursor: 'pointer', fontSize: dims.dateFieldFont, color: selEnd ? 'var(--text-main)' : 'var(--text-faint)',
-                    fontWeight: selEnd ? 600 : 400,
-                    boxShadow: picking === 'end' ? '0 0 0 3px var(--primary-light)' : 'none',
-                  }} onClick={() => setPicking('end')}>
-                    <CalIcon small />
-                    {selEnd ? fmt(selEnd) : 'End date'}
+                {/* ── Calendars ───────────────────────────────────────────── */}
+                <div style={{ flex: 1, padding: dims.bodyPad }}>
+                  {/* Date inputs */}
+                  <div style={{ display: 'flex', gap: dims.gapBetweenFields, marginBottom: 10 }}>
+                    {/* Start */}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>START DATE</div>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        border: `1.5px solid ${picking === 'start' ? 'var(--primary)' : 'var(--border-color)'}`,
+                        borderRadius: 7, padding: dims.dateFieldPad, background: 'var(--surface)',
+                        cursor: 'pointer', fontSize: dims.dateFieldFont, color: selStart ? 'var(--text-main)' : 'var(--text-faint)',
+                        fontWeight: selStart ? 600 : 400,
+                        boxShadow: picking === 'start' ? '0 0 0 3px var(--primary-light)' : 'none',
+                      }} onClick={() => setPicking('start')}>
+                        <CalIcon small />
+                        {selStart ? fmt(selStart) : 'Start date'}
+                      </div>
+                      {showTime && selStart && (
+                        <TimeInput hours={startH} minutes={startM} onChange={(t,v) => t==='h' ? setStartH(v) : setStartM(v)} />
+                      )}
+                    </div>
+
+                    {/* End */}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>END DATE</div>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        border: `1.5px solid ${picking === 'end' ? 'var(--primary)' : 'var(--border-color)'}`,
+                        borderRadius: 7, padding: dims.dateFieldPad, background: 'var(--surface)',
+                        cursor: 'pointer', fontSize: dims.dateFieldFont, color: selEnd ? 'var(--text-main)' : 'var(--text-faint)',
+                        fontWeight: selEnd ? 600 : 400,
+                        boxShadow: picking === 'end' ? '0 0 0 3px var(--primary-light)' : 'none',
+                      }} onClick={() => setPicking('end')}>
+                        <CalIcon small />
+                        {selEnd ? fmt(selEnd) : 'End date'}
+                      </div>
+                      {showTime && selEnd && (
+                        <TimeInput hours={endH} minutes={endM} onChange={(t,v) => t==='h' ? setEndH(v) : setEndM(v)} />
+                      )}
+                    </div>
                   </div>
-                  {showTime && selEnd && (
-                    <TimeInput hours={endH} minutes={endM} onChange={(t,v) => t==='h' ? setEndH(v) : setEndM(v)} />
-                  )}
+
+                  {/* Dual calendars */}
+                  <div style={{ display: 'flex', gap: dims.gapBetweenCals }}>
+                    <MonthCalendar
+                      year={leftYear} month={leftMonth}
+                      onMonthChange={navigateLeft}
+                      start={selStart} end={selEnd} hovered={hovered}
+                      onDayClick={handleDayClick}
+                      onDayHover={d => { if (selStart && !selEnd) setHovered(d); }}
+                    />
+                    <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
+                    <MonthCalendar
+                      year={rightYear} month={rightMonth}
+                      onMonthChange={navigateRight}
+                      start={selStart} end={selEnd} hovered={hovered}
+                      onDayClick={handleDayClick}
+                      onDayHover={d => { if (selStart && !selEnd) setHovered(d); }}
+                    />
+                  </div>
                 </div>
               </div>
-
-              {/* Dual calendars */}
-              <div style={{ display: 'flex', gap: dims.gapBetweenCals }}>
-                <MonthCalendar
-                  year={leftYear} month={leftMonth}
-                  onMonthChange={navigateLeft}
-                  start={selStart} end={selEnd} hovered={hovered}
-                  onDayClick={handleDayClick}
-                  onDayHover={d => { if (selStart && !selEnd) setHovered(d); }}
-                />
-                <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
-                <MonthCalendar
-                  year={rightYear} month={rightMonth}
-                  onMonthChange={navigateRight}
-                  start={selStart} end={selEnd} hovered={hovered}
-                  onDayClick={handleDayClick}
-                  onDayHover={d => { if (selStart && !selEnd) setHovered(d); }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* ── Footer ────────────────────────────────────────────────── */}
-          <div style={{
-            display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
-            gap: 8, padding: dims.footerPad,
-            borderTop: '1px solid var(--border-subtle)', background: 'var(--surface-2)',
-          }}>
-            {selStart && selEnd && (
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 'auto' }}>
-                {fmt(selStart)} → {fmt(selEnd)}
-              </span>
             )}
-            <button className="drp-cancel" onClick={handleCancel} style={{
-              padding: compact ? '5px 14px' : '7px 20px', border: '1.5px solid var(--border-color)', borderRadius: 7,
-              background: 'var(--surface)', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-              color: 'var(--gray-700)', transition: 'background 0.12s', fontFamily: 'inherit',
-            }}>Cancel</button>
-            <button className="drp-apply" onClick={handleApply} style={{
-              padding: compact ? '5px 16px' : '7px 22px', border: 'none', borderRadius: 7,
-              background: 'var(--primary)', cursor: 'pointer', fontSize: 12, fontWeight: 700,
-              color: '#fff', transition: 'background 0.12s', fontFamily: 'inherit',
-              boxShadow: '0 2px 8px rgba(79,70,229,0.35)',
-            }}>Apply</button>
+
+            {/* ── Footer ────────────────────────────────────────────────── */}
+            <div style={{
+              display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
+              gap: 8, padding: isMobile ? '10px 14px' : dims.footerPad,
+              borderTop: '1px solid var(--border-subtle)', background: 'var(--surface-2)',
+            }}>
+              {selStart && selEnd && (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 'auto' }}>
+                  {fmt(selStart)} → {fmt(selEnd)}
+                </span>
+              )}
+              <button className="drp-cancel" onClick={handleCancel} style={{
+                padding: compact || isMobile ? '6px 14px' : '7px 20px', border: '1.5px solid var(--border-color)', borderRadius: 7,
+                background: 'var(--surface)', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                color: 'var(--gray-700)', transition: 'background 0.12s', fontFamily: 'inherit',
+              }}>Cancel</button>
+              <button className="drp-apply" onClick={handleApply} style={{
+                padding: compact || isMobile ? '6px 16px' : '7px 22px', border: 'none', borderRadius: 7,
+                background: 'var(--primary)', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                color: '#fff', transition: 'background 0.12s', fontFamily: 'inherit',
+                boxShadow: '0 2px 8px rgba(79,70,229,0.35)',
+              }}>Apply</button>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

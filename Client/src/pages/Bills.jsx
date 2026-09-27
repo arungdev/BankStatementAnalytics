@@ -191,7 +191,7 @@ export default function Bills() {
   ];
 
   return (
-    <div style={{ marginRight: selectedBill ? drawerWidth : 0, transition: "margin-right 0.2s ease" }}>
+    <div style={{ marginRight: selectedBill && (typeof window !== 'undefined' && window.innerWidth > 1024) ? drawerWidth : 0, transition: "margin-right 0.2s ease" }}>
       <style>{`
         .bill-head {
           display: grid;
@@ -219,11 +219,36 @@ export default function Bills() {
           .bill-head, .bill-row { grid-template-columns: minmax(0,1fr) 130px 110px 70px; }
           .bill-col-day, .bill-col-next { display: none; }
         }
+        @media (max-width: 640px) {
+          .bill-head {
+            display: none !important;
+          }
+          .bill-row {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 6px 12px !important;
+            padding: 12px 14px !important;
+          }
+          .bill-main-col {
+            flex: 1 1 55% !important;
+            min-width: 0 !important;
+          }
+          .bill-mobile-sub {
+            display: block !important;
+          }
+          .bill-amount-col {
+            flex: 0 0 auto !important;
+            text-align: right !important;
+          }
+          .bill-col-day, .bill-col-next { display: none !important; }
+        }
       `}</style>
 
       {/* ── Summary strip ── */}
       {bills.length > 0 && (
-        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: "16px", marginBottom: "24px" }}>
           <StatCard
             label="Monthly total"
             value={currencyFormatter.format(monthlyTotal)}
@@ -269,7 +294,7 @@ export default function Bills() {
         {dueSoon.length === 0 ? (
           <EmptyState icon="🎉" title="All clear" message="No bills due in the next 7 days." />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 260px), 1fr))", gap: "16px" }}>
             {dueSoon.map((b) => {
               const urgent = b.daysUntilDue <= 2;
               return (
@@ -335,10 +360,15 @@ export default function Bills() {
             <div style={{ maxHeight: "calc(100vh - 300px)", overflowY: "auto" }}>
               {bills.map((b) => (
                 <div key={b.id} className="bill-row" onClick={() => openBill(b)} title="View transactions">
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                  <div className="bill-main-col" style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
                     <Avatar name={maskName(b.name)} />
-                    <div style={{ fontWeight: 700, color: "var(--text-main)", fontSize: "14px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {maskName(b.name)}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, color: "var(--text-main)", fontSize: "14px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {maskName(b.name)}
+                      </div>
+                      <div className="bill-mobile-sub" style={{ display: "none", fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
+                        Due {fmtDate(b.nextDueDate)} {b.cadence && b.cadence !== "Monthly" ? `· ${b.cadence}` : ''}
+                      </div>
                     </div>
                     {b.cadence && b.cadence !== "Monthly" && (
                       <span style={{ ...metaChip, flexShrink: 0 }}>{b.cadence}</span>
@@ -359,7 +389,7 @@ export default function Bills() {
                       <Badge variant="blue">{dueLabel(b.daysUntilDue)}</Badge>
                     )}
                   </div>
-                  <div className="tnum" style={{ textAlign: "right", fontWeight: 800, color: "var(--text-main)", fontSize: "15px", letterSpacing: "-0.3px" }}>
+                  <div className="bill-amount-col tnum" style={{ textAlign: "right", fontWeight: 800, color: "var(--text-main)", fontSize: "15px", letterSpacing: "-0.3px" }}>
                     {currencyFormatter.format(b.expectedAmount)}
                   </div>
                   <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
@@ -388,7 +418,7 @@ export default function Bills() {
         {suggestions.length === 0 ? (
           <EmptyState icon="🔍" title="Nothing new" message="No new recurring bills detected." />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))", gap: "16px" }}>
             {suggestions.map((s) => {
               const active = selectedBill === s;
               return (
@@ -468,7 +498,7 @@ export default function Bills() {
               message="Recurring monthly services like Netflix, Spotify, or software subscriptions will appear here automatically."
             />
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))", gap: "16px" }}>
               {subscriptions.map((s) => (
                 <div
                   key={s.id}
@@ -565,9 +595,10 @@ export default function Bills() {
         open={!!selectedBill}
         onClose={closeBill}
         title={selectedKind === "suggestion" ? "Suggested bill" : "Bill transactions"}
-        width={drawerWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : drawerWidth}
         onWidthChange={setDrawerWidth}
-        modal={false}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? 280 : 420}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         {selectedBill && (
           <>

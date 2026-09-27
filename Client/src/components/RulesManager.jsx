@@ -231,6 +231,7 @@ export default function RulesManager() {
           {rules.map((r, idx) => (
             <div
               key={r.id}
+              className="rule-item-card"
               style={{
                 background: 'var(--surface)',
                 borderRadius: '12px',
@@ -240,7 +241,8 @@ export default function RulesManager() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: '16px',
+                gap: '14px',
+                flexWrap: 'wrap',
                 opacity: r.enabled ? 1 : 0.6,
               }}
             >
@@ -397,7 +399,7 @@ export default function RulesManager() {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '12px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                   Min Amount (₹)
@@ -440,7 +442,7 @@ export default function RulesManager() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '12px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                   Payment Mode
@@ -493,7 +495,7 @@ export default function RulesManager() {
               2. Apply These Actions
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '12px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                   Set Category

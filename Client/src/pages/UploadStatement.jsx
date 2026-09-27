@@ -174,7 +174,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
         {/* Upload Form Card */}
-        <div className="card" style={{ maxWidth: '700px', display: 'block' }}>
+        <div className="card" style={{ maxWidth: '700px', width: '100%', display: 'block' }}>
           <form onSubmit={handleSubmit}>
 
             {/* Account selector */}
@@ -203,17 +203,17 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
               <label style={{ display: 'block', fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--gray-700)', marginBottom: 'var(--space-2)' }}>Statement File</label>
 
               {!selectedAccount ? (
-                <div style={{ border: '2px dashed var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '48px 20px', textAlign: 'center', backgroundColor: 'var(--gray-100)' }}>
-                  <FiUploadCloud size={44} color="var(--gray-300)" style={{ marginBottom: 'var(--space-4)' }} />
+                <div style={{ border: '2px dashed var(--border-color)', borderRadius: 'var(--radius-sm)', padding: 'clamp(28px, 6vw, 48px) 16px', textAlign: 'center', backgroundColor: 'var(--gray-100)' }}>
+                  <FiUploadCloud size={40} color="var(--gray-300)" style={{ marginBottom: 'var(--space-4)' }} />
                   <p style={{ margin: 0, fontSize: 'var(--text-md)', color: 'var(--gray-400)', fontWeight: 600 }}>Select an account first</p>
                 </div>
               ) : !file ? (
                 <div
-                  style={{ position: 'relative', border: '2px dashed var(--gray-300)', borderRadius: 'var(--radius-sm)', padding: '48px 20px', textAlign: 'center', backgroundColor: 'var(--gray-50)', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                  style={{ position: 'relative', border: '2px dashed var(--gray-300)', borderRadius: 'var(--radius-sm)', padding: 'clamp(28px, 6vw, 48px) 16px', textAlign: 'center', backgroundColor: 'var(--gray-50)', cursor: 'pointer', transition: 'all 0.2s ease' }}
                   onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'var(--primary-light)'; }}
                   onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--gray-300)'; e.currentTarget.style.backgroundColor = 'var(--gray-50)'; }}
                 >
-                  <FiUploadCloud size={44} color="var(--gray-400)" style={{ marginBottom: 'var(--space-4)' }} />
+                  <FiUploadCloud size={40} color="var(--gray-400)" style={{ marginBottom: 'var(--space-4)' }} />
                   <p style={{ margin: '0 0 8px 0', fontSize: 'var(--text-md)', color: 'var(--gray-600)', fontWeight: 600 }}>Click to browse or drag and drop</p>
                   <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--gray-400)' }}>
                     {loadingFormats
@@ -230,7 +230,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                   />
                 </div>
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', padding: 'var(--space-4)', backgroundColor: 'var(--primary-light)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: 'var(--space-4)', backgroundColor: 'var(--primary-light)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', flexWrap: 'wrap', gap: '8px' }}>
                   <FiFileText color="var(--primary)" size={28} style={{ marginRight: 'var(--space-4)' }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-main)' }}>{file.name}</div>
@@ -336,7 +336,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
         {showHistory && filteredUploads.length > 0 && (
           <div>
             <h2 style={{ fontSize: 'var(--text-lg)', color: 'var(--text-main)', marginBottom: 'var(--space-4)', marginTop: 0 }}>Upload History</h2>
-            <div className="table-container">
+            <div className="table-responsive">
               <table>
                 <thead>
                   <tr>

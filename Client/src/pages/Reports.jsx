@@ -322,9 +322,8 @@ export default function Reports() {
 
   const s = {
     page: {
-      padding: '28px 32px',
       background: T.bg,
-      minHeight: '100vh',
+      minHeight: '100%',
       fontFamily: "'Inter', 'system-ui', sans-serif",
     },
     topRow: {
@@ -411,7 +410,7 @@ export default function Reports() {
     <div style={{ display: 'flex', position: 'relative', overflow: 'hidden' }}>
       <div
         className="report-shell"
-        style={{ ...s.page, flex: 1, minWidth: 0, marginRight: trayOpen ? drawerWidth : 0 }}
+        style={{ ...s.page, flex: 1, minWidth: 0, marginRight: trayOpen && (typeof window !== 'undefined' && window.innerWidth > 1024) ? drawerWidth : 0 }}
       >
 
       {/* ── Toolbar (screen only) ── */}
@@ -561,13 +560,14 @@ export default function Reports() {
             )}
 
             {/* ── Categories + Top merchants ── */}
-            <div className="report-grid" style={s.grid}>
+            <div className="report-grid">
               <div className="report-card" style={{ ...s.card, marginBottom: 0 }}>
                 <p style={s.cardTitle}>Spend by Category</p>
                 {categories.length === 0 ? (
                   <p style={{ margin: 0, fontSize: '13px', color: T.muted }}>No spending in this period.</p>
                 ) : (
-                  <table style={s.table}>
+                  <div className="table-responsive">
+                    <table style={s.table}>
                     <thead>
                       <tr>
                         <th style={s.th(false)}>Category</th>
@@ -607,6 +607,7 @@ export default function Reports() {
                       </tr>
                     </tfoot>
                   </table>
+                  </div>
                 )}
               </div>
 
@@ -764,9 +765,10 @@ export default function Reports() {
         open={trayOpen}
         onClose={closeTray}
         title={openTile ? TILES[openTile].title : 'Transactions'}
-        width={drawerWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : drawerWidth}
         onWidthChange={setDrawerWidth}
-        modal={false}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? 280 : 420}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
           {[

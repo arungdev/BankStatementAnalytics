@@ -1129,11 +1129,11 @@
 
   .settings-rail {
     position: sticky;
-    top: calc(-1 * var(--space-10));
+    top: 0;
     z-index: 5;
     background: var(--bg);
-    padding: var(--space-10) 0 var(--space-3);
-    margin-top: calc(-1 * var(--space-10));
+    padding: var(--space-1) 0 var(--space-3);
+    margin-top: 0;
     gap: var(--space-3);
   }
 
@@ -1142,8 +1142,9 @@
     align-items: center;
     gap: var(--space-2);
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    padding-bottom: 2px;
+    padding-bottom: 4px;
   }
 
   .settings-nav::-webkit-scrollbar { display: none; }
@@ -1191,12 +1192,36 @@
   .settings-row-head,
   .account-panel-head {
     flex-wrap: wrap;
+    gap: var(--space-3);
   }
 
   .setting-card-control,
-  .settings-row-actions { width: 100%; }
+  .settings-row-actions {
+    width: 100%;
+    margin-top: var(--space-1);
+  }
 
-  .account-balance { margin-left: 52px; }
+  .account-balance {
+    margin-left: 0;
+    align-items: flex-start;
+  }
+
+  .settings-field.sm,
+  .settings-field.md,
+  .settings-field.lg,
+  .settings-field.grow {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  .settings-field-grid {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .choice-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
+  }
 
   .settings-panel-head { flex-wrap: wrap; }
 
@@ -1211,6 +1236,19 @@
 
   .settings-panel-nav-btn.next {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 400px) {
+  .setting-card,
+  .settings-row {
+    padding: var(--space-3) var(--space-3);
+  }
+
+  .settings-avatar {
+    width: 36px;
+    height: 36px;
+    font-size: var(--text-sm);
   }
 }
 

@@ -41,14 +41,17 @@ export default function CashFlowForecast({ accountId, accountIds }) {
   const hasDeficit = data?.lowestProjectedBalance < 0;
 
   return (
-    <div style={{
-      background: 'var(--surface)',
-      borderRadius: '14px',
-      padding: '22px 24px',
-      border: '1px solid var(--border-color)',
-      boxShadow: 'var(--shadow-sm)',
-      marginTop: '20px',
-    }}>
+    <div
+      className="cashflow-card"
+      style={{
+        background: 'var(--surface)',
+        borderRadius: '14px',
+        padding: 'clamp(14px, 3vw, 22px) clamp(14px, 3vw, 24px)',
+        border: '1px solid var(--border-color)',
+        boxShadow: 'var(--shadow-sm)',
+        marginTop: '20px',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -105,7 +108,7 @@ export default function CashFlowForecast({ accountId, accountIds }) {
       )}
 
       {/* Summary metric tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '12px', marginBottom: '18px' }}>
         <div style={{ background: 'var(--surface-2)', padding: '12px 14px', borderRadius: '10px' }}>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Current Starting Balance</div>
           <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px' }}>

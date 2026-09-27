@@ -85,6 +85,7 @@ export default function SearchModal({ isOpen, onClose }) {
 
   return (
     <div
+      className="search-modal-backdrop"
       style={{
         position: 'fixed',
         inset: 0,
@@ -94,15 +95,17 @@ export default function SearchModal({ isOpen, onClose }) {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-start',
-        paddingTop: '10vh',
+        padding: '16px',
+        paddingTop: 'min(10vh, 48px)',
       }}
       onClick={onClose}
     >
       <div
+        className="search-modal-box"
         style={{
           width: '640px',
-          maxWidth: '92vw',
-          maxHeight: '75vh',
+          maxWidth: '100%',
+          maxHeight: 'min(82vh, 680px)',
           background: 'var(--surface)',
           borderRadius: '16px',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--border-color)',
@@ -388,7 +391,7 @@ export default function SearchModal({ isOpen, onClose }) {
         </div>
 
         {/* Footer info */}
-        <div style={{
+        <div className="search-modal-footer" style={{
           padding: '10px 16px',
           borderTop: '1px solid var(--border-color)',
           background: 'var(--surface-2)',

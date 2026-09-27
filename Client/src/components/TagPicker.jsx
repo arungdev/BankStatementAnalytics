@@ -169,9 +169,10 @@ export default function TagPicker({
   // Clamped horizontal position so menu is never off-screen
   const popoverLeft = useMemo(() => {
     if (!rect) return 0;
-    const menuWidth = Math.max(rect.width, 248);
-    const maxLeft = window.innerWidth - menuWidth - 12;
-    return Math.max(12, Math.min(rect.left, maxLeft));
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 360;
+    const menuWidth = Math.min(Math.max(rect.width, 248), winW - 16);
+    const maxLeft = Math.max(8, winW - menuWidth - 8);
+    return Math.max(8, Math.min(rect.left, maxLeft));
   }, [rect]);
 
   return (
@@ -226,7 +227,7 @@ export default function TagPicker({
             style={{
               position: "fixed",
               left: popoverLeft,
-              width: Math.max(rect.width, 248),
+              width: Math.min(Math.max(rect.width, 248), (typeof window !== 'undefined' ? window.innerWidth : 360) - 16),
               ...(flipUp
                 ? { bottom: window.innerHeight - rect.top + 6 }
                 : { top: rect.bottom + 6 }),

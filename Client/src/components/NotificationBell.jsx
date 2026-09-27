@@ -197,9 +197,10 @@ export default function NotificationBell({ onDockChange, accounts = [] }) {
         open={open}
         onClose={() => setOpen(false)}
         title="Reminders"
-        width={width}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : Math.min(width, typeof window !== 'undefined' ? window.innerWidth : 420)}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : 320}
         onWidthChange={setWidth}
-        modal={false}
+        modal={typeof window !== 'undefined' ? window.innerWidth <= 1024 : false}
       >
         {items.length === 0 ? (
           <EmptyState message="You're all caught up — no bills due soon and no import problems." />

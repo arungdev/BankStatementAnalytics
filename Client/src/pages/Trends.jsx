@@ -551,7 +551,7 @@ const Trends = () => {
   return (
     <div
       className="trends-container"
-      style={{ marginRight: drillDown ? drillWidth : 0, transition: 'margin-right 0.2s ease' }}
+      style={{ marginRight: drillDown && (typeof window !== 'undefined' && window.innerWidth > 1024) ? drillWidth : 0, transition: 'margin-right 0.2s ease' }}
     >
 
       {/* Summary cards */}
@@ -634,10 +634,10 @@ const Trends = () => {
         open={!!drillDown}
         onClose={closeDrillDown}
         title={drillDown?.label || ''}
-        width={drillWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : drillWidth}
         onWidthChange={setDrillWidth}
-        minWidth={420}
-        modal={false}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? 280 : 420}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         {drillDown && (
           <>

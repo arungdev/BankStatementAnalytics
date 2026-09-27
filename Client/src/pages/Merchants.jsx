@@ -796,7 +796,7 @@ export default function Merchants() {
   const fmtMY = (d) => (d ? d.toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "—");
 
   return (
-    <div style={{ marginRight: selectedMerchantId ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
+    <div style={{ marginRight: selectedMerchantId && (typeof window !== 'undefined' && window.innerWidth > 1024) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
       <style>{`
         .mrc-row {
           display: grid;
@@ -931,8 +931,32 @@ export default function Merchants() {
         .mrc-stat:hover { border-color: ${T.indigo}; }
         .mrc-stat:active { transform: scale(0.98); }
         .mrc-stat:focus-visible { outline: 2px solid ${T.indigo}; outline-offset: 2px; }
+        .mrc-stat-row {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+        @media (max-width: 1024px) {
+          .mrc-stat-row {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        @media (max-width: 440px) {
+          .mrc-stat-row {
+            grid-template-columns: 1fr;
+          }
+        }
         @media (max-width: 720px) {
-          .mrc-row, .mrc-head { grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(0,1fr) 88px 20px; }
+          .mrc-search-container {
+            flex: 1 1 100% !important;
+            margin-right: 0 !important;
+          }
+          .mrc-row, .mrc-head {
+            grid-template-columns: ${isAdmin ? '32px ' : ''}minmax(0,1fr) 90px 18px !important;
+            gap: 10px !important;
+            padding: 12px 14px !important;
+          }
           /* Spend survives the squeeze — it's the column worth scanning on a phone. */
           .mrc-col-cat, .mrc-col-meta, .mrc-col-count { display: none; }
         }
@@ -977,7 +1001,7 @@ export default function Merchants() {
       )}
 
       {/* ── Summary strip — tiles double as quick filters for the list below ── */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+      <div className="mrc-stat-row">
         {[
           {
             label: 'Total merchants', value: data.length, accent: T.indigo,
@@ -1025,7 +1049,7 @@ export default function Merchants() {
 
       {/* ── Search + quick filters ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '0 1 340px' }}>
+        <div className="mrc-search-container" style={{ position: 'relative', flex: '0 1 340px' }}>
           <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: T.faint, fontSize: '15px', pointerEvents: 'none' }}>
             🔍
           </span>
@@ -1595,9 +1619,10 @@ export default function Merchants() {
         open={!!selectedMerchantId}
         onClose={closeSidebar}
         title="Merchant Details"
-        width={sidebarWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : sidebarWidth}
         onWidthChange={setSidebarWidth}
-        modal={false}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? 280 : 420}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         {loadingDetails ? (
           <div style={{ textAlign: 'center', color: T.muted, marginTop: '40px' }}>Loading details...</div>

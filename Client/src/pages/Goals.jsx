@@ -113,9 +113,9 @@ export default function Goals() {
   const completedCount = useMemo(() => goals.filter(g => g.percent >= 100).length, [goals]);
 
   return (
-    <div style={{ padding: '28px 32px', background: 'var(--bg)', minHeight: '100vh' }}>
+    <div style={{ background: 'var(--bg)', minHeight: '100%' }}>
       {/* Top stats */}
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '16px', marginBottom: '24px' }}>
         <StatCard
           label="Total Target"
           value={summary ? fmt.format(summary.totalTarget) : '—'}
@@ -136,7 +136,7 @@ export default function Goals() {
       </div>
 
       {/* Header bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>Your Savings Goals</h2>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0' }}>
@@ -165,7 +165,7 @@ export default function Goals() {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '18px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '18px' }}>
           {goals.map(g => {
             const isDone = g.percent >= 100;
             const meterColor = isDone ? 'var(--success)' : g.percent >= 75 ? '#38bdf8' : 'var(--primary)';
@@ -339,7 +339,7 @@ export default function Goals() {
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Target Amount (₹) *
@@ -385,7 +385,7 @@ export default function Goals() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '12px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Target Date

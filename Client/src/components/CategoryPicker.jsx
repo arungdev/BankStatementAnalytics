@@ -163,8 +163,8 @@ export default function CategoryPicker({
             className="catp-menu"
             style={{
               position: "fixed",
-              left: rect.left,
-              width: Math.max(rect.width, 248),
+              left: Math.max(8, Math.min(rect.left, (typeof window !== 'undefined' ? window.innerWidth : 360) - Math.min(Math.max(rect.width, 248), (typeof window !== 'undefined' ? window.innerWidth : 360) - 16) - 8)),
+              width: Math.min(Math.max(rect.width, 248), (typeof window !== 'undefined' ? window.innerWidth : 360) - 16),
               ...(flipUp
                 ? { bottom: window.innerHeight - rect.top + 6 }
                 : { top: rect.bottom + 6 }),

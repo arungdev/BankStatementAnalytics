@@ -58,7 +58,7 @@ export default function AnnualSummaryView({ data, palette, chartC }) {
         background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.08))',
         border: '1px solid rgba(99, 102, 241, 0.25)',
         borderRadius: '16px',
-        padding: '24px 28px',
+        padding: 'clamp(16px, 4vw, 24px) clamp(16px, 4vw, 28px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -152,11 +152,7 @@ export default function AnnualSummaryView({ data, palette, chartC }) {
       </div>
 
       {/* ── Peak & Valley Callout Cards ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '16px',
-      }}>
+      <div className="layout-equal-2col" style={{ gap: '16px' }}>
         <div style={{
           background: 'var(--surface)',
           border: '1px solid var(--border-color)',
@@ -260,11 +256,7 @@ export default function AnnualSummaryView({ data, palette, chartC }) {
       </div>
 
       {/* ── Top Categories & Top Merchants Side-by-Side ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '20px',
-      }}>
+      <div className="layout-equal-2col" style={{ gap: '20px' }}>
         {/* Top Categories */}
         <div style={{
           background: 'var(--surface)',

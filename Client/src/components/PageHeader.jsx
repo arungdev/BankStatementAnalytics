@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { FiSettings, FiChevronDown, FiCheck } from 'react-icons/fi';
+import { FiSettings, FiChevronDown, FiCheck, FiMenu } from 'react-icons/fi';
 import './filter-chip.css';
 
 /**
@@ -7,15 +7,6 @@ import './filter-chip.css';
  *
  * Row 1: title (left) + actions slot (right, e.g. gear button)
  * Row 2: filters slot (optional — omitted entirely if not provided)
- *
- * Usage:
- *   <PageHeader
- *     title="Spending Insights"
- *     subtitle="Where your money goes"
- *     actions={<button>...</button>}
- *     filters={<InsightsFilters ... />}
- *     onSettings={() => setOpen(true)}
- *   />
  */
 
 export default function PageHeader({
@@ -24,13 +15,12 @@ export default function PageHeader({
   filters,          // ReactNode — shown in the second row; row hidden if absent
   actions,          // ReactNode — extra buttons beside the gear (left of gear)
   onSettings,       // () => void
+  onMenuToggle,     // () => void — toggles mobile drawer
 }) {
   const headerRef = useRef(null);
 
   // Publish the header's rendered height so overlays (the right-hand detail
   // drawer) can sit below it instead of covering the top-right controls.
-  // Height is dynamic — the filters row is only present on some pages.
-  // --app-titlebar-h is row 1 alone, for panels that dock beside the filter row.
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
@@ -51,51 +41,43 @@ export default function PageHeader({
   }, [filters]);
 
   return (
-    <header ref={headerRef} style={{
-      background: 'var(--surface)',
-      borderBottom: '1px solid var(--border-color)',
-      position: 'relative',
-      zIndex: 'var(--z-header)',
-      overflow: 'visible',
-    }}>
+    <header ref={headerRef} className="page-header">
 
       {/* ── Row 1: title + right actions ── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 20px 0 24px',
-        minHeight: '52px',
-        gap: '12px',
-      }}>
-        {/* Title */}
-        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <h2 style={{
-            margin: 0,
-            fontSize: '16px',
-            fontWeight: 700,
-            color: 'var(--text-main)',
-            letterSpacing: '-0.01em',
-            lineHeight: 1.2,
-          }}>
-            {title}
-          </h2>
-          {subtitle && (
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px', lineHeight: 1.2 }}>
-              {subtitle}
-            </span>
+      <div className="page-header-row1">
+        {/* Left: Mobile Menu Toggle + Title */}
+        <div className="page-header-left">
+          {onMenuToggle && (
+            <button
+              onClick={onMenuToggle}
+              className="btn icon page-header-menu-btn"
+              title="Open menu"
+              aria-label="Toggle navigation menu"
+            >
+              <FiMenu size={18} />
+            </button>
           )}
+          <div className="page-header-title-box">
+            <h2 className="page-header-title">
+              {title}
+            </h2>
+            {subtitle && (
+              <span className="page-header-subtitle">
+                {subtitle}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Right side: custom actions + gear */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        <div className="page-header-actions">
           {actions}
           {onSettings && (
             <button
               onClick={onSettings}
-              className="btn icon"
-              style={{ borderRadius: '50%', width: '36px', height: '36px', color: 'var(--text-muted)' }}
+              className="btn icon page-header-settings-btn"
               title="Settings"
+              aria-label="Settings"
             >
               <FiSettings size={17} />
             </button>
@@ -105,17 +87,7 @@ export default function PageHeader({
 
       {/* ── Row 2: filters (only rendered when provided) ── */}
       {filters && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 24px',
-          minHeight: '52px',
-          borderTop: '1px solid var(--border-color)',
-          gap: '18px',
-          overflow: 'visible',
-          position: 'relative',
-          zIndex: 1,
-        }}>
+        <div className="page-header-row2">
           {filters}
         </div>
       )}

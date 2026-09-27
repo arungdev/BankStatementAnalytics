@@ -156,20 +156,11 @@ export default function SplitTransactionModal({ open, onClose, transaction, cate
         {loading ? (
           <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>Loading splits…</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '320px', overflowY: 'auto' }}>
             {splits.map((s, idx) => (
               <div
                 key={idx}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '110px 140px 1fr 32px',
-                  gap: '8px',
-                  alignItems: 'center',
-                  background: 'var(--surface)',
-                  padding: '8px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                }}
+                className="split-modal-row"
               >
                 <input
                   type="number"
@@ -178,6 +169,7 @@ export default function SplitTransactionModal({ open, onClose, transaction, cate
                   placeholder="Amount"
                   value={s.amount}
                   onChange={e => updateRow(idx, 'amount', e.target.value)}
+                  className="split-input-amount"
                   style={{
                     padding: '7px 8px',
                     borderRadius: '6px',
@@ -192,6 +184,7 @@ export default function SplitTransactionModal({ open, onClose, transaction, cate
                 <select
                   value={s.category}
                   onChange={e => updateRow(idx, 'category', e.target.value)}
+                  className="split-input-cat"
                   style={{
                     padding: '7px 8px',
                     borderRadius: '6px',
@@ -212,6 +205,7 @@ export default function SplitTransactionModal({ open, onClose, transaction, cate
                   placeholder="Note / detail (optional)"
                   value={s.note}
                   onChange={e => updateRow(idx, 'note', e.target.value)}
+                  className="split-input-note"
                   style={{
                     padding: '7px 8px',
                     borderRadius: '6px',
@@ -226,14 +220,17 @@ export default function SplitTransactionModal({ open, onClose, transaction, cate
                   type="button"
                   onClick={() => removeRow(idx)}
                   disabled={splits.length <= 1}
-                  className="btn icon"
+                  className="btn icon split-input-del"
                   style={{
-                    width: '30px',
-                    height: '30px',
+                    width: '32px',
+                    height: '32px',
                     borderRadius: '6px',
                     color: splits.length <= 1 ? 'var(--text-faint)' : 'var(--danger)',
                     border: 'none',
                     cursor: splits.length <= 1 ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                   title="Remove split row"
                 >
@@ -267,7 +264,7 @@ export default function SplitTransactionModal({ open, onClose, transaction, cate
         )}
 
         {/* Action Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+        <div className="split-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
           <button
             type="button"
             onClick={handleClear}

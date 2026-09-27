@@ -392,3 +392,31 @@
   margin-top: 3px;
   opacity: 0.9;
 }
+
+@media (max-width: 640px) {
+  .spending-heatmap-card {
+    padding: 16px 14px;
+    margin-top: 16px;
+    border-radius: 12px;
+  }
+  .heatmap-stats-strip {
+    padding: 10px 14px;
+    gap: 12px;
+    border-radius: 10px;
+  }
+  .heatmap-stat-value {
+    font-size: 14px;
+  }
+  .spending-heatmap-header {
+    margin-bottom: 14px;
+  }
+}
+
+@media (max-width: 440px) {
+  .heatmap-stat-divider {
+    display: none;
+  }
+  .heatmap-stat-item {
+    width: calc(50% - 6px);
+  }
+}

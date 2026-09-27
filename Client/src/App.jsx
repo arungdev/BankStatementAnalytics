@@ -140,6 +140,12 @@ function Layout() {
   // Width occupied by the docked Reminders drawer (0 when closed) so the
   // page content shifts beside it, like the per-page RHS detail drawers.
   const [remindersDock, setRemindersDock] = useState(0);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Auto-close mobile navigation on route changes
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   const fetchAccounts = () => {
     api.get('/statements/accounts')
@@ -254,39 +260,30 @@ function Layout() {
 
   return (
     <div className="app app-fade">
-      <Sidebar />
+      <Sidebar
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
+      />
 
       <main className="main">
         <PageHeader
           title={meta.title}
           subtitle={meta.subtitle}
           filters={filters}
+          onMenuToggle={() => setMobileNavOpen(v => !v)}
           actions={<>
             {accountSelector}
             {/* Separates the account scope from the action buttons beside it. */}
-            <span style={{ width: '1px', height: '22px', background: 'var(--border-color)', flexShrink: 0 }} />
+            <span className="hidden-mobile" style={{ width: '1px', height: '22px', background: 'var(--border-color)', flexShrink: 0 }} />
             <button
               onClick={() => setSearchOpen(true)}
-              className="btn icon"
-              style={{
-                borderRadius: '8px',
-                height: '36px',
-                padding: '0 10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: 'var(--text-muted)',
-                background: 'var(--surface)',
-                border: '1px solid var(--border-color)',
-                fontSize: '12px',
-                flexShrink: 0,
-              }}
+              className="btn icon search-trigger-btn"
               title="Global Smart Search (Ctrl+K)"
               aria-label="Search"
             >
-              <FiSearch size={14} />
+              <FiSearch size={15} />
               <span className="hidden-mobile">Search</span>
-              <kbd style={{ fontSize: '10px', background: 'var(--surface-2)', padding: '1px 5px', borderRadius: '4px', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>Ctrl K</kbd>
+              <kbd className="hidden-mobile" style={{ fontSize: '10px', background: 'var(--surface-2)', padding: '1px 5px', borderRadius: '4px', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>Ctrl K</kbd>
             </button>
             <button
               onClick={() => setGuideOpen(true)}
@@ -351,7 +348,14 @@ function Layout() {
           />
         </Modal>
 
-        <section key={location.pathname} className="content route-fade" style={{ marginRight: remindersDock, transition: "margin-right 0.2s ease" }}>
+        <section
+          key={location.pathname}
+          className="content route-fade"
+          style={{
+            marginRight: (typeof window !== 'undefined' && window.innerWidth > 1024) ? remindersDock : 0,
+            transition: "margin-right 0.2s ease"
+          }}
+        >
           <Outlet context={{
             accounts,
             setAccounts,

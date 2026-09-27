@@ -18,8 +18,22 @@ export default function Pagination({
   if (totalCount === 0) return null;
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '16px', background: 'var(--surface)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+    <div
+      className="pagination-bar"
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px',
+        marginTop: '16px',
+        padding: '12px 16px',
+        background: 'var(--surface)',
+        borderRadius: '8px',
+        border: '1px solid var(--border-color)',
+      }}
+    >
+      <div className="pagination-info" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
         {totalPages > 1 && (
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>Items per page:</span>
@@ -42,11 +56,11 @@ export default function Pagination({
         </div>
       </div>
       {totalPages > 1 && (
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="pagination-nav" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button className="btn small" disabled={currentPage === 1} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>
             Previous
           </button>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', padding: '0 8px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', padding: '0 8px', whiteSpace: 'nowrap' }}>
             Page {currentPage} of {totalPages}
           </span>
           <button className="btn small" disabled={currentPage >= totalPages || totalPages === 0} onClick={() => onPageChange(Math.min(totalPages || 1, currentPage + 1))}>

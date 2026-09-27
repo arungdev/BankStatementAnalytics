@@ -245,26 +245,14 @@ export default function Insights() {
 
   const s = {
     page: {
-      padding: '28px 32px',
       background: T.bg,
-      minHeight: '100vh',
+      minHeight: '100%',
       transition: 'margin-right 0.28s cubic-bezier(0.4,0,0.2,1)',
       overflow: 'visible',
     },
-    // Grid rather than a flex row: with the drawer docked the page narrows, and the
-    // tiles reflow 4 → 2 → 1 evenly instead of overflowing (StatCard's own minWidth
-    // is neutralised by the .ins-stat-row rule below).
-    statsRow: {
-      display: 'grid', gap: '16px', marginBottom: '20px',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-    },
-    chartsGrid: {
-      display: 'grid', gridTemplateColumns: '3fr 2fr',
-      gap: '20px', marginBottom: '20px', alignItems: 'stretch',
-    },
     card: {
       background: T.surface, borderRadius: '14px',
-      padding: '22px 24px', border: `1px solid ${T.border}`,
+      padding: '20px', border: `1px solid ${T.border}`,
       boxShadow: 'var(--shadow-sm)',
     },
     cardTitle: { margin: '0 0 18px', fontSize: '13px', fontWeight: 700, color: T.text, letterSpacing: '-0.1px' },
@@ -314,18 +302,43 @@ export default function Insights() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', overflow: 'visible' }}>
-      <div style={{ ...s.page, flex: 1, marginRight: trayOpen ? drawerWidth : 0 }}>
+    <div style={{ display: 'flex', minHeight: '100%', overflow: 'visible' }}>
+      <div style={{ ...s.page, flex: 1, marginRight: trayOpen && (typeof window !== 'undefined' && window.innerWidth > 1024) ? drawerWidth : 0 }}>
         <style>{`
           @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
           @keyframes spin    { to { transform: rotate(360deg); } }
           .ins-row:hover { background: var(--surface-2) !important; cursor: pointer; }
-          .ins-stat-row .stat-card { min-width: 0; }
+          .ins-stat-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+          }
+          .ins-stat-row .stat-card { min-width: 0; width: 100%; }
+          @media (max-width: 1024px) {
+            .ins-stat-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+          }
+          @media (max-width: 440px) {
+            .ins-stat-row { grid-template-columns: 1fr; gap: 10px; }
+          }
+          .ins-charts-grid {
+            display: grid;
+            grid-template-columns: 3fr 2fr;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: stretch;
+          }
+          @media (max-width: 960px) {
+            .ins-charts-grid {
+              grid-template-columns: 1fr;
+              gap: 16px;
+            }
+          }
         `}</style>
 
         {/* ── Stat cards — each drills into the rows behind it. "Avg per …" has no
              underlying set of transactions, so it stays a plain tile. ── */}
-        <div className="ins-stat-row" style={s.statsRow}>
+        <div className="ins-stat-row">
           <StatCard
             label="Total Spent"
             value={loading ? '—' : fmt.format(grandTotal)}
@@ -362,7 +375,7 @@ export default function Insights() {
         {/* ── Content ── */}
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={s.chartsGrid}>
+            <div className="ins-charts-grid">
               <div style={s.card}><Skeleton h={320} r={10} /></div>
               <div style={s.card}><Skeleton h={320} r={10} /></div>
             </div>
@@ -384,7 +397,7 @@ export default function Insights() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={s.chartsGrid}>
+            <div className="ins-charts-grid">
               {/* Bar chart */}
               <div style={s.card}>
                 <p style={s.cardTitle}>
@@ -471,7 +484,7 @@ export default function Insights() {
                   <FiDownload size={13} /> Export CSV
                 </button>
               </div>
-              <div style={s.tableScroll}>
+              <div className="table-responsive" style={s.tableScroll}>
               <table style={s.table}>
                 <thead>
                   <tr>
@@ -550,9 +563,10 @@ export default function Insights() {
         title={selectedItem?.isAll
           ? 'All transactions'
           : groupSingular ? `${groupSingular} transactions` : 'Transactions'}
-        width={drawerWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : drawerWidth}
         onWidthChange={setDrawerWidth}
-        modal={false}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? 280 : 400}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         {selectedItem && (
           <>

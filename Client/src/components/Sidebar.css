@@ -85,6 +85,37 @@
 .sidebar--open .sidebar-toggle { margin-left: auto; }
 .sidebar-toggle:hover { background: var(--gray-200); color: var(--text-main); }
 
+.sidebar-close-btn {
+  display: none;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  flex-shrink: 0;
+  background: var(--gray-100);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-muted);
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  margin-left: auto;
+}
+.sidebar-close-btn:hover { background: var(--gray-200); color: var(--text-main); }
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 890;
+  animation: sidebar-fade-in 0.18s ease-out;
+}
+@keyframes sidebar-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* ── Nav ── */
 .sidebar-nav {
   flex: 1;
@@ -257,3 +288,79 @@
   left: 0;
   right: 0;
 }
+
+/* ── Mobile / Tablet Responsive Drawer ── */
+@media (max-width: 1024px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px !important;
+    max-width: 85vw;
+    height: 100dvh;
+    z-index: 900;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+    border-right: 1px solid var(--border-color);
+  }
+
+  .sidebar.sidebar--mobile-open {
+    transform: translateX(0);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+  }
+
+  .sidebar-header {
+    height: 56px !important;
+    padding: 0 14px !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+  }
+
+  .sidebar-toggle {
+    display: none !important;
+  }
+
+  .sidebar-close-btn {
+    display: flex !important;
+  }
+
+  .brand-label {
+    display: block !important;
+  }
+
+  .sidebar-nav {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-3) var(--space-2) !important;
+  }
+
+  .nav-item-header {
+    justify-content: flex-start !important;
+    padding: 11px 14px !important;
+    font-size: 14px !important;
+    gap: 12px !important;
+    min-height: 44px;
+  }
+
+  .submenu {
+    padding: 2px 0 2px 32px !important;
+  }
+
+  .submenu li a {
+    justify-content: flex-start !important;
+    padding: 10px 12px !important;
+    font-size: 13.5px !important;
+    min-height: 42px;
+  }
+
+  .sidebar-section {
+    padding: var(--space-3) var(--space-3) !important;
+  }
+
+  .sidebar-section-title {
+    display: block !important;
+  }
+}
+

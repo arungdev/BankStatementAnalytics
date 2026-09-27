@@ -17,7 +17,7 @@ const fmtK = v => v >= 100000
 const card = {
   background: 'var(--surface)',
   borderRadius: '14px',
-  padding: '22px 24px',
+  padding: 'clamp(14px, 3vw, 22px) clamp(14px, 3vw, 24px)',
   border: '1px solid var(--border-color)',
   boxShadow: 'var(--shadow-sm)',
 };
@@ -120,7 +120,7 @@ export default function CreditCardPanel({ accountId, onOpenSettings }) {
 
       {/* Statement summary tiles */}
       {st ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px', marginBottom: '18px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '14px', marginBottom: '18px' }}>
           <div>
             <p style={tileLabel}>Total due</p>
             <p style={tileValue}>{st.totalDue != null ? fmt.format(st.totalDue) : '—'}</p>

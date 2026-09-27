@@ -46,7 +46,7 @@ const LegDetail = ({ leg, role }) => (
         {currencyFormatter.format(leg.amount)}
       </span>
     </div>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 140px), 1fr))", gap: "14px" }}>
       <Field label="Date" value={fmtLongDate(leg.date)} />
       <Field label="Value date" value={leg.valueDate ? fmtLongDate(leg.valueDate) : null} />
       <Field label="Mode" value={leg.mode} />
@@ -344,8 +344,9 @@ export default function Transfers() {
         open={!!selected}
         onClose={() => setSelected(null)}
         title={selected?.groupId ? "Transfer details" : "Suggested transfer"}
-        width={drawerWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : drawerWidth}
         onWidthChange={setDrawerWidth}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         {selected && (
           <>
@@ -421,7 +422,7 @@ export default function Transfers() {
 
 const grid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))",
   gap: "16px",
 };
 

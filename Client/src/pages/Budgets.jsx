@@ -12,18 +12,22 @@ const meterColor = (percent, over) =>
 
 const s = {
   page: {
-    padding: '28px 32px',
     background: 'var(--bg)',
-    minHeight: '100vh',
+    minHeight: '100%',
   },
-  statsRow: { display: 'flex', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' },
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
+    gap: '16px',
+    marginBottom: '24px',
+  },
   headRow: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: '16px', gap: '12px', flexWrap: 'wrap',
   },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))',
     gap: '16px',
   },
   card: {
@@ -327,8 +331,8 @@ export default function Budgets() {
   const drillBudget = budgets.find((b) => b.id === drill?.id);
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-    <div style={{ ...s.page, flex: 1, minWidth: 0, marginRight: drill ? drillWidth : 0, transition: 'margin-right 0.2s ease' }}>
+    <div style={{ display: 'flex', minHeight: '100%' }}>
+    <div style={{ ...s.page, flex: 1, minWidth: 0, marginRight: drill && (typeof window !== 'undefined' && window.innerWidth > 1024) ? drillWidth : 0, transition: 'margin-right 0.2s ease' }}>
       {/* ── Summary ── */}
       <div style={s.statsRow}>
         <StatCard label="Monthly budget" value={fmt.format(totalBudget)} sub="Repeats every month" />
@@ -540,9 +544,10 @@ export default function Budgets() {
         open={!!drill}
         onClose={closeDrill}
         title={drill?.category || 'Transactions'}
-        width={drillWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : drillWidth}
         onWidthChange={setDrillWidth}
-        modal={false}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? 280 : 420}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
           Spending in {month}

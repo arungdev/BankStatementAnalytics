@@ -142,10 +142,10 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
         <span className="filter-chip-avatar" style={{ width: 22, height: 22 }}>
           {monogram(selected.bankName)}
         </span>
-        <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span className="account-chip-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {selected.accountHolderName || selected.bankName}
         </span>
-        <span className="filter-chip-prefix" style={{ flexShrink: 0 }}>•••• {last4(selected)}</span>
+        <span className="filter-chip-prefix hidden-tiny" style={{ flexShrink: 0 }}>•••• {last4(selected)}</span>
       </>
     );
   } else {

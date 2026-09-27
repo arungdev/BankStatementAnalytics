@@ -31,20 +31,13 @@ const T = {
 
 const s = {
   page: {
-    padding: '28px 32px',
     background: T.bg,
-    minHeight: '100vh',
-  },
-  statsRow: { display: 'flex', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: '3fr 4fr',
-    gap: '20px',
+    minHeight: '100%',
   },
   card: {
     background: T.surface,
     borderRadius: '14px',
-    padding: '22px 24px',
+    padding: '20px',
     border: `1px solid ${T.border}`,
     boxShadow: 'var(--shadow-sm)',
   },
@@ -364,7 +357,11 @@ export default function Overview() {
   const isCreditCard = selectedAccount?.bankName === 'HDFCCreditCard';
 
   return (
-    <div style={{ ...s.page, marginRight: trayOpen ? drawerWidth : 0, transition: 'margin-right 0.2s ease' }}>
+    <div style={{
+      ...s.page,
+      marginRight: (trayOpen && typeof window !== 'undefined' && window.innerWidth > 1024) ? drawerWidth : 0,
+      transition: 'margin-right 0.2s ease',
+    }}>
       <style>{`
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         .ov-row { transition: background .15s ease; }
@@ -404,14 +401,40 @@ export default function Overview() {
         }
         .ov-fade[data-show="1"] { opacity: 1; }
 
-        /* The floor that decides when the tile row wraps. Below the 190px default,
-           so all four stay on one row once the drill-down drawer docks and narrows
-           the page — a tile left alone on the last row would stretch full width. */
-        .ov-stat-row > .stat-card { min-width: 150px; }
+        .ov-stat-row {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+          margin-bottom: 20px;
+        }
+        .ov-stat-row > .stat-card { min-width: 0; width: 100%; }
+        @media (max-width: 1024px) {
+          .ov-stat-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        }
+        @media (max-width: 440px) {
+          .ov-stat-row { grid-template-columns: 1fr; gap: 10px; }
+        }
+
+        .ov-grid {
+          display: grid;
+          grid-template-columns: 3fr 4fr;
+          gap: 20px;
+          margin-bottom: 20px;
+        }
+        @media (max-width: 900px) {
+          .ov-grid { grid-template-columns: 1fr; gap: 16px; }
+        }
+        @media (max-width: 640px) {
+          .ov-chart-header {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 8px;
+          }
+        }
       `}</style>
 
       {/* ── Stat cards ── */}
-      <div className="ov-stat-row" style={s.statsRow}>
+      <div className="ov-stat-row">
         <StatCard
           label="Total Income"
           value={loading ? '—' : fmt.format(totalIncome)}
@@ -465,7 +488,7 @@ export default function Overview() {
         {/* ── Cash-flow curve (last 6 months) ── */}
         {!loading && trend.length > 1 && (
           <div style={{ ...s.card, marginBottom: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div className="ov-chart-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
               <p style={{ ...s.cardTitle, margin: 0 }}>Cash Flow · last {trend.length} months</p>
               <div style={{ display: 'flex', gap: '16px', fontSize: '12px', fontWeight: 500, color: T.muted }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -507,7 +530,7 @@ export default function Overview() {
           </div>
         )}
 
-        <div style={s.grid}>
+        <div className="ov-grid">
           {/* ── Top merchants ── */}
           <div style={s.card}>
             <p style={s.cardTitle}>Top Merchants</p>
@@ -703,10 +726,10 @@ export default function Overview() {
         open={trayOpen}
         onClose={closeTray}
         title={openTile ? TILES[openTile].title : 'Transactions'}
-        width={drawerWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : drawerWidth}
         onWidthChange={setDrawerWidth}
-        minWidth={420}
-        modal={false}
+        minWidth={typeof window !== 'undefined' && window.innerWidth <= 640 ? 280 : 420}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         {/* Stats cover the whole tile, not just the rows loaded so far. */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>

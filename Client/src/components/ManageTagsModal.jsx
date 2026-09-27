@@ -144,7 +144,7 @@ export default function ManageTagsModal({
 
   return (
     <Modal open={open} onClose={onClose} title="Manage Tags">
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: "320px", maxWidth: "480px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0, width: "100%", maxWidth: "480px" }}>
         <p style={{ margin: 0, fontSize: "13px", color: "var(--text-muted)" }}>
           Create, rename, or delete tags used across your transactions.
         </p>
@@ -164,7 +164,7 @@ export default function ManageTagsModal({
           <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-main)" }}>
             Add a new tag
           </label>
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <input
               type="text"
               placeholder="e.g. Tax, Medical, Trip…"
@@ -178,7 +178,7 @@ export default function ManageTagsModal({
               }}
               maxLength={50}
               className="field-input"
-              style={{ flex: 1 }}
+              style={{ flex: "1 1 140px" }}
             />
             <Button
               variant="primary"
@@ -327,11 +327,12 @@ export default function ManageTagsModal({
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
+                            maxWidth: "clamp(80px, 30vw, 200px)",
                           }}
                         >
                           #{tag.name}
                         </span>
-                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)", flexShrink: 0 }}>
                           {tag.usageCount || 0} transaction{tag.usageCount === 1 ? "" : "s"}
                         </span>
                       </div>

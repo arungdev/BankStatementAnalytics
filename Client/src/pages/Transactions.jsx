@@ -636,16 +636,6 @@ export default function Transactions() {
     }
   };
 
-  const addRowTag = (t, value) => {
-    let newTag = (value || '').trim().toLowerCase();
-    if (newTag.startsWith('#')) newTag = newTag.slice(1).trim();
-    if (!newTag) return;
-    const current = t.tags || [];
-    if (!current.includes(newTag)) {
-      updateTags(t, [...current, newTag]);
-      setRecentTags(prev => [newTag, ...prev.filter(x => x.toLowerCase() !== newTag.toLowerCase())]);
-    }
-  };
 
   const handleRemoveTag = (tagToRemove) => {
     handleTagChange((selectedTx.tags || []).filter(t => t !== tagToRemove));
@@ -812,7 +802,7 @@ export default function Transactions() {
   };
 
   return (
-    <div style={{ marginRight: (selectedTx || uploadHistoryOpen) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
+    <div style={{ marginRight: (selectedTx || uploadHistoryOpen) && (typeof window !== 'undefined' && window.innerWidth > 1024) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
       <style>{`
         .tx-row {
           display: grid;
@@ -948,15 +938,65 @@ export default function Transactions() {
           background: ${T.surface}; color: ${T.text}; font-family: inherit;
         }
         .tx-bulk-tag:focus { border-color: ${T.indigo}; }
-        @media (max-width: 720px) {
+        @media (max-width: 800px) {
           .tx-row, .tx-head { grid-template-columns: ${isAdmin ? '36px ' : ''}60px minmax(0,1fr) 110px; }
           .tx-col-cat { display: none; }
+        }
+        @media (max-width: 640px) {
+          .tx-search-container {
+            flex: 1 1 100% !important;
+            margin-right: 0 !important;
+          }
+          .tx-action-strip {
+            gap: 8px !important;
+          }
+          .tx-head {
+            display: none !important;
+          }
+          .tx-row {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 8px 10px !important;
+            padding: 12px 14px !important;
+          }
+          .tx-check-cell {
+            order: 0;
+            width: 24px !important;
+            min-height: auto !important;
+          }
+          .tx-date-desktop {
+            display: none !important;
+          }
+          .tx-mobile-date {
+            display: inline-block !important;
+          }
+          .tx-merchant-col {
+            flex: 1 1 50% !important;
+            min-width: 0 !important;
+            order: 1 !important;
+          }
+          .tx-amount-col {
+            flex: 0 0 auto !important;
+            order: 2 !important;
+            text-align: right !important;
+          }
+          .tx-col-cat {
+            order: 3 !important;
+            flex: 1 1 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            padding-left: ${isAdmin ? '28px' : '0'} !important;
+            margin-top: 2px !important;
+          }
         }
       `}</style>
 
       {/* ── Action strip — title/date-filter now live in the shared header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-5)', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '0 1 300px', marginRight: 'auto' }}>
+      <div className="tx-action-strip" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-5)', flexWrap: 'wrap' }}>
+        <div className="tx-search-container" style={{ position: 'relative', flex: '0 1 300px', marginRight: 'auto' }}>
           <FiSearch size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: T.faint, pointerEvents: 'none' }} />
           <input
             type="text"
@@ -1299,7 +1339,7 @@ export default function Transactions() {
                       />
                     </label>
                   )}
-                  <div style={{ textAlign: 'center' }}>
+                  <div className="tx-date-desktop" style={{ textAlign: 'center' }}>
                     <div className="tnum" style={{ fontSize: '17px', fontWeight: 800, color: T.text, lineHeight: 1.1 }}>
                       {d.toLocaleDateString('en-IN', { day: '2-digit' })}
                     </div>
@@ -1308,7 +1348,7 @@ export default function Transactions() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                  <div className="tx-merchant-col" style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                     <Avatar name={maskName(t.merchant) || '?'} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
@@ -1332,7 +1372,10 @@ export default function Transactions() {
                           </span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', minWidth: 0, flexWrap: 'wrap' }}>
+                        <span className="tx-mobile-date" style={{ display: 'none', fontSize: '11px', fontWeight: 600, color: T.faint }}>
+                          {d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} ·
+                        </span>
                         {isAllAccounts && (
                           <span
                             title="Account"
@@ -1446,7 +1489,7 @@ export default function Transactions() {
                     )}
                   </div>
 
-                  <div className="tnum" style={{ textAlign: 'right', fontSize: '15px', fontWeight: 800, color: isCredit ? T.green : T.red, letterSpacing: '-0.3px' }}>
+                  <div className="tx-amount-col tnum" style={{ textAlign: 'right', fontSize: '15px', fontWeight: 800, color: isCredit ? T.green : T.red, letterSpacing: '-0.3px' }}>
                     {isCredit ? '+' : '−'}{currencyFormatter.format(Math.max(t.credit, t.debit))}
                     {t.originalCurrency && t.originalAmount && (
                       <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -1482,9 +1525,9 @@ export default function Transactions() {
         open={!!selectedTx}
         onClose={() => setSelectedTx(null)}
         title="Transaction Details"
-        width={sidebarWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : sidebarWidth}
         onWidthChange={setSidebarWidth}
-        modal={false}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         {selectedTx && (
           <>
@@ -1675,9 +1718,9 @@ export default function Transactions() {
         open={uploadHistoryOpen}
         onClose={closeUploadHistory}
         title="Upload History"
-        width={sidebarWidth}
+        width={typeof window !== 'undefined' && window.innerWidth <= 640 ? '100vw' : sidebarWidth}
         onWidthChange={setSidebarWidth}
-        modal={false}
+        modal={typeof window !== 'undefined' && window.innerWidth <= 1024}
       >
         {loadingUploads ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '40px' }}>Loading...</div>
