@@ -16,7 +16,7 @@ import RulesManager from "../components/RulesManager";
 import { getBackupStatus, downloadBackup, restoreBackup, readApiError } from "../api/backup";
 import { getUpdateStatus, checkForUpdates, downloadUpdate, cancelDownload, applyUpdate, downloadUpdateBinary } from "../api/update";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
-import { currencyFormatterFull, formatDate, formatBytes } from "../utils/format";
+import { currencyFormatterFull, formatDate } from "../utils/format";
 import "./Settings.css";
 
 /* Sections of the settings page, in rail order. `hint` is the one-line
