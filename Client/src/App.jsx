@@ -269,12 +269,10 @@ function Layout() {
         <PageHeader
           title={meta.title}
           subtitle={meta.subtitle}
+          accountSelector={accountSelector}
           filters={filters}
           onMenuToggle={() => setMobileNavOpen(v => !v)}
           actions={<>
-            {accountSelector}
-            {/* Separates the account scope from the action buttons beside it. */}
-            <span className="hidden-mobile" style={{ width: '1px', height: '22px', background: 'var(--border-color)', flexShrink: 0 }} />
             <button
               onClick={() => setSearchOpen(true)}
               className="btn icon search-trigger-btn"
@@ -287,7 +285,7 @@ function Layout() {
             </button>
             <button
               onClick={() => setGuideOpen(true)}
-              className="btn icon"
+              className="btn icon hidden-mobile"
               style={{ borderRadius: '50%', width: '36px', height: '36px', color: 'var(--text-muted)', flexShrink: 0 }}
               title="How to use this app"
               aria-label="Open the getting-started guide"

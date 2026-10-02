@@ -39,13 +39,13 @@ export default function StatCard({ label, value, sub, accent, valueColor, onClic
       cursor: clickable ? 'pointer' : undefined,
       transition: 'transform 0.12s ease, box-shadow 0.12s ease',
     }}>
-      <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: 'var(--stat-tile-label)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+      <p className="stat-card-label" style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: 'var(--stat-tile-label)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
         {label}
       </p>
-      <p style={{ margin: '8px 0 4px', fontSize: valueSize, fontWeight: 800, color: valueColor || 'var(--stat-tile-value)', letterSpacing: '-0.5px', whiteSpace: 'nowrap' }}>
+      <p className="stat-card-value" style={{ margin: '8px 0 4px', fontSize: valueSize, fontWeight: 800, color: valueColor || 'var(--stat-tile-value)', letterSpacing: '-0.5px', whiteSpace: 'nowrap' }}>
         {value}
       </p>
-      {sub && <p style={{ margin: 0, fontSize: '12px', color: accent || '#94a3b8' }}>{sub}</p>}
+      {sub && <p className="stat-card-sub" style={{ margin: 0, fontSize: '12px', color: accent || '#94a3b8' }}>{sub}</p>}
     </div>
   );
 }

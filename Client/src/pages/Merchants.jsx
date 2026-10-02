@@ -944,7 +944,8 @@ export default function Merchants() {
         }
         @media (max-width: 440px) {
           .mrc-stat-row {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
           }
         }
         @media (max-width: 720px) {

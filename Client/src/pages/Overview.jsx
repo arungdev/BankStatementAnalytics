@@ -412,7 +412,7 @@ export default function Overview() {
           .ov-stat-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
         }
         @media (max-width: 440px) {
-          .ov-stat-row { grid-template-columns: 1fr; gap: 10px; }
+          .ov-stat-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
         }
 
         .ov-grid {

@@ -105,6 +105,7 @@ builder.Services.AddScoped<TransactionRepositoryFactory>();
 builder.Services.AddScoped<CounterPartyService>();
 builder.Services.AddScoped<RecurringBillService>();
 builder.Services.AddScoped<TransferDetectionService>();
+builder.Services.AddScoped<GPaySplitService>();
 builder.Services.AddScoped<DuplicateDetectionService>();
 builder.Services.AddScoped<AnomalyDetectionService>();
 builder.Services.AddScoped<DepositService>();

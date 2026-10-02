@@ -14,6 +14,7 @@ export default function PageHeader({
   subtitle,
   filters,          // ReactNode — shown in the second row; row hidden if absent
   actions,          // ReactNode — extra buttons beside the gear (left of gear)
+  accountSelector,  // ReactNode — global account selector
   onSettings,       // () => void
   onMenuToggle,     // () => void — toggles mobile drawer
 }) {
@@ -38,7 +39,9 @@ export default function PageHeader({
       document.documentElement.style.removeProperty('--app-header-h');
       document.documentElement.style.removeProperty('--app-titlebar-h');
     };
-  }, [filters]);
+  }, [filters, accountSelector]);
+
+  const hasRow2 = Boolean(filters || accountSelector);
 
   return (
     <header ref={headerRef} className="page-header">
@@ -71,11 +74,19 @@ export default function PageHeader({
 
         {/* Right side: custom actions + gear */}
         <div className="page-header-actions">
+          {accountSelector && (
+            <>
+              <div className="page-header-account-desktop">
+                {accountSelector}
+              </div>
+              <span className="page-header-desktop-divider" />
+            </>
+          )}
           {actions}
           {onSettings && (
             <button
               onClick={onSettings}
-              className="btn icon page-header-settings-btn"
+              className="btn icon page-header-settings-btn hidden-mobile"
               title="Settings"
               aria-label="Settings"
             >
@@ -85,9 +96,14 @@ export default function PageHeader({
         </div>
       </div>
 
-      {/* ── Row 2: filters (only rendered when provided) ── */}
-      {filters && (
-        <div className="page-header-row2">
+      {/* ── Row 2: filters / mobile account selector ── */}
+      {hasRow2 && (
+        <div className={`page-header-row2 ${!filters ? 'mobile-only-row2' : ''}`}>
+          {accountSelector && (
+            <div className="page-header-account-mobile">
+              {accountSelector}
+            </div>
+          )}
           {filters}
         </div>
       )}

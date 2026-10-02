@@ -107,6 +107,64 @@ namespace BankStatementAnalytics.Migrations
                   var colType = ctx.Provider == DatabaseProvider.PostgreSQL ? "NUMERIC(5,2)" : "DECIMAL(5,2)";
                   ctx.Execute($"ALTER TABLE bank_transactions ADD COLUMN forexmarkuppercent {colType} NULL");
               });
+
+            // ── Version 4 ────────────────────────────────────────────────────────────
+            // Multi-party split bill and group payments tables
+            mb.ForVersion(4)
+              .AddStep("Guard: split_groups table", ctx =>
+              {
+                  if (ctx.TableExists("split_groups") || ctx.TableExists("Split_Groups")) return;
+                  var isPg = ctx.Provider == DatabaseProvider.PostgreSQL;
+                  var idType = isPg ? "SERIAL PRIMARY KEY" : "INTEGER PRIMARY KEY AUTOINCREMENT";
+                  var numType = isPg ? "NUMERIC(18,2)" : "DECIMAL(18,2)";
+                  var dateType = isPg ? "TIMESTAMP" : "DATETIME";
+                  ctx.Execute($@"CREATE TABLE split_groups (
+                      id {idType},
+                      owneruserid BIGINT NULL,
+                      groupuid VARCHAR(50) NOT NULL,
+                      title VARCHAR(250) NOT NULL,
+                      description VARCHAR(1000) NULL,
+                      date {dateType} NOT NULL,
+                      totalamount {numType} NOT NULL,
+                      usershareamount {numType} NOT NULL,
+                      settledamount {numType} NOT NULL,
+                      status VARCHAR(50) NOT NULL,
+                      confidence VARCHAR(50) NULL,
+                      splittype VARCHAR(50) NULL,
+                      parentaccountid BIGINT NULL,
+                      parentbankreference VARCHAR(100) NULL,
+                      parentbanktype VARCHAR(50) NULL,
+                      parenttransactiontype VARCHAR(10) NULL,
+                      createdon {dateType} NOT NULL,
+                      updatedon {dateType} NULL
+                  )");
+              })
+              .AddStep("Guard: split_group_members table", ctx =>
+              {
+                  if (ctx.TableExists("split_group_members") || ctx.TableExists("Split_Group_Members")) return;
+                  var isPg = ctx.Provider == DatabaseProvider.PostgreSQL;
+                  var idType = isPg ? "SERIAL PRIMARY KEY" : "INTEGER PRIMARY KEY AUTOINCREMENT";
+                  var numType = isPg ? "NUMERIC(18,2)" : "DECIMAL(18,2)";
+                  var dateType = isPg ? "TIMESTAMP" : "DATETIME";
+                  var boolType = isPg ? "BOOLEAN" : "INTEGER";
+                  ctx.Execute($@"CREATE TABLE split_group_members (
+                      id {idType},
+                      owneruserid BIGINT NULL,
+                      splitgroupid INT NOT NULL,
+                      participantname VARCHAR(250) NOT NULL,
+                      participantvpa VARCHAR(255) NULL,
+                      assignedamount {numType} NOT NULL,
+                      paidamount {numType} NOT NULL,
+                      issettled {boolType} NOT NULL,
+                      isuser {boolType} NOT NULL,
+                      linkedaccountid BIGINT NULL,
+                      linkedbankreference VARCHAR(100) NULL,
+                      linkedbanktype VARCHAR(50) NULL,
+                      linkedtransactiontype VARCHAR(10) NULL,
+                      notes VARCHAR(1000) NULL,
+                      createdon {dateType} NOT NULL
+                  )");
+              });
         }
     }
 }

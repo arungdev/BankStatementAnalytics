@@ -62,6 +62,8 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<SavingsGoalMap>();
                         mapper.AddMapping<CategorizationRuleMap>();
                         mapper.AddMapping<TransactionSplitMap>();
+                        mapper.AddMapping<SplitGroupMap>();
+                        mapper.AddMapping<SplitGroupMemberMap>();
                     }, null,
                     isPostgres
                         ? db =>

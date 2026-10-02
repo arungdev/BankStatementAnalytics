@@ -510,14 +510,39 @@ tr:hover td {
   outline-offset: 2px;
 }
 
-/* Stat card mobile density */
+/* Stat card mobile density & 2x2 grid presentation */
 @media (max-width: 640px) {
   .stat-card {
-    padding: 14px 16px !important;
+    padding: 12px 14px !important;
     border-radius: 12px !important;
+  }
+  .stat-card-label {
+    font-size: 10px !important;
+  }
+  .stat-card-value {
+    font-size: clamp(14px, 4.2vw, 18px) !important;
+    margin: 4px 0 2px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .stat-card-sub {
+    font-size: 11px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
   }
   button, .btn, input, select {
     touch-action: manipulation;
+  }
+}
+
+@media (max-width: 380px) {
+  .stat-card {
+    padding: 10px 10px !important;
+  }
+  .stat-card-value {
+    font-size: clamp(13px, 3.8vw, 16px) !important;
   }
 }
 

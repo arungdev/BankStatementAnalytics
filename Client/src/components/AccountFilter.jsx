@@ -71,9 +71,15 @@ export default function AccountFilter({ accounts = [], value, onChange, includeA
     const place = () => {
       const r = ref.current?.getBoundingClientRect();
       if (!r) return;
-      setPos(align === 'right'
-        ? { top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) }
-        : { top: r.bottom + 6, left: Math.max(8, r.left) });
+      const isMobile = window.innerWidth < 768;
+      if (isMobile) {
+        const left = Math.max(8, Math.min(r.left, window.innerWidth - 260));
+        setPos({ top: r.bottom + 6, left });
+      } else {
+        setPos(align === 'right'
+          ? { top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) }
+          : { top: r.bottom + 6, left: Math.max(8, r.left) });
+      }
     };
     place();
     window.addEventListener('resize', place);

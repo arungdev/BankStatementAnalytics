@@ -270,6 +270,27 @@
   cursor: pointer;
 }
 
+.page-header-account-desktop {
+  display: flex;
+  align-items: center;
+}
+
+.page-header-desktop-divider {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background: var(--border-color);
+  flex-shrink: 0;
+}
+
+.page-header-account-mobile {
+  display: none;
+}
+
+.mobile-only-row2 {
+  display: none;
+}
+
 @media (max-width: 1024px) {
   .page-header-menu-btn {
     display: inline-flex !important;
@@ -277,14 +298,55 @@
 }
 
 @media (max-width: 768px) {
+  .page-header-account-desktop {
+    display: none !important;
+  }
+
+  .page-header-desktop-divider {
+    display: none !important;
+  }
+
+  .page-header-account-mobile {
+    display: flex !important;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .mobile-only-row2 {
+    display: flex !important;
+  }
+
+  .page-header-account-mobile .account-chip-label {
+    max-width: 150px !important;
+  }
+
+  .page-header-account-mobile .filter-chip {
+    max-width: none !important;
+  }
+
   .page-header-row1 {
     padding: 0 12px;
     min-height: 48px;
     gap: 8px;
   }
 
+  .page-header-left {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .page-header-title-box {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
   .page-header-title {
     font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .page-header-subtitle {
@@ -304,6 +366,7 @@
 
   .page-header-actions {
     gap: 6px;
+    flex-shrink: 0;
   }
 
   .page-header-row2 {
@@ -328,11 +391,11 @@
     gap: 8px;
   }
 
-  .filter-chip {
+  .page-header-row2 .filter-chip {
     padding: 0 8px;
     font-size: 12px;
     height: 32px;
-    max-width: 135px;
+    max-width: none;
   }
 }
 
@@ -342,13 +405,13 @@
 
 @media (max-width: 768px) {
   .account-chip-label {
-    max-width: 90px;
+    max-width: 140px;
   }
 }
 
 @media (max-width: 480px) {
   .account-chip-label {
-    max-width: 70px;
+    max-width: 120px;
   }
 }
 
@@ -357,10 +420,9 @@
     display: none !important;
   }
   .account-chip-label {
-    max-width: 55px;
+    max-width: 100px;
   }
-  .filter-chip {
-    max-width: 105px;
+  .page-header-row2 .filter-chip {
     padding: 0 6px;
   }
 }
