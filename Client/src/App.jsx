@@ -29,6 +29,7 @@ import Trends from "./pages/Trends";
 import Insights from "./pages/Insights";
 import Bills from "./pages/Bills";
 import Transfers from "./pages/Transfers";
+import Splits from "./pages/Splits";
 import Budgets from "./pages/Budgets";
 import Goals from "./pages/Goals";
 import Investments from "./pages/Investments";
@@ -74,6 +75,7 @@ function AuthGate() {
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/merchants" element={<Merchants />} />
         <Route path="/transfers" element={<Transfers />} />
+        <Route path="/splits" element={<Splits />} />
         <Route path="/upload" element={<UploadStatement />} />
         <Route path="/insights" element={<Insights />} />
         <Route path="/bills" element={<Bills />} />
@@ -93,6 +95,7 @@ const PAGE_META = {
   '/transactions': { title: 'Transactions' },
   '/merchants': { title: 'Merchants', subtitle: 'Who you transact with, and how they’re categorized' },
   '/transfers': { title: 'Transfers', subtitle: 'Money moved between your own accounts' },
+  '/splits': { title: 'Bill Splits & Groups', subtitle: 'GPay split detection and group repayment tracking' },
   '/upload': { title: 'Upload Statement' },
   '/insights': { title: 'Spending Insights', subtitle: 'Where your money goes' },
   '/bills': { title: 'Bills & Reminders', subtitle: 'Upcoming recurring bills' },

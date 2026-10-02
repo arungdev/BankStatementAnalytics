@@ -106,6 +106,15 @@ namespace BankStatementAnalytics.Services
                 .Where(r => r.Direction == "Credit")
                 .GroupBy(r => (r.AccountId, r.Date.Date));
 
+            var accounts = session.Query<Account>()
+                .Where(a => a.OwnerUserId == userId)
+                .ToList();
+
+            var ownerNames = accounts
+                .Select(a => (a.AccountHolderName ?? string.Empty).Trim().ToLowerInvariant())
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .ToHashSet();
+
             foreach (var group in creditsByAccountDate)
             {
                 var credits = group.ToList();
@@ -117,7 +126,7 @@ namespace BankStatementAnalytics.Services
                 {
                     if (cluster.Count < MinCreditLegs) continue;
 
-                    var candidate = EvaluateCluster(cluster, availableRows, group.Key.AccountId, group.Key.Date);
+                    var candidate = EvaluateCluster(cluster, availableRows, group.Key.AccountId, group.Key.Date, ownerNames);
                     if (candidate != null)
                     {
                         candidates.Add(candidate);
@@ -186,17 +195,37 @@ namespace BankStatementAnalytics.Services
             List<RawUpiRow> credits,
             List<RawUpiRow> allRows,
             long accountId,
-            DateTime date)
+            DateTime date,
+            HashSet<string> ownerNames)
         {
+            // Exclude self-credits where counterparty is the account owner themselves
+            credits = credits.Where(r =>
+            {
+                var cpName = (r.CounterPartyName ?? string.Empty).Trim().ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(cpName) && ownerNames.Contains(cpName)) return false;
+                return true;
+            }).ToList();
+
+            if (credits.Count < MinCreditLegs)
+                return null;
+
+            // Must have at least 2 distinct counterparty names (not just 2 VPAs of the same person)
+            var distinctSenders = credits
+                .Select(r => !string.IsNullOrWhiteSpace(r.CounterPartyName)
+                    ? r.CounterPartyName.Trim().ToLowerInvariant()
+                    : (r.UpiVpa?.Split('@')[0].ToLowerInvariant() ?? string.Empty))
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct()
+                .Count();
+
+            if (distinctSenders < MinCreditLegs)
+                return null;
+
             var distinctVpas = credits
                 .Where(r => !string.IsNullOrWhiteSpace(r.UpiVpa))
                 .Select(r => r.UpiVpa.ToLowerInvariant())
                 .Distinct()
                 .Count();
-
-            // Need at least 2 distinct senders to be considered a split
-            if (distinctVpas < MinCreditLegs)
-                return null;
 
             int totalLegs = credits.Count;
             int gpayCount = credits.Count(r => r.IsGPay);
@@ -642,6 +671,66 @@ namespace BankStatementAnalytics.Services
             return true;
         }
 
+        /// <summary>
+        /// Retrieves candidate transactions across user's accounts to pick as a split parent or participant payment.
+        /// </summary>
+        public async Task<List<CandidateTransactionDto>> GetCandidateTransactionsAsync(
+            long userId,
+            string? direction = null,
+            string? search = null,
+            int limit = 50)
+        {
+            using var session = DbHelper.GetSession();
+            var accountIds = AccountAccess.OwnedIds(session, userId);
+            if (accountIds.Count == 0) return new List<CandidateTransactionDto>();
+
+            var query = session.Query<BankTransaction>()
+                .Where(t => accountIds.Contains(t.AccountId));
+
+            if (!string.IsNullOrWhiteSpace(direction))
+            {
+                var d = direction.ToUpperInvariant();
+                if (d.StartsWith("DR") || d.StartsWith("DEBIT"))
+                    query = query.Where(t => t.Debit > 0 || t.TransactionType == "DR");
+                else if (d.StartsWith("CR") || d.StartsWith("CREDIT"))
+                    query = query.Where(t => t.Credit > 0 || t.TransactionType == "CR");
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim().ToLower();
+                query = query.Where(t =>
+                    (t.Description != null && t.Description.ToLower().Contains(s)) ||
+                    (t.Narration != null && t.Narration.ToLower().Contains(s)) ||
+                    (t.CounterParty != null && t.CounterParty.Name.ToLower().Contains(s)) ||
+                    (t.UpiVpa != null && t.UpiVpa.ToLower().Contains(s)));
+            }
+
+            var rows = await query
+                .OrderByDescending(t => t.TransactionDate)
+                .Take(limit)
+                .Select(t => new CandidateTransactionDto
+                {
+                    AccountId = t.AccountId,
+                    BankReference = t.BankReference,
+                    BankType = t.BankType,
+                    TransactionType = t.TransactionType,
+                    Date = t.TransactionDate,
+                    Debit = t.Debit,
+                    Credit = t.Credit,
+                    Amount = t.Debit > 0 ? t.Debit : t.Credit,
+                    Direction = t.Debit > 0 ? "Debit" : "Credit",
+                    Narration = t.Narration ?? t.Description ?? string.Empty,
+                    CounterPartyName = t.CounterParty != null ? (t.CounterParty.FriendlyName ?? t.CounterParty.Name) : string.Empty,
+                    UpiVpa = t.UpiVpa ?? string.Empty,
+                    UpiReference = t.UpiReference ?? string.Empty,
+                    Mode = t.Mode ?? string.Empty
+                })
+                .ToListAsync();
+
+            return rows;
+        }
+
         // ────────────────────────────────────────────────────────────────────
         // DTO MAPPERS
         // ────────────────────────────────────────────────────────────────────
@@ -872,5 +961,23 @@ namespace BankStatementAnalytics.Services
         public string BankType { get; set; } = string.Empty;
         public string TransactionType { get; set; } = "CR";
         public decimal? Amount { get; set; }
+    }
+
+    public class CandidateTransactionDto
+    {
+        public long AccountId { get; set; }
+        public string BankReference { get; set; } = string.Empty;
+        public string BankType { get; set; } = string.Empty;
+        public string TransactionType { get; set; } = string.Empty;
+        public DateTime Date { get; set; }
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+        public decimal Amount { get; set; }
+        public string Direction { get; set; } = string.Empty;
+        public string Narration { get; set; } = string.Empty;
+        public string CounterPartyName { get; set; } = string.Empty;
+        public string UpiVpa { get; set; } = string.Empty;
+        public string UpiReference { get; set; } = string.Empty;
+        public string Mode { get; set; } = string.Empty;
     }
 }

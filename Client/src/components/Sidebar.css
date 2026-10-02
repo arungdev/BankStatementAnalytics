@@ -155,6 +155,8 @@
 .nav-item-header:hover  { background: var(--gray-50); color: var(--text-main); }
 .nav-item-header.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
 .nav-item-header.active svg { color: var(--primary); }
+.nav-item-header:focus:not(:focus-visible) { outline: none; }
+.nav-item-header:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .nav-item-header svg    { flex-shrink: 0; }
 .nav-item-header .chevron { margin-left: auto; }
 
@@ -208,6 +210,8 @@
 }
 .submenu li a:hover  { background: var(--gray-50); color: var(--text-main); }
 .submenu li a.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+.submenu li a:focus:not(:focus-visible) { outline: none; }
+.submenu li a:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 /* Compact submenu */
 .submenu--compact {

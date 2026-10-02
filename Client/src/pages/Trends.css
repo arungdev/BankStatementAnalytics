@@ -40,7 +40,7 @@
 /* ── Summary cards ───────────────────────────────────────────────────────── */
 .summary-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   position: relative;
   z-index: 1;
@@ -57,6 +57,9 @@
   .summary-stats {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
+  }
+  .summary-stats > .stat-card:last-child:nth-child(odd) {
+    grid-column: span 2;
   }
 }
 

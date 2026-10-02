@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import './filter-chip.css';
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
@@ -218,6 +219,15 @@ export default function DateRangePicker({
 }) {
   const compact = size === 'sm';
 
+  /* ── Size-dependent layout numbers ──────────────────────────────────── */
+  const dims = compact
+    ? { dropdownWidth: 480, sidebarWidth: 124, bodyPad: '10px 14px', sideTitlePad: '2px 6px 6px',
+        presetPad: '5px 8px', presetFont: 11, footerPad: '8px 14px', dateFieldPad: '5px 9px',
+        dateFieldFont: 12, gapBetweenCals: 14, gapBetweenFields: 10 }
+    : { dropdownWidth: 700, sidebarWidth: 160, bodyPad: '16px 20px', sideTitlePad: '4px 8px 8px',
+        presetPad: '7px 10px', presetFont: 13, footerPad: '12px 20px', dateFieldPad: '7px 12px',
+        dateFieldFont: 13, gapBetweenCals: 24, gapBetweenFields: 16 };
+
   const [open, setOpen]         = useState(false);
   const [preset, setPreset]     = useState(value?.preset ?? 'LAST_30');
   const [customN, setCustomN]   = useState('');
@@ -250,16 +260,55 @@ export default function DateRangePicker({
   }, []);
 
   const ref = useRef(null);
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState(null);
 
-  // Close on outside click
+  // Close on outside click or Escape
   useEffect(() => {
-    const h = (e) => {
+    if (!open) return;
+    const onDown = (e) => {
       if (isMobile) return; // handled by backdrop on mobile
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (ref.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
     };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [isMobile]);
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, isMobile]);
+
+  // Keep the dropdown positioned accurately below the trigger button
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      if (isMobile) {
+        setPos(null);
+        return;
+      }
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      const top = r.bottom + 6;
+      if (align === 'right') {
+        const right = Math.max(8, window.innerWidth - r.right);
+        setPos({ top, right });
+      } else {
+        const left = Math.max(8, Math.min(r.left, window.innerWidth - dims.dropdownWidth - 12));
+        setPos({ top, left });
+      }
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, align, isMobile, dims.dropdownWidth]);
 
   // Sync left/right months so they're always consecutive
   const syncMonths = useCallback((s, e) => {
@@ -349,14 +398,6 @@ export default function DateRangePicker({
     return placeholder;
   })();
 
-  /* ── Size-dependent layout numbers ──────────────────────────────────── */
-  const dims = compact
-    ? { dropdownWidth: 480, sidebarWidth: 124, bodyPad: '10px 14px', sideTitlePad: '2px 6px 6px',
-        presetPad: '5px 8px', presetFont: 11, footerPad: '8px 14px', dateFieldPad: '5px 9px',
-        dateFieldFont: 12, gapBetweenCals: 14, gapBetweenFields: 10 }
-    : { dropdownWidth: 700, sidebarWidth: 160, bodyPad: '16px 20px', sideTitlePad: '4px 8px 8px',
-        presetPad: '7px 10px', presetFont: 13, footerPad: '12px 20px', dateFieldPad: '7px 12px',
-        dateFieldFont: 13, gapBetweenCals: 24, gapBetweenFields: 16 };
 
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block', fontFamily: "'Inter','system-ui',sans-serif" }}>
@@ -382,8 +423,8 @@ export default function DateRangePicker({
         <ChevronIcon open={open} />
       </button>
 
-      {/* ── Dropdown ──────────────────────────────────────────────────── */}
-      {open && (
+      {/* ── Dropdown portalled to document.body ──────────────────────── */}
+      {open && (isMobile || pos) && createPortal(
         <>
           {isMobile && (
             <div
@@ -394,41 +435,43 @@ export default function DateRangePicker({
                 inset: 0,
                 background: 'rgba(15, 23, 42, 0.5)',
                 backdropFilter: 'blur(2px)',
-                zIndex: 1099,
+                zIndex: 'calc(var(--z-modal-top, 1200) - 1)',
               }}
             />
           )}
 
-          <div style={isMobile ? {
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 1100,
-            background: 'var(--surface)',
-            borderRadius: 14,
-            border: '1px solid var(--border-color)',
-            boxShadow: '0 20px 48px rgba(0,0,0,0.3)',
-            display: 'flex',
-            flexDirection: 'column',
-            width: 'calc(100vw - 24px)',
-            maxWidth: 350,
-            maxHeight: '90vh',
-            overflowY: 'auto',
-          } : {
-            position: 'absolute',
-            zIndex: 'var(--z-dropdown)',
-            marginTop: 6,
-            [align === 'right' ? 'right' : 'left']: 0,
-            background: 'var(--surface)',
-            borderRadius: 10,
-            border: '1px solid var(--border-color)',
-            boxShadow: '0 16px 48px rgba(0,0,0,0.14)',
-            display: 'flex',
-            flexDirection: 'column',
-            minWidth: dims.dropdownWidth,
-            overflow: 'hidden',
-          }}>
+          <div
+            ref={menuRef}
+            style={isMobile ? {
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 'var(--z-modal-top, 1200)',
+              background: 'var(--surface)',
+              borderRadius: 14,
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 20px 48px rgba(0,0,0,0.3)',
+              display: 'flex',
+              flexDirection: 'column',
+              width: 'calc(100vw - 24px)',
+              maxWidth: 350,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            } : {
+              position: 'fixed',
+              zIndex: 'var(--z-modal-top, 1200)',
+              top: pos?.top ?? 0,
+              ...(pos?.right !== undefined ? { right: pos.right } : { left: pos?.left ?? 0 }),
+              background: 'var(--surface)',
+              borderRadius: 10,
+              border: '1px solid var(--border-color)',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.14)',
+              display: 'flex',
+              flexDirection: 'column',
+              minWidth: dims.dropdownWidth,
+              overflow: 'hidden',
+            }}>
             {isMobile ? (
               <>
                 {/* Mobile: Horizontal scrollable presets */}
@@ -664,7 +707,8 @@ export default function DateRangePicker({
               }}>Apply</button>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );

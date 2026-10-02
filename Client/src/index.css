@@ -20,6 +20,9 @@
   --stat-tile-border: transparent;
   --stat-tile-label: #a5b4fc;
   --stat-tile-value: #ffffff;
+
+  /* Spacing token scale addition */
+  --space-7: 28px;
 }
 
 [data-theme="dark"] {
@@ -79,9 +82,11 @@ select option {
 
 /* --- CONTENT AREA --- */
 .content {
-  padding: var(--space-7);
+  padding: 24px 28px 36px 28px;
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
+  box-sizing: border-box;
 }
 
 /* --- TYPOGRAPHY --- */
@@ -397,13 +402,13 @@ tr:hover td {
 /* --- RESPONSIVE FOUNDATION --- */
 @media (max-width: 1024px) {
   .content {
-    padding: var(--space-5);
+    padding: 20px 20px 28px;
   }
 }
 
 @media (max-width: 640px) {
   .content {
-    padding: 14px 12px;
+    padding: 16px 14px 24px;
   }
 
   .grid {
@@ -428,7 +433,7 @@ tr:hover td {
 
 @media (max-width: 360px) {
   .content {
-    padding: 10px 8px;
+    padding: 12px 10px 20px;
   }
 }
 

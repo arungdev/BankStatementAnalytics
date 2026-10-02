@@ -32,6 +32,17 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(suggestions);
         }
 
+        // GET: api/split-groups/transactions — candidate transactions for selecting bill or repayment
+        [HttpGet("transactions")]
+        public async Task<IActionResult> GetCandidateTransactions(
+            [FromQuery] string? type = null,
+            [FromQuery] string? search = null,
+            [FromQuery] int limit = 50)
+        {
+            var txs = await _splitService.GetCandidateTransactionsAsync(CurrentUserId, type, search, limit);
+            return Ok(txs);
+        }
+
         // GET: api/split-groups/{id}
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetGroupById(int id)

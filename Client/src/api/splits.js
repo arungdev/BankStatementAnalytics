@@ -6,6 +6,10 @@ export const getSplitGroups = () => api.get("/split-groups");
 // Get auto-detected GPay / UPI split candidate clusters
 export const getSplitSuggestions = () => api.get("/split-groups/suggestions");
 
+// Fetch candidate transactions (type = 'debit' or 'credit') for picking from bank statement
+export const getCandidateTransactions = (type, search) =>
+  api.get("/split-groups/transactions", { params: { type, search } });
+
 // Get single split group detail
 export const getSplitGroupById = (id) => api.get(`/split-groups/${id}`);
 

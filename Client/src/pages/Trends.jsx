@@ -412,13 +412,13 @@ const Trends = () => {
   };
 
   // ── Main bars chart ────────────────────────────────────────────────────
-  // Thin solid bars: rounded data-end, square baseline, air between pairs.
+  // Solid bars: rounded data-end, square baseline, comfortable width.
   const barStyle = {
     borderRadius: { topLeft: 4, topRight: 4 },
     borderSkipped: false,
-    maxBarThickness: 20,
-    categoryPercentage: 0.66,
-    barPercentage: 0.82,   // ~2px of surface between the spend/income pair
+    maxBarThickness: 38,
+    categoryPercentage: 0.72,
+    barPercentage: 0.85,
   };
 
   const mainData = useMemo(() => ({

@@ -39,7 +39,7 @@ export default function PageHeader({
       document.documentElement.style.removeProperty('--app-header-h');
       document.documentElement.style.removeProperty('--app-titlebar-h');
     };
-  }, [filters, accountSelector]);
+  }, [filters]);
 
   const hasRow2 = Boolean(filters || accountSelector);
 

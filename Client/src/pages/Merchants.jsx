@@ -13,6 +13,7 @@ import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { usePrivacy } from "../context/usePrivacy";
 import AmountFilterChip from "../components/AmountFilterChip";
+import StatCard from "../components/StatCard";
 import "../components/filter-chip.css";
 
 /* ─── Design tokens — mapped to the global CSS variable system so DOM inline
@@ -800,7 +801,7 @@ export default function Merchants() {
       <style>{`
         .mrc-row {
           display: grid;
-          grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(0,1fr) 150px 100px 96px 88px 20px;
+          grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(240px, 2fr) minmax(180px, 1.2fr) minmax(100px, 0.8fr) 96px 110px 20px;
           align-items: center;
           gap: 16px;
           padding: 14px 20px;
@@ -829,7 +830,7 @@ export default function Merchants() {
         }
         .mrc-head {
           display: grid;
-          grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(0,1fr) 150px 100px 96px 88px 20px;
+          grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(240px, 2fr) minmax(180px, 1.2fr) minmax(100px, 0.8fr) 96px 110px 20px;
           gap: 16px;
           padding: 12px 20px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
@@ -1003,49 +1004,43 @@ export default function Merchants() {
 
       {/* ── Summary strip — tiles double as quick filters for the list below ── */}
       <div className="mrc-stat-row">
-        {[
-          {
-            label: 'Total merchants', value: data.length, accent: T.indigo,
-            active: categoryFilter === 'all' && !mergedOnly,
-            title: 'Show all merchants',
-            onClick: () => { setCategoryFilter('all'); setMergedOnly(false); },
-          },
-          {
-            label: 'Categorized', value: `${categorizedCount} / ${data.length}`, accent: T.green,
-            active: categoryFilter === 'categorized',
-            title: 'Show only categorized merchants',
-            onClick: () => setCategoryFilter(v => v === 'categorized' ? 'all' : 'categorized'),
-          },
-          {
-            label: 'Merged groups', value: linkedCount, accent: T.faint,
-            active: mergedOnly,
-            title: 'Show only merchants with merged aliases',
-            onClick: () => setMergedOnly(v => !v),
-          },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            className="mrc-stat"
-            role="button"
-            tabIndex={0}
-            title={stat.title}
-            onClick={stat.onClick}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stat.onClick(); } }}
-            style={{
-              flex: '1 1 160px', background: T.surface,
-              border: `1px solid ${stat.active ? T.indigo : T.border}`,
-              borderRadius: '14px', padding: '16px 18px',
-              boxShadow: stat.active ? `0 0 0 3px ${T.indigoDim}` : 'var(--shadow-sm)',
-            }}
-          >
-            <div style={{ fontSize: '11px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              {stat.label}
-            </div>
-            <div className="tnum" style={{ marginTop: '6px', fontSize: '22px', fontWeight: 800, color: stat.accent, letterSpacing: '-0.5px' }}>
-              {stat.value}
-            </div>
-          </div>
-        ))}
+        <StatCard
+          label="Total merchants"
+          value={data.length}
+          accent={T.indigo}
+          active={categoryFilter === 'all' && !mergedOnly}
+          title="Show all merchants"
+          onClick={() => { setCategoryFilter('all'); setMergedOnly(false); }}
+        />
+        <StatCard
+          label="Categorized"
+          value={`${categorizedCount} / ${data.length}`}
+          valueColor="#34d399"
+          sub={`${data.length > 0 ? Math.round((categorizedCount / data.length) * 100) : 0}% categorized`}
+          accent="#34d399"
+          active={categoryFilter === 'categorized'}
+          title="Show only categorized merchants"
+          onClick={() => setCategoryFilter(v => v === 'categorized' ? 'all' : 'categorized')}
+        />
+        <StatCard
+          label="Uncategorized"
+          value={`${data.length - categorizedCount}`}
+          valueColor="#f87171"
+          sub={`${data.length > 0 ? Math.round(((data.length - categorizedCount) / data.length) * 100) : 0}% unassigned`}
+          accent="#f87171"
+          active={categoryFilter === 'uncategorized'}
+          title="Show only uncategorized merchants"
+          onClick={() => setCategoryFilter(v => v === 'uncategorized' ? 'all' : 'uncategorized')}
+        />
+        <StatCard
+          label="Merged groups"
+          value={linkedCount}
+          accent={T.indigoSoft}
+          sub={`${linkedCount} linked aliases`}
+          active={mergedOnly}
+          title="Show only merchants with merged aliases"
+          onClick={() => setMergedOnly(v => !v)}
+        />
       </div>
 
       {/* ── Search + quick filters ── */}

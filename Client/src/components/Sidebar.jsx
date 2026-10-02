@@ -6,7 +6,7 @@ import {
   FiTrendingUp, FiPieChart, FiLogOut,
   FiChevronsLeft, FiChevronsRight, FiBell, FiHome, FiTarget,
   FiDollarSign, FiSun, FiMoon, FiMonitor, FiFileText, FiSettings,
-  FiShuffle, FiFlag, FiX,
+  FiShuffle, FiFlag, FiX, FiScissors,
 } from 'react-icons/fi';
 import { useAuth, useTheme } from "@common/client";
 import api from '../api/client';
@@ -181,6 +181,14 @@ const Sidebar = ({ mobileOpen = false, onMobileClose }) => {
               <NavLink to="/transfers" className="nav-item-header" title="Transfers between your accounts" onClick={handleNavClick}>
                 <FiShuffle size={16} />
                 {effectiveOpen && <span>Transfers</span>}
+              </NavLink>
+            </li>
+
+            {/* Bill Splits & Groups */}
+            <li>
+              <NavLink to="/splits" className="nav-item-header" title="GPay & Bill Splits" onClick={handleNavClick}>
+                <FiScissors size={16} />
+                {effectiveOpen && <span>Bill Splits</span>}
               </NavLink>
             </li>
 
