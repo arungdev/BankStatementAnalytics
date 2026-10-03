@@ -51,17 +51,9 @@ namespace BankStatementAnalytics.Services
             var from = DateTime.Today.AddMonths(-LookbackMonths);
 
             // Fetch already linked transaction references in existing SplitGroups to avoid re-suggesting
-            var alreadyLinkedRefs = session.Query<SplitGroupMember>()
-                .Where(m => m.OwnerUserId == userId && m.LinkedBankReference != null)
-                .Select(m => m.LinkedBankReference!)
-                .Distinct()
-                .ToHashSet();
-
-            var alreadyParentRefs = session.Query<SplitGroup>()
-                .Where(g => g.OwnerUserId == userId && g.ParentBankReference != null)
-                .Select(g => g.ParentBankReference!)
-                .Distinct()
-                .ToHashSet();
+            var linkedMembers = session.Query<SplitGroupMember>().Where(m => m.OwnerUserId == userId && m.LinkedBankReference != null).ToList();
+            var linkedParents = session.Query<SplitGroup>().Where(g => g.OwnerUserId == userId && g.ParentBankReference != null).ToList();
+            var alreadyLinkedRefs = linkedMembers.Select(m => GPayEvidenceService.TxKey(m.LinkedAccountId ?? 0,m.LinkedBankReference!,m.LinkedBankType ?? "",m.LinkedTransactionType ?? "")).Concat(linkedParents.Select(g => GPayEvidenceService.TxKey(g.ParentAccountId ?? 0,g.ParentBankReference!,g.ParentBankType ?? "",g.ParentTransactionType ?? ""))).Concat(session.Query<GPaySettlementAllocation>().Where(a=>a.OwnerUserId==userId).ToList().Select(a=>GPayEvidenceService.TxKey(a.AccountId,a.BankReference,a.BankType,a.TransactionType))).ToHashSet();
 
             // Load candidate UPI transactions
             var upiRows = session.Query<BankTransaction>()
@@ -91,7 +83,7 @@ namespace BankStatementAnalytics.Services
 
             // Filter out already claimed transactions
             var availableRows = upiRows
-                .Where(r => !alreadyLinkedRefs.Contains(r.BankReference) && !alreadyParentRefs.Contains(r.BankReference))
+                .Where(r => !alreadyLinkedRefs.Contains(GPayEvidenceService.TxKey(r.AccountId,r.BankReference,r.BankType,r.TransactionType)))
                 .ToList();
 
             foreach (var row in availableRows)
@@ -242,56 +234,52 @@ namespace BankStatementAnalytics.Services
                 .OrderBy(r => Math.Abs(r.Amount - (creditSum + avgAmount)))
                 .FirstOrDefault();
 
-            decimal inferredTotal = matchingDebit != null ? matchingDebit.Amount : (creditSum + avgAmount);
-            decimal inferredUserShare = inferredTotal - creditSum;
-            if (inferredUserShare < 0) inferredUserShare = avgAmount;
-
-            var evidence = new List<string>
+            var evalCtx = new SplitClusterEvaluationContext
             {
-                $"{totalLegs} incoming credits received on {date:dd/MM/yyyy}",
-                $"{distinctVpas} distinct counterparty VPAs involved",
-                $"Amounts: {string.Join(", ", credits.Select(c => $"₹{c.Amount:N2}"))}",
-                $"Google Pay (@ok*) handles identified: {gpayCount}/{totalLegs}"
+                CreditLegs = credits.Select(c => new RawUpiTransaction
+                {
+                    AccountId = c.AccountId,
+                    BankReference = c.BankReference,
+                    BankType = c.BankType,
+                    TransactionType = c.TransactionType,
+                    Date = c.Date,
+                    Amount = c.Amount,
+                    Direction = c.Direction,
+                    Narration = c.Narration,
+                    UpiVpa = c.UpiVpa,
+                    CounterPartyName = c.CounterPartyName
+                }).ToList(),
+                ParentDebit = matchingDebit != null ? new RawUpiTransaction
+                {
+                    AccountId = matchingDebit.AccountId,
+                    BankReference = matchingDebit.BankReference,
+                    BankType = matchingDebit.BankType,
+                    TransactionType = matchingDebit.TransactionType,
+                    Date = matchingDebit.Date,
+                    Amount = matchingDebit.Amount,
+                    Direction = matchingDebit.Direction,
+                    Narration = matchingDebit.Narration,
+                    UpiVpa = matchingDebit.UpiVpa,
+                    CounterPartyName = matchingDebit.CounterPartyName
+                } : null,
+                ClusterDate = date,
+                OwnerNames = ownerNames
             };
 
-            if (matchingDebit != null)
-            {
-                evidence.Add($"Matching bill debit found: ₹{matchingDebit.Amount:N2} to '{matchingDebit.CounterPartyName}' on {matchingDebit.Date:dd/MM/yyyy}");
-            }
-
-            string confidence;
-            string classification;
-
-            if (gpayCount >= 2 && matchingDebit != null)
-            {
-                confidence = "Medium";
-                classification = "Possible GPay Split";
-            }
-            else if (gpayCount >= 2)
-            {
-                confidence = "Medium";
-                classification = "Possible GPay Group Payment";
-            }
-            else if (matchingDebit != null)
-            {
-                confidence = "Low";
-                classification = "Possible GPay Split";
-            }
-            else
-            {
-                confidence = "Low";
-                classification = "Cannot Determine";
-            }
+            var evalResult = GPaySplitScoringEngine.Evaluate(evalCtx);
+            if (evalResult.Score < 30 || evalResult.Classification == "Normal UPI Payment")
+                return null;
 
             var suggestion = new GPaySplitSuggestionDto
             {
                 Date = date,
-                InferredTotalAmount = inferredTotal,
-                InferredUserShare = inferredUserShare,
+                InferredTotalAmount = evalResult.InferredTotal,
+                InferredUserShare = evalResult.InferredUserShare,
                 CreditSum = creditSum,
-                Confidence = confidence,
-                Classification = classification,
-                Evidence = evidence,
+                Score = evalResult.Score,
+                Confidence = evalResult.Confidence,
+                Classification = evalResult.Classification,
+                Evidence = evalResult.PositiveSignals,
                 ParentDebit = matchingDebit != null ? ToLegDto(matchingDebit) : null,
                 CreditLegs = credits.Select(ToLegDto).ToList(),
                 SuggestedMembers = credits.Select(c => new SuggestedMemberDto
@@ -335,14 +323,15 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<List<SplitGroupDetailDto>> GetGroupsAsync(long userId)
         {
-            using var session = DbHelper.GetSession();
+            var userNames = await GPayTakeoutService.GetConfiguredUserNamesAsync(userId);
 
+            using var session = DbHelper.GetSession();
             var groups = await session.Query<SplitGroup>()
                 .Where(g => g.OwnerUserId == userId)
                 .OrderByDescending(g => g.Date)
                 .ToListAsync();
 
-            return groups.Select(ToGroupDetailDto).ToList();
+            return groups.Select(g => ToGroupDetailDto(g, userNames)).ToList();
         }
 
         /// <summary>
@@ -350,12 +339,13 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<SplitGroupDetailDto?> GetGroupByIdAsync(long userId, int groupId)
         {
-            using var session = DbHelper.GetSession();
+            var userNames = await GPayTakeoutService.GetConfiguredUserNamesAsync(userId);
 
+            using var session = DbHelper.GetSession();
             var group = await session.Query<SplitGroup>()
                 .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerUserId == userId);
 
-            return group != null ? ToGroupDetailDto(group) : null;
+            return group != null ? ToGroupDetailDto(group, userNames) : null;
         }
 
         /// <summary>
@@ -366,10 +356,21 @@ namespace BankStatementAnalytics.Services
             using var session = DbHelper.GetSession();
             using var tx = session.BeginTransaction();
 
+            string? groupName = req.GroupName;
+            if (req.BillGroupId.HasValue && string.IsNullOrWhiteSpace(groupName))
+            {
+                var bg = await session.Query<BillGroup>().FirstOrDefaultAsync(b => b.Id == req.BillGroupId.Value && b.OwnerUserId == userId);
+                if (bg == null) throw new ArgumentException("Owned group not found.");
+                if (bg.Description?.StartsWith("Google Pay Group (") == true) throw new ArgumentException("Imported groups are source-managed. Choose a custom group.");
+                groupName = bg.Name;
+            }
+
             var group = new SplitGroup
             {
                 OwnerUserId = userId,
                 GroupUid = Guid.NewGuid(),
+                BillGroupId = req.BillGroupId,
+                GroupName = groupName?.Trim(),
                 Title = string.IsNullOrWhiteSpace(req.Title) ? $"Split on {req.Date:dd MMM yyyy}" : req.Title.Trim(),
                 Description = req.Description?.Trim(),
                 Date = req.Date,
@@ -448,6 +449,7 @@ namespace BankStatementAnalytics.Services
                 .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerUserId == userId);
 
             if (group == null) return null;
+            if (GPayEvidenceService.Imported(group)) throw new ArgumentException("Imported GPay records are source-managed. Use Takeout review instead.");
 
             if (!string.IsNullOrWhiteSpace(req.Title)) group.Title = req.Title.Trim();
             if (req.Description != null) group.Description = req.Description.Trim();
@@ -475,6 +477,7 @@ namespace BankStatementAnalytics.Services
                 .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerUserId == userId);
 
             if (group == null) return null;
+            if (GPayEvidenceService.Imported(group)) throw new ArgumentException("Imported GPay records are source-managed. Use Takeout review instead.");
 
             var member = new SplitGroupMember
             {
@@ -523,6 +526,8 @@ namespace BankStatementAnalytics.Services
                 .FirstOrDefaultAsync(m => m.Id == memberId && m.Group.Id == groupId && m.OwnerUserId == userId);
 
             if (member == null) return null;
+            if (GPayEvidenceService.Imported(member.Group)) throw new ArgumentException("Imported GPay participants are source-managed. Use Takeout review instead.");
+            if (await session.Query<GPaySettlementAllocation>().AnyAsync(a => a.OwnerUserId == userId && a.MemberId == member.Id)) throw new ArgumentException("Remove payment allocations before changing or deleting this participant.");
 
             if (!string.IsNullOrWhiteSpace(req.ParticipantName)) member.ParticipantName = req.ParticipantName.Trim();
             if (req.ParticipantVpa != null) member.ParticipantVpa = req.ParticipantVpa.Trim();
@@ -561,31 +566,37 @@ namespace BankStatementAnalytics.Services
 
             if (member == null) return null;
 
-            member.LinkedAccountId = req.AccountId;
-            member.LinkedBankReference = req.BankReference;
-            member.LinkedBankType = req.BankType;
-            member.LinkedTransactionType = req.TransactionType;
-
-            if (req.Amount.HasValue && req.Amount.Value > 0)
-            {
-                member.PaidAmount = req.Amount.Value;
-            }
-            else if (member.PaidAmount <= 0)
-            {
-                member.PaidAmount = member.AssignedAmount;
-            }
-
-            member.IsSettled = true;
+            var names = await GPayEvidenceService.OwnerNames(session, userId);
+            var own = GPayEvidenceService.IsCreator(member.Group, names);
+            var self = GPayEvidenceService.IsSelf(member, names);
+            if (own == self) throw new ArgumentException("This participant is not an owner repayment flow. Review identity before linking.");
+            var ownedIds = AccountAccess.OwnedIds(session, userId);
+            var payment = await session.Query<BankTransaction>().ExcludeOwnMoneyMoves().FirstOrDefaultAsync(t => ownedIds.Contains(t.AccountId) && t.AccountId == req.AccountId && t.BankReference == req.BankReference && t.BankType == req.BankType && t.TransactionType == req.TransactionType);
+            if (payment == null || payment.Mode == "TRANSFER" || (own ? payment.Credit : payment.Debit) <= 0) throw new ArgumentException(own ? "Select an incoming credit from an owned account." : "Select an outgoing repayment debit from an owned account.");
+            await session.LockAsync(payment, NHibernate.LockMode.Upgrade);
+            await session.LockAsync(member.Group, NHibernate.LockMode.Upgrade);
+            await session.LockAsync(member, NHibernate.LockMode.Upgrade);
+            await session.RefreshAsync(member);
+            if (member.LinkedBankReference != null) throw new ArgumentException("Participant already has a bank link. Unlink it before selecting a different payment.");
+            var alreadyLinked = await session.Query<SplitGroupMember>().AnyAsync(m => m.Id != member.Id && m.OwnerUserId == userId && m.LinkedAccountId == payment.AccountId && m.LinkedBankReference == payment.BankReference && m.LinkedBankType == payment.BankType && m.LinkedTransactionType == payment.TransactionType);
+            var allocated = await session.Query<GPaySettlementAllocation>().AnyAsync(a => a.OwnerUserId == userId && (a.MemberId == member.Id || a.AccountId == payment.AccountId && a.BankReference == payment.BankReference && a.BankType == payment.BankType && a.TransactionType == payment.TransactionType));
+            var billLink = await session.Query<SplitGroup>().AnyAsync(g => g.OwnerUserId == userId && g.ParentAccountId == payment.AccountId && g.ParentBankReference == payment.BankReference && g.ParentBankType == payment.BankType && g.ParentTransactionType == payment.TransactionType);
+            if (alreadyLinked || allocated || billLink) throw new ArgumentException("Transaction or participant is already linked/allocated. Review existing links first.");
+            var amount = own ? payment.Credit : payment.Debit;
+            if (amount > member.AssignedAmount) throw new ArgumentException("Payment exceeds this share. Use a partial allocation in Takeout review.");
+            member.IsUser = self;
+            member.LinkedAccountId = payment.AccountId;
+            member.LinkedBankReference = payment.BankReference;
+            member.LinkedBankType = payment.BankType;
+            member.LinkedTransactionType = payment.TransactionType;
+            member.PaidAmount = amount;
+            member.IsSettled = amount >= member.AssignedAmount;
+            member.SettlementEvidence = "Bank verified";
 
             await session.UpdateAsync(member);
 
             var group = member.Group;
-            group.SettledAmount = group.Members.Where(m => m.IsSettled).Sum(m => m.PaidAmount);
-            if (group.TotalAmount > 0 && (group.SettledAmount + group.UserShareAmount) >= group.TotalAmount)
-            {
-                group.Status = "Settled";
-            }
-            group.UpdatedOn = DateTime.Now;
+            GPayEvidenceService.Recalculate(group, names);
 
             await session.UpdateAsync(group);
             await tx.CommitAsync();
@@ -610,15 +621,14 @@ namespace BankStatementAnalytics.Services
             member.LinkedBankReference = null;
             member.LinkedBankType = null;
             member.LinkedTransactionType = null;
-            member.PaidAmount = 0m;
-            member.IsSettled = false;
+            member.PaidAmount = GPayEvidenceService.IsPaid(member.SourceState) ? member.AssignedAmount : 0;
+            member.IsSettled = GPayEvidenceService.IsPaid(member.SourceState);
+            member.SettlementEvidence = GPayEvidenceService.Evidence(member.SourceState);
 
             await session.UpdateAsync(member);
 
             var group = member.Group;
-            group.SettledAmount = group.Members.Where(m => m.IsSettled).Sum(m => m.PaidAmount);
-            group.Status = "Active";
-            group.UpdatedOn = DateTime.Now;
+            GPayEvidenceService.Recalculate(group, await GPayEvidenceService.OwnerNames(session,userId));
 
             await session.UpdateAsync(group);
             await tx.CommitAsync();
@@ -638,6 +648,8 @@ namespace BankStatementAnalytics.Services
                 .FirstOrDefaultAsync(m => m.Id == memberId && m.Group.Id == groupId && m.OwnerUserId == userId);
 
             if (member == null) return false;
+            if (GPayEvidenceService.Imported(member.Group)) throw new ArgumentException("Imported GPay participants are source-managed. Use Takeout review instead.");
+            if (await session.Query<GPaySettlementAllocation>().AnyAsync(a => a.OwnerUserId == userId && a.MemberId == member.Id)) throw new ArgumentException("Remove payment allocations before changing or deleting this participant.");
 
             var group = member.Group;
             group.Members.Remove(member);
@@ -664,6 +676,8 @@ namespace BankStatementAnalytics.Services
                 .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerUserId == userId);
 
             if (group == null) return false;
+            if (GPayEvidenceService.Imported(group)) throw new ArgumentException("Imported GPay records are source-managed. Use Takeout review instead.");
+            if (await session.Query<GPaySettlementAllocation>().AnyAsync(a => a.OwnerUserId == userId && a.SplitId == group.Id)) throw new ArgumentException("Remove payment allocations before deleting this custom split.");
 
             await session.DeleteAsync(group);
             await tx.CommitAsync();
@@ -685,6 +699,7 @@ namespace BankStatementAnalytics.Services
             if (accountIds.Count == 0) return new List<CandidateTransactionDto>();
 
             var query = session.Query<BankTransaction>()
+                .ExcludeOwnMoneyMoves()
                 .Where(t => accountIds.Contains(t.AccountId));
 
             if (!string.IsNullOrWhiteSpace(direction))
@@ -732,29 +747,436 @@ namespace BankStatementAnalytics.Services
         }
 
         // ────────────────────────────────────────────────────────────────────
+        // PARTICIPANT SUGGESTIONS
+        // ────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Retrieves smart suggestions for participants based on frequent UPI contacts and past splits.
+        /// </summary>
+        public async Task<List<ParticipantSuggestionDto>> GetParticipantSuggestionsAsync(long userId, string? search = null, int limit = 20)
+        {
+            using var session = DbHelper.GetSession();
+            var accountIds = AccountAccess.OwnedIds(session, userId);
+
+            var querySearch = search?.Trim().ToLowerInvariant();
+
+            // 1. Group members from persistent groups
+            var groupMembers = await session.Query<BillGroupMember>()
+                .Where(m => m.OwnerUserId == userId)
+                .Select(m => new { m.Name, m.Vpa })
+                .ToListAsync();
+
+            // 2. Members from previous split groups
+            var splitMembers = await session.Query<SplitGroupMember>()
+                .Where(m => m.OwnerUserId == userId && !m.IsUser)
+                .Select(m => new { Name = m.ParticipantName, Vpa = m.ParticipantVpa })
+                .ToListAsync();
+
+            // 3. Counterparties from UPI transactions
+            var upiTransactions = new List<(string Name, string? Vpa)>();
+            if (accountIds.Count > 0)
+            {
+                var rawTxs = await session.Query<BankTransaction>()
+                    .Where(t => accountIds.Contains(t.AccountId) && (t.Mode == "UPI" || t.UpiVpa != null))
+                    .OrderByDescending(t => t.TransactionDate)
+                    .Take(500)
+                    .Select(t => new
+                    {
+                        Name = t.CounterParty != null ? (t.CounterParty.FriendlyName ?? t.CounterParty.Name) : null,
+                        Vpa = t.UpiVpa,
+                        Narration = t.Narration
+                    })
+                    .ToListAsync();
+
+                foreach (var t in rawTxs)
+                {
+                    var name = t.Name;
+                    var vpa = t.Vpa;
+                    if (string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(vpa))
+                    {
+                        var prefix = vpa.Split('@')[0];
+                        if (prefix.Length > 0 && !char.IsDigit(prefix[0])) name = prefix;
+                    }
+
+                    // Exclude payment gateways / nodal accounts
+                    if (!string.IsNullOrWhiteSpace(vpa) && (
+                        vpa.Contains("@nodal", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.Contains("@razorpay", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.Contains("@billdesk", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.Contains("@cashfree", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.StartsWith("swiggy", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.StartsWith("zomato", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.StartsWith("uber", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.StartsWith("ola", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.StartsWith("cred", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.StartsWith("amazon", StringComparison.OrdinalIgnoreCase) ||
+                        vpa.StartsWith("flipkart", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        upiTransactions.Add((name.Trim(), vpa?.Trim()));
+                    }
+                }
+            }
+
+            // Aggregate frequencies and deduplicate by normalized name
+            var dict = new Dictionary<string, (string Name, string? Vpa, int Freq, string Source)>(StringComparer.OrdinalIgnoreCase);
+
+            void AddOrUpdate(string name, string? vpa, int weight, string source)
+            {
+                if (string.IsNullOrWhiteSpace(name)) return;
+                var key = name.Trim().ToLowerInvariant();
+                if (dict.TryGetValue(key, out var existing))
+                {
+                    dict[key] = (existing.Name, existing.Vpa ?? vpa, existing.Freq + weight, existing.Source);
+                }
+                else
+                {
+                    dict[key] = (name.Trim(), vpa?.Trim(), weight, source);
+                }
+            }
+
+            foreach (var gm in groupMembers) AddOrUpdate(gm.Name, gm.Vpa, 15, "GroupMember");
+            foreach (var sm in splitMembers) AddOrUpdate(sm.Name, sm.Vpa, 10, "PastSplit");
+            foreach (var upi in upiTransactions) AddOrUpdate(upi.Name, upi.Vpa, 1, "UPIContact");
+
+            var list = dict.Values.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(querySearch))
+            {
+                list = list.Where(x => x.Name.ToLowerInvariant().Contains(querySearch) || (x.Vpa != null && x.Vpa.ToLowerInvariant().Contains(querySearch)));
+            }
+
+            return list
+                .OrderByDescending(x => x.Freq)
+                .Take(limit)
+                .Select(x => new ParticipantSuggestionDto
+                {
+                    Name = x.Name,
+                    Vpa = x.Vpa,
+                    Frequency = x.Freq,
+                    Source = x.Source
+                })
+                .ToList();
+        }
+
+        // ────────────────────────────────────────────────────────────────────
+        // PERSISTENT GPAY BILL GROUPS
+        // ────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Retrieves all persistent bill groups with members, splits, and owed balances.
+        /// </summary>
+        public async Task<List<BillGroupDto>> GetBillGroupsAsync(long userId)
+        {
+            using var session = DbHelper.GetSession();
+
+            var groups = await session.Query<BillGroup>()
+                .Where(g => g.OwnerUserId == userId)
+                .OrderByDescending(g => g.CreatedOn)
+                .ToListAsync();
+
+            var groupIds = groups.Select(g => g.Id).ToList();
+            var allSplits = await session.Query<SplitGroup>()
+                .Where(s => s.OwnerUserId == userId && s.BillGroupId != null && groupIds.Contains(s.BillGroupId.Value))
+                .OrderByDescending(s => s.Date)
+                .ToListAsync();
+
+            var splitsByGroup = allSplits.GroupBy(s => s.BillGroupId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+
+            var userNames = await GPayTakeoutService.GetConfiguredUserNamesAsync(userId);
+
+            var result = new List<BillGroupDto>();
+            foreach (var g in groups)
+            {
+                var splits = splitsByGroup.TryGetValue(g.Id, out var sList) ? sList : new List<SplitGroup>();
+                var splitDtos = splits.Select(s => ToGroupDetailDto(s, userNames)).ToList();
+
+                var members = (g.Members ?? new List<BillGroupMember>())
+                    .Select(m => new BillGroupMemberDto { Id = m.Id, Name = m.Name, Vpa = m.Vpa })
+                    .ToList();
+
+                var totalExpenseVolume = splits.Sum(s => s.TotalAmount);
+                var userShareVolume = splitDtos.Sum(s => s.UserShareAmount);
+                var settledVolume = splitDtos.Sum(s => s.SettledAmount);
+
+                // User paid volume: only expenses where the user was the creator/payer
+                var userCreatedSplits = splitDtos.Where(d => d.IsCreatedByUser).ToList();
+                var userPaidVolume = userCreatedSplits.Sum(d => d.TotalAmount);
+
+                // Money owed to user: pending repayments on expenses created by the user
+                var netOwedToUser = userCreatedSplits.Sum(d => d.PendingAmount);
+
+                // Money user owes: pending personal share on expenses created by friends
+                var netOwedByUser = splitDtos.Where(d => !d.IsCreatedByUser).Sum(d => d.PendingAmount);
+
+                var balances = new List<GroupMemberBalanceDto>();
+                var userCreatedGroupSplits = splits.Where(s => userCreatedSplits.Any(d => d.Id == s.Id) && s.Status is not ("Closed" or "Cancelled") && s.SourceState != "CLOSED").ToList();
+                var splitMembersAcrossSplits = userCreatedGroupSplits.SelectMany(s => s.Members ?? new List<SplitGroupMember>())
+                    .Where(m => !m.IsUser && !userNames.Contains(GPayEvidenceService.Normalize(m.ParticipantName)))
+                    .GroupBy(m => m.ParticipantName.Trim(), StringComparer.OrdinalIgnoreCase);
+
+                var allMemberNames = new HashSet<string>(members.Select(m => m.Name.Trim()), StringComparer.OrdinalIgnoreCase);
+                foreach (var smg in splitMembersAcrossSplits) allMemberNames.Add(smg.Key);
+
+                foreach (var memberName in allMemberNames)
+                {
+                    if (userNames.Contains(GPayEvidenceService.Normalize(memberName))) continue;
+
+                    var matchingSplits = userCreatedGroupSplits.SelectMany(s => s.Members ?? new List<SplitGroupMember>())
+                        .Where(m => string.Equals(m.ParticipantName.Trim(), memberName, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    var totalAssigned = matchingSplits.Sum(m => m.AssignedAmount);
+                    var totalPaid = matchingSplits.Sum(m => m.PaidAmount);
+                    var owed = Math.Max(0m, totalAssigned - totalPaid);
+                    var matchingGroupMember = members.FirstOrDefault(m => string.Equals(m.Name.Trim(), memberName, StringComparison.OrdinalIgnoreCase));
+
+                    balances.Add(new GroupMemberBalanceDto
+                    {
+                        MemberName = memberName,
+                        MemberVpa = matchingGroupMember?.Vpa ?? matchingSplits.FirstOrDefault(m => !string.IsNullOrEmpty(m.ParticipantVpa))?.ParticipantVpa,
+                        TotalAssigned = totalAssigned,
+                        TotalPaid = totalPaid,
+                        OwedAmount = owed,
+                        IsSettled = owed <= 0 && totalAssigned > 0
+                    });
+                }
+
+                result.Add(new BillGroupDto
+                {
+                    Id = g.Id,
+                    Name = g.Name,
+                    Description = g.Description,
+                    CreatedOn = g.CreatedOn,
+                    UpdatedOn = g.UpdatedOn,
+                    Members = members,
+                    Splits = splitDtos,
+                    TotalExpenseVolume = totalExpenseVolume,
+                    UserPaidVolume = userPaidVolume,
+                    UserShareVolume = userShareVolume,
+                    SettledVolume = settledVolume,
+                    NetOwedToUser = netOwedToUser,
+                    NetOwedByUser = netOwedByUser,
+                    Balances = balances
+                });
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Retrieves a single persistent bill group by ID.
+        /// </summary>
+        public async Task<BillGroupDto?> GetBillGroupByIdAsync(long userId, int groupId)
+        {
+            var all = await GetBillGroupsAsync(userId);
+            return all.FirstOrDefault(g => g.Id == groupId);
+        }
+
+        /// <summary>
+        /// Creates a persistent GPay-style bill group with initial members.
+        /// </summary>
+        public async Task<BillGroupDto> CreateBillGroupAsync(long userId, CreateBillGroupRequest req)
+        {
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var group = new BillGroup
+            {
+                OwnerUserId = userId,
+                Name = string.IsNullOrWhiteSpace(req.Name) ? "New Group" : req.Name.Trim(),
+                Description = req.Description?.Trim(),
+                CreatedOn = DateTime.Now
+            };
+
+            await session.SaveAsync(group);
+
+            if (req.Members != null && req.Members.Count > 0)
+            {
+                foreach (var m in req.Members)
+                {
+                    if (string.IsNullOrWhiteSpace(m.Name)) continue;
+                    var member = new BillGroupMember
+                    {
+                        OwnerUserId = userId,
+                        Group = group,
+                        Name = m.Name.Trim(),
+                        Vpa = m.Vpa?.Trim(),
+                        CreatedOn = DateTime.Now
+                    };
+                    await session.SaveAsync(member);
+                    group.Members.Add(member);
+                }
+            }
+
+            await tx.CommitAsync();
+
+            var created = await GetBillGroupByIdAsync(userId, group.Id);
+            return created!;
+        }
+
+        /// <summary>
+        /// Updates a bill group's name or description.
+        /// </summary>
+        public async Task<BillGroupDto?> UpdateBillGroupAsync(long userId, int groupId, UpdateBillGroupRequest req)
+        {
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var group = await session.Query<BillGroup>()
+                .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerUserId == userId);
+
+            if (group == null) return null;
+            if (group.Description?.StartsWith("Google Pay Group (") == true || await session.Query<SplitGroup>().AnyAsync(g => g.OwnerUserId == userId && g.BillGroupId == group.Id && g.SourceKey != null)) throw new ArgumentException("Imported groups are source-managed. Custom groups support manual editing.");
+
+            if (!string.IsNullOrWhiteSpace(req.Name)) group.Name = req.Name.Trim();
+            if (req.Description != null) group.Description = req.Description.Trim();
+            group.UpdatedOn = DateTime.Now;
+
+            await session.UpdateAsync(group);
+            await tx.CommitAsync();
+
+            return await GetBillGroupByIdAsync(userId, groupId);
+        }
+
+        /// <summary>
+        /// Deletes a bill group and unlinks its splits.
+        /// </summary>
+        public async Task<bool> DeleteBillGroupAsync(long userId, int groupId)
+        {
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var group = await session.Query<BillGroup>()
+                .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerUserId == userId);
+
+            if (group == null) return false;
+            if (group.Description?.StartsWith("Google Pay Group (") == true || await session.Query<SplitGroup>().AnyAsync(g => g.OwnerUserId == userId && g.BillGroupId == group.Id && g.SourceKey != null)) throw new ArgumentException("Imported groups are source-managed. Custom groups support manual editing.");
+            var childIds = (await session.Query<SplitGroup>().Where(g => g.OwnerUserId == userId && g.BillGroupId == group.Id).ToListAsync()).Select(g=>g.Id).ToList();
+            if (await session.Query<GPaySettlementAllocation>().AnyAsync(a => a.OwnerUserId == userId && childIds.Contains(a.SplitId))) throw new ArgumentException("Remove child expense allocations before deleting this custom group.");
+
+            var splits = await session.Query<SplitGroup>()
+                .Where(s => s.BillGroupId == groupId && s.OwnerUserId == userId)
+                .ToListAsync();
+
+            foreach (var s in splits)
+            {
+                s.BillGroupId = null;
+                await session.UpdateAsync(s);
+            }
+
+            await session.DeleteAsync(group);
+            await tx.CommitAsync();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Adds a member to an existing bill group.
+        /// </summary>
+        public async Task<BillGroupMemberDto?> AddBillGroupMemberAsync(long userId, int groupId, AddBillGroupMemberRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(req.Name)) return null;
+
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var group = await session.Query<BillGroup>()
+                .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerUserId == userId);
+
+            if (group == null) return null;
+            if (group.Description?.StartsWith("Google Pay Group (") == true || await session.Query<SplitGroup>().AnyAsync(g => g.OwnerUserId == userId && g.BillGroupId == group.Id && g.SourceKey != null)) throw new ArgumentException("Imported groups are source-managed. Custom groups support manual editing.");
+
+            var member = new BillGroupMember
+            {
+                OwnerUserId = userId,
+                Group = group,
+                Name = req.Name.Trim(),
+                Vpa = req.Vpa?.Trim(),
+                CreatedOn = DateTime.Now
+            };
+
+            await session.SaveAsync(member);
+            group.Members.Add(member);
+            group.UpdatedOn = DateTime.Now;
+
+            await session.UpdateAsync(group);
+            await tx.CommitAsync();
+
+            return new BillGroupMemberDto { Id = member.Id, Name = member.Name, Vpa = member.Vpa };
+        }
+
+        /// <summary>
+        /// Removes a member from a bill group.
+        /// </summary>
+        public async Task<bool> RemoveBillGroupMemberAsync(long userId, int groupId, int memberId)
+        {
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+
+            var member = await session.Query<BillGroupMember>()
+                .FirstOrDefaultAsync(m => m.Id == memberId && m.Group.Id == groupId && m.OwnerUserId == userId);
+
+            if (member == null) return false;
+            if (member.Group.Description?.StartsWith("Google Pay Group (") == true) throw new ArgumentException("Imported group membership is reconstructed from history.");
+
+            var group = member.Group;
+            group.Members.Remove(member);
+            await session.DeleteAsync(member);
+            group.UpdatedOn = DateTime.Now;
+
+            await session.UpdateAsync(group);
+            await tx.CommitAsync();
+
+            return true;
+        }
+
+        // ────────────────────────────────────────────────────────────────────
         // DTO MAPPERS
         // ────────────────────────────────────────────────────────────────────
 
-        private static SplitGroupDetailDto ToGroupDetailDto(SplitGroup g)
+        private static SplitGroupDetailDto ToGroupDetailDto(SplitGroup g, HashSet<string>? userNames = null)
         {
-            var members = (g.Members ?? new List<SplitGroupMember>()).Select(ToMemberDto).ToList();
-            var totalAssigned = members.Sum(m => m.AssignedAmount);
-            var pendingAmount = Math.Max(0m, g.TotalAmount - g.SettledAmount - g.UserShareAmount);
+            var imported = GPayEvidenceService.Imported(g);
+            var names = userNames ?? new HashSet<string>();
+            var isCreatedByUser = GPayEvidenceService.IsCreator(g, names);
+            var creatorName = imported ? GPayEvidenceService.Creator(g) : "You";
+            var members = (g.Members ?? new List<SplitGroupMember>()).Select(m => ToMemberDto(m, names)).ToList();
+            var isUserInvolved = isCreatedByUser || members.Any(m => m.IsUser);
+            var sourceAware = g.SourceState != null;
+            var userShare = sourceAware ? members.Where(m => m.IsUser).Sum(m => m.AssignedAmount) : g.UserShareAmount;
+            var eligible = members.Where(m => isCreatedByUser ? !m.IsUser : m.IsUser).ToList();
+            var inactive = g.Status is "Closed" or "Cancelled" || g.SourceState == "CLOSED";
+            var pendingAmount = inactive ? 0 : sourceAware ? eligible.Sum(m => Math.Max(0, m.AssignedAmount - m.PaidAmount)) : g.Status == "Settled" ? 0 : isCreatedByUser ? Math.Max(0,g.TotalAmount-g.SettledAmount-userShare) : eligible.Sum(m=>Math.Max(0,m.AssignedAmount-m.PaidAmount));
+            var settledAmount = sourceAware ? eligible.Sum(m => Math.Min(m.AssignedAmount,m.PaidAmount)) : g.SettledAmount;
 
             return new SplitGroupDetailDto
             {
                 Id = g.Id,
                 GroupUid = g.GroupUid,
+                BillGroupId = g.BillGroupId,
+                GroupName = g.GroupName,
                 Title = g.Title,
                 Description = g.Description,
                 Date = g.Date,
                 TotalAmount = g.TotalAmount,
-                UserShareAmount = g.UserShareAmount,
-                SettledAmount = g.SettledAmount,
+                UserShareAmount = userShare,
+                SourceState = g.SourceState,
+                SourceKey = g.SourceKey,
+                SourceImportedUtc = g.SourceImportedUtc,
+                VerifiedAmount = eligible.Where(m => m.SettlementEvidence is "Bank verified" or "Bank verified allocation").Sum(m => Math.Min(m.AssignedAmount,m.PaidAmount)),
+                SettledAmount = settledAmount,
                 PendingAmount = pendingAmount,
                 Status = g.Status,
                 Confidence = g.Confidence,
                 SplitType = g.SplitType,
+                IsCreatedByUser = isCreatedByUser,
+                CreatorName = creatorName,
+                IsUserInvolved = isUserInvolved,
                 ParentAccountId = g.ParentAccountId,
                 ParentBankReference = g.ParentBankReference,
                 ParentBankType = g.ParentBankType,
@@ -765,7 +1187,7 @@ namespace BankStatementAnalytics.Services
             };
         }
 
-        private static SplitGroupMemberDto ToMemberDto(SplitGroupMember m) => new()
+        private static SplitGroupMemberDto ToMemberDto(SplitGroupMember m, HashSet<string>? userNames = null, bool isGroupSettled = false) => new()
         {
             Id = m.Id,
             ParticipantName = m.ParticipantName,
@@ -773,7 +1195,9 @@ namespace BankStatementAnalytics.Services
             AssignedAmount = m.AssignedAmount,
             PaidAmount = m.PaidAmount,
             IsSettled = m.IsSettled,
-            IsUser = m.IsUser,
+            IsUser = userNames == null ? m.IsUser : GPayEvidenceService.IsSelf(m, userNames),
+            SourceState = m.SourceState,
+            SettlementEvidence = m.SettlementEvidence ?? (m.LinkedBankReference != null ? "Legacy link — review" : "Unverified"),
             LinkedAccountId = m.LinkedAccountId,
             LinkedBankReference = m.LinkedBankReference,
             LinkedBankType = m.LinkedBankType,
@@ -812,6 +1236,7 @@ namespace BankStatementAnalytics.Services
         public decimal InferredTotalAmount { get; set; }
         public decimal InferredUserShare { get; set; }
         public decimal CreditSum { get; set; }
+        public int Score { get; set; }
         public string Confidence { get; set; } = "Low";
         public string Classification { get; set; } = "Possible GPay Split";
         public List<string> Evidence { get; set; } = new();
@@ -852,6 +1277,8 @@ namespace BankStatementAnalytics.Services
     {
         public int Id { get; set; }
         public Guid GroupUid { get; set; }
+        public int? BillGroupId { get; set; }
+        public string? GroupName { get; set; }
         public string Title { get; set; } = string.Empty;
         public string? Description { get; set; }
         public DateTime Date { get; set; }
@@ -859,9 +1286,16 @@ namespace BankStatementAnalytics.Services
         public decimal UserShareAmount { get; set; }
         public decimal SettledAmount { get; set; }
         public decimal PendingAmount { get; set; }
+        public string? SourceState { get; set; }
+        public string? SourceKey { get; set; }
+        public DateTime? SourceImportedUtc { get; set; }
+        public decimal VerifiedAmount { get; set; }
         public string Status { get; set; } = string.Empty;
         public string Confidence { get; set; } = string.Empty;
         public string SplitType { get; set; } = string.Empty;
+        public bool IsCreatedByUser { get; set; }
+        public string? CreatorName { get; set; }
+        public bool IsUserInvolved { get; set; }
         public long? ParentAccountId { get; set; }
         public string? ParentBankReference { get; set; }
         public string? ParentBankType { get; set; }
@@ -878,6 +1312,8 @@ namespace BankStatementAnalytics.Services
         public string? ParticipantVpa { get; set; }
         public decimal AssignedAmount { get; set; }
         public decimal PaidAmount { get; set; }
+        public string? SourceState { get; set; }
+        public string? SettlementEvidence { get; set; }
         public bool IsSettled { get; set; }
         public bool IsUser { get; set; }
         public long? LinkedAccountId { get; set; }
@@ -890,6 +1326,8 @@ namespace BankStatementAnalytics.Services
 
     public class CreateSplitGroupRequest
     {
+        public int? BillGroupId { get; set; }
+        public string? GroupName { get; set; }
         public string Title { get; set; } = string.Empty;
         public string? Description { get; set; }
         public DateTime Date { get; set; } = DateTime.Today;
@@ -979,5 +1417,67 @@ namespace BankStatementAnalytics.Services
         public string UpiVpa { get; set; } = string.Empty;
         public string UpiReference { get; set; } = string.Empty;
         public string Mode { get; set; } = string.Empty;
+    }
+
+    public class ParticipantSuggestionDto
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? Vpa { get; set; }
+        public int Frequency { get; set; }
+        public string Source { get; set; } = "UPI";
+    }
+
+    public class BillGroupDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public DateTime CreatedOn { get; set; }
+        public DateTime? UpdatedOn { get; set; }
+        public List<BillGroupMemberDto> Members { get; set; } = new();
+        public List<SplitGroupDetailDto> Splits { get; set; } = new();
+        public decimal TotalExpenseVolume { get; set; }
+        public decimal UserPaidVolume { get; set; }
+        public decimal UserShareVolume { get; set; }
+        public decimal SettledVolume { get; set; }
+        public decimal NetOwedToUser { get; set; }
+        public decimal NetOwedByUser { get; set; }
+        public List<GroupMemberBalanceDto> Balances { get; set; } = new();
+    }
+
+    public class BillGroupMemberDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Vpa { get; set; }
+    }
+
+    public class GroupMemberBalanceDto
+    {
+        public string MemberName { get; set; } = string.Empty;
+        public string? MemberVpa { get; set; }
+        public decimal TotalAssigned { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal OwedAmount { get; set; }
+        public bool IsSettled { get; set; }
+    }
+
+    public class CreateBillGroupRequest
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public List<AddBillGroupMemberRequest> Members { get; set; } = new();
+    }
+
+    public class UpdateBillGroupRequest
+    {
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+    }
+
+    public class AddBillGroupMemberRequest
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? Vpa { get; set; }
     }
 }

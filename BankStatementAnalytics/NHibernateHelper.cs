@@ -64,6 +64,10 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<TransactionSplitMap>();
                         mapper.AddMapping<SplitGroupMap>();
                         mapper.AddMapping<SplitGroupMemberMap>();
+                        mapper.AddMapping<GPayEvidenceRecordMap>();
+                        mapper.AddMapping<GPaySettlementAllocationMap>();
+                        mapper.AddMapping<BillGroupMap>();
+                        mapper.AddMapping<BillGroupMemberMap>();
                     }, null,
                     isPostgres
                         ? db =>

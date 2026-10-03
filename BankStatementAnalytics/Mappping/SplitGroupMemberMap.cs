@@ -41,6 +41,9 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.LinkedBankType, m => m.Length(50));
             Property(x => x.LinkedTransactionType, m => m.Length(10));
 
+            Property(x => x.SourceState, m => m.Length(50));
+            Property(x => x.SettlementEvidence, m => m.Length(50));
+
             Property(x => x.Notes, m => m.Length(1000));
             Property(x => x.CreatedOn);
         }

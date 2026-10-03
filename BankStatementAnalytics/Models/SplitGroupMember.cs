@@ -38,6 +38,9 @@ namespace BankStatementAnalytics.Models
         public virtual string? LinkedBankType { get; set; }
         public virtual string? LinkedTransactionType { get; set; }
 
+        public virtual string? SourceState { get; set; }
+        public virtual string? SettlementEvidence { get; set; }
+
         public virtual string? Notes { get; set; }
 
         public virtual DateTime CreatedOn { get; set; } = DateTime.Now;

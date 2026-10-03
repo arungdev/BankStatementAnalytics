@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef } from "react";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useOutletContext, useSearchParams, useNavigate } from "react-router-dom";
 import api from "../api/client";
 import { Avatar, Badge, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState } from "@common/client";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
-import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors, FiTag } from "react-icons/fi";
+import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors, FiTag, FiUsers } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
 import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
@@ -13,6 +13,7 @@ import { FilterGroup } from "../components/PageHeader";
 import Pagination from "../components/Pagination";
 import CategoryPicker from "../components/CategoryPicker";
 import SplitTransactionModal from "../components/SplitTransactionModal";
+import TransactionGPayContext from "../components/TransactionGPayContext";
 import TagPicker from "../components/TagPicker";
 import ManageTagsModal from "../components/ManageTagsModal";
 import { currencyFormatter, maskName } from "../utils/format";
@@ -55,6 +56,7 @@ export default function Transactions() {
   const { isAdmin } = useAuth();
   const { selectedAccountId } = useAccount();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // ── Date filter now lives in Layout, shared with the header row ───────
   const {
@@ -1358,6 +1360,7 @@ export default function Transactions() {
                         }}>
                           {maskName(t.merchant) || '—'}
                         </span>
+                        <TransactionGPayContext note={t.note} />
                         {t.isTransfer && (
                           <span
                             title="Money moved between your own accounts — excluded from income/spend analytics"
@@ -1544,6 +1547,7 @@ export default function Transactions() {
               </div>
             </div>
 
+            <TransactionGPayContext note={selectedTx.note} detail />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
               {isAllAccounts && (
                 <div style={{ gridColumn: 'span 2' }}>
@@ -1593,23 +1597,44 @@ export default function Transactions() {
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
                     {(selectedTx.hasSplits || selectedTx.HasSplits) ? 'Category (Split)' : 'Category'}
                   </div>
-                  <button
-                    type="button"
-                    className="btn small"
-                    onClick={() => setSplitModalTx(selectedTx)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      fontSize: '12px',
-                      padding: '3px 8px',
-                      color: (selectedTx.hasSplits || selectedTx.HasSplits) ? 'var(--primary)' : undefined,
-                      borderColor: (selectedTx.hasSplits || selectedTx.HasSplits) ? 'var(--primary)' : undefined,
-                    }}
-                    title="Split into multiple categories"
-                  >
-                    <FiScissors size={13} /> {(selectedTx.hasSplits || selectedTx.HasSplits) ? `Edit Splits (${selectedTx.splitsCount || selectedTx.SplitsCount})` : 'Split'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      className="btn small"
+                      onClick={() => setSplitModalTx(selectedTx)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        fontSize: '12px',
+                        padding: '3px 8px',
+                        color: (selectedTx.hasSplits || selectedTx.HasSplits) ? 'var(--primary)' : undefined,
+                        borderColor: (selectedTx.hasSplits || selectedTx.HasSplits) ? 'var(--primary)' : undefined,
+                      }}
+                      title="Split into multiple categories"
+                    >
+                      <FiScissors size={13} /> {(selectedTx.hasSplits || selectedTx.HasSplits) ? `Edit Splits (${selectedTx.splitsCount || selectedTx.SplitsCount})` : 'Split Categories'}
+                    </button>
+                    {(selectedTx.debit > 0 || (selectedTx.amount > 0 && !selectedTx.credit)) && (
+                      <button
+                        type="button"
+                        className="btn small"
+                        onClick={() => navigate('/splits', { state: { createForTx: selectedTx } })}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          fontSize: '12px',
+                          padding: '3px 8px',
+                          color: 'var(--primary)',
+                          borderColor: 'var(--primary)',
+                        }}
+                        title="Split this bill with friends"
+                      >
+                        <FiUsers size={13} /> Split with Friends
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {(selectedTx.hasSplits || selectedTx.HasSplits) && (selectedTx.splits || selectedTx.Splits)?.length > 0 ? (
                   <div style={{

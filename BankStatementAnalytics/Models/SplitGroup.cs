@@ -20,6 +20,12 @@ namespace BankStatementAnalytics.Models
         /// <summary>Title or purpose of the split (e.g. "Dinner with Rahul & Priya", "Flat Electricity Bill").</summary>
         public virtual string Title { get; set; } = string.Empty;
 
+        public virtual string? SourceKey { get; set; }
+        public virtual string? SourceState { get; set; }
+        public virtual string? CreatorName { get; set; }
+        public virtual string? SourceSnapshot { get; set; }
+        public virtual DateTime? SourceImportedUtc { get; set; }
+
         public virtual string? Description { get; set; }
 
         /// <summary>Date the expense or split occurred.</summary>
@@ -42,6 +48,12 @@ namespace BankStatementAnalytics.Models
 
         /// <summary>"GPaySplit", "GroupPayment", or "ManualSplit".</summary>
         public virtual string SplitType { get; set; } = "GPaySplit";
+
+        /// <summary>Optional reference to the parent persistent BillGroup (GPay Group).</summary>
+        public virtual int? BillGroupId { get; set; }
+
+        /// <summary>Denormalized group name (e.g. "Flatmates", "Goa Trip").</summary>
+        public virtual string? GroupName { get; set; }
 
         // ── Optional link to the parent expense / bill transaction ──
         public virtual long? ParentAccountId { get; set; }

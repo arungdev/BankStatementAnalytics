@@ -28,3 +28,11 @@ Client/node_modules/
 /node_modules/
 /package.json
 /package-lock.json
+/.analysis-build
+/.analysis-client-build
+
+# Private GPay audit inputs and temporary verification artifacts
+/.analysis-gpay/
+/.analysis-*.json
+/.analysis-*.sql
+/Client/.analysis-*

@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { FiCreditCard, FiTag, FiBookmark, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle, FiSearch, FiCornerDownLeft, FiType, FiLock, FiRefreshCw, FiDatabase, FiDownload, FiUploadCloud, FiHelpCircle, FiGithub, FiZap, FiExternalLink, FiWifi } from "react-icons/fi";
+import { FiCreditCard, FiTag, FiBookmark, FiUser, FiPlus, FiEdit2, FiX, FiBell, FiSun, FiMoon, FiMonitor, FiEye, FiEyeOff, FiChevronDown, FiChevronUp, FiFolder, FiDownloadCloud, FiClock, FiRotateCcw, FiAlertCircle, FiCheckCircle, FiSearch, FiCornerDownLeft, FiType, FiLock, FiRefreshCw, FiDatabase, FiDownload, FiUploadCloud, FiHelpCircle, FiGithub, FiZap, FiExternalLink, FiWifi, FiUserCheck } from "react-icons/fi";
 import api from "../api/client";
 import { updateCardSettings } from "../api/cards";
 import { updateAutoImport, browseFolders } from "../api/accounts";
+import { getGPayAutoImportConfig, updateGPayAutoImportConfig, triggerGPayAutoImportSweep, getParticipantSuggestions } from "../api/splits";
 import { CATEGORY_NAME_MAX, validateCategoryName, findExistingName } from "../utils/categoryName";
 import { triggerAutoImportSweep, getAutoImports, retryAutoImport } from "../api/statements";
 import { useAccount } from "../context/useAccount";
-import { Badge, Drawer, FONT_SIZE_OPTIONS, Switch, useAuth, useTheme } from "@common/client";
+import { Badge, Drawer, FONT_SIZE_OPTIONS, Switch, useAuth, useTheme, Modal } from "@common/client";
 import { usePrivacy } from "../context/usePrivacy";
 import ProfileSettings from "../components/ProfileSettings";
 import NetworkSettings from "../components/NetworkSettings";
@@ -279,6 +280,127 @@ export default function Settings() {
   const [autoDrafts, setAutoDrafts] = useState({});
   // Collapsed by default; toggled open per account.
   const [autoOpen, setAutoOpen] = useState({});
+
+  // Google Pay Auto-import state & handlers
+  const [gpayConfig, setGpayConfig] = useState(null);
+  const [gpayAutoOpen, setGpayAutoOpen] = useState(false);
+  const [gpayDraftPath, setGpayDraftPath] = useState('');
+  const [gpaySweeping, setGpaySweeping] = useState(false);
+  const [gpayMessage, setGpayMessage] = useState(null);
+  const [splitDisplayFilter, setSplitDisplayFilter] = useState(
+    () => localStorage.getItem('bsp_gpay_split_filter') || 'all'
+  );
+  const [onlyLinkCreatedByMe, setOnlyLinkCreatedByMe] = useState(
+    () => localStorage.getItem('bsp_gpay_only_link_created_by_me') !== 'false'
+  );
+  const [gpayUserName, setGpayUserName] = useState(
+    () => localStorage.getItem('bsp_gpay_user_name') || 'ARUN G'
+  );
+  const [namePickerOpen, setNamePickerOpen] = useState(false);
+  const [namePickerSearch, setNamePickerSearch] = useState('');
+  const [participantList, setParticipantList] = useState([]);
+  const [loadingParticipants, setLoadingParticipants] = useState(false);
+
+  useEffect(() => {
+    getGPayAutoImportConfig().then(res => {
+      setGpayConfig(res.data);
+      setGpayDraftPath(res.data?.watchFolderPath || 'D:\\BankStatements\\Gpay');
+      if (res.data?.userName) {
+        setGpayUserName(res.data.userName);
+        localStorage.setItem('bsp_gpay_user_name', res.data.userName);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const handleSaveGPayUserName = async (val) => {
+    const trimmed = (val || '').trim();
+    setGpayUserName(trimmed);
+    localStorage.setItem('bsp_gpay_user_name', trimmed || 'ARUN G');
+    try {
+      const res = await updateGPayAutoImportConfig({ userName: trimmed });
+      setGpayConfig(res.data);
+    } catch (err) {
+      console.error("Failed to update split user name", err);
+    }
+  };
+
+  const handleOpenNamePicker = async () => {
+    setNamePickerOpen(true);
+    setNamePickerSearch('');
+    if (participantList.length === 0) {
+      setLoadingParticipants(true);
+      try {
+        const res = await getParticipantSuggestions();
+        setParticipantList(res.data || []);
+      } catch (err) {
+        console.error("Failed to load participant suggestions", err);
+      } finally {
+        setLoadingParticipants(false);
+      }
+    }
+  };
+
+  const handleSelectCandidateName = (name) => {
+    handleSaveGPayUserName(name);
+    setNamePickerOpen(false);
+  };
+
+  const handleToggleGPayAutoImport = async () => {
+    try {
+      const next = !gpayConfig?.watchEnabled;
+      const res = await updateGPayAutoImportConfig({ watchEnabled: next });
+      setGpayConfig(res.data);
+    } catch (err) {
+      console.error("Failed to toggle Google Pay auto-import", err);
+      alert("Failed to update Google Pay auto-import.");
+    }
+  };
+
+  const handleSaveGPayAutoImport = async () => {
+    try {
+      const res = await updateGPayAutoImportConfig({
+        watchFolderPath: gpayDraftPath.trim(),
+        watchEnabled: true
+      });
+      setGpayConfig(res.data);
+      setGpayMessage("Google Pay auto-import settings saved.");
+      setTimeout(() => setGpayMessage(null), 4000);
+    } catch (err) {
+      console.error("Failed to save Google Pay auto-import", err);
+      alert(err.response?.data?.message || "Failed to update Google Pay auto-import.");
+    }
+  };
+
+  const handleSweepGPay = async () => {
+    setGpaySweeping(true);
+    setGpayMessage(null);
+    try {
+      const res = await triggerGPayAutoImportSweep();
+      setGpayMessage(res.data.message || "Google Pay sweep complete.");
+      const c = await getGPayAutoImportConfig();
+      setGpayConfig(c.data);
+      setTimeout(() => setGpayMessage(null), 5000);
+    } catch (err) {
+      console.error("Failed to sweep Google Pay", err);
+      setGpayMessage(err.response?.data?.message || "Failed to sweep Google Pay.");
+    } finally {
+      setGpaySweeping(false);
+    }
+  };
+
+  const openBrowseGPay = async () => {
+    try {
+      const res = await browseFolders(gpayDraftPath?.trim() || undefined);
+      setBrowse({ accId: 'gpay', ...res.data, error: null });
+    } catch {
+      try {
+        const res = await browseFolders();
+        setBrowse({ accId: 'gpay', ...res.data, error: null });
+      } catch {
+        alert("Could not open the folder browser.");
+      }
+    }
+  };
   // Defaults first so a partial draft (e.g. only the folder picked via Browse…)
   // never leaves the other field undefined/uncontrolled.
   const autoDraft = (acc) => ({
@@ -1786,6 +1908,290 @@ export default function Settings() {
             )}
           </section>
         ))}
+
+        {/* ── Google Pay (GPay) Account & Auto-Import Card ── */}
+        <section className="setting-card account-card" style={{ borderLeft: '4px solid #4285f4' }}>
+          <div className="setting-card-head">
+            <div className="account-identity">
+              <div className="settings-avatar" style={{ background: '#4285f4', color: '#fff', fontWeight: 800 }}>
+                G
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <h3 className="setting-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>Google Pay (GPay)</span>
+                  <span style={{ fontSize: '11px', background: 'rgba(66, 133, 244, 0.12)', color: '#1a73e8', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>
+                    Auto-Sync
+                  </span>
+                </h3>
+                <p className="setting-card-desc">
+                  Google Takeout &bull; {gpayConfig?.totalGroups || 0} Groups &bull; {gpayConfig?.totalSplits || 0} Splits &bull; {gpayConfig?.bankMatches || 0} Bank Matches
+                  {gpayConfig?.upiActivitiesEnriched > 0 && <> &bull; {gpayConfig.upiActivitiesEnriched} UPI Enriched</>}
+                  {gpayConfig?.cashbackTotalEarned > 0 && <> &bull; {currencyFormatterFull.format(gpayConfig.cashbackTotalEarned)} Cashback</>}
+                  {gpayConfig?.activeVouchersCount > 0 && <> &bull; {gpayConfig.activeVouchersCount} Unexpired Coupons</>}
+                  {gpayConfig?.lastSyncUtc && <> &bull; last synced {formatDate(gpayConfig.lastSyncUtc)}</>}
+                </p>
+              </div>
+            </div>
+
+            {gpayConfig?.totalVolume > 0 && (
+              <div className="account-balance">
+                <span className="account-balance-label">Total Expense Volume</span>
+                <span className="account-balance-value">{currencyFormatterFull.format(gpayConfig.totalVolume)}</span>
+              </div>
+            )}
+
+            {isAdmin && (
+              <div className="setting-card-control">
+                <button
+                  className="btn small"
+                  onClick={handleSweepGPay}
+                  disabled={gpaySweeping}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <FiRefreshCw size={13} className={gpaySweeping ? 'spin' : ''} />
+                  {gpaySweeping ? 'Syncing...' : 'Sync now'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Auto-import: Google Pay watch folder */}
+          {isAdmin && (
+            <div className="account-panel">
+              <div className="account-panel-head">
+                <div style={{ minWidth: 0 }}>
+                  <h4 className="account-panel-title">
+                    Auto-import
+                    {gpayConfig?.watchFolderPath && (gpayConfig?.watchEnabled
+                      ? <Badge variant="green">On</Badge>
+                      : <Badge variant="amber">Paused</Badge>)}
+                  </h4>
+                  <span className="account-panel-hint">
+                    {gpayConfig?.watchFolderPath
+                      ? gpayConfig.watchFolderPath
+                      : 'Drop Google Pay Takeout exports in a folder to auto-sync groups & splits'}
+                  </span>
+                </div>
+                <div className="account-panel-control">
+                  <Switch
+                    checked={!!gpayConfig?.watchFolderPath && !!gpayConfig?.watchEnabled}
+                    disabled={!gpayConfig?.watchFolderPath}
+                    onChange={handleToggleGPayAutoImport}
+                    label="Auto-import for Google Pay"
+                  />
+                  <button
+                    className="btn small ghost"
+                    aria-expanded={!!gpayAutoOpen}
+                    onClick={() => setGpayAutoOpen(prev => !prev)}
+                  >
+                    {gpayAutoOpen ? <>Hide <FiChevronUp size={13} /></> : <>Set up <FiChevronDown size={13} /></>}
+                  </button>
+                </div>
+              </div>
+
+              {gpayMessage && (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success, #10b981)',
+                  padding: '8px 12px', borderRadius: '6px', fontSize: '13px', marginTop: '10px',
+                  display: 'flex', alignItems: 'center', gap: '6px'
+                }}>
+                  <FiCheckCircle size={14} />
+                  <span>{gpayMessage}</span>
+                </div>
+              )}
+
+              {gpayAutoOpen && (
+                <>
+                  <div className="settings-field-grid" style={{ marginTop: 'var(--space-4)' }}>
+                    <label className="settings-field grow">
+                      <span className="settings-field-label">Folder to watch for Google Pay exports</span>
+                      <input
+                        type="text"
+                        placeholder="e.g. D:\BankStatements\Gpay"
+                        value={gpayDraftPath}
+                        onChange={(e) => setGpayDraftPath(e.target.value)}
+                        className="field-input"
+                      />
+                    </label>
+                    <button type="button" className="btn small" onClick={openBrowseGPay}>
+                      <FiFolder size={13} /> Browse…
+                    </button>
+                  </div>
+
+                  <div className="account-panel-actions">
+                    <button className="btn primary small" onClick={handleSaveGPayAutoImport}>
+                      Save GPay settings
+                    </button>
+                    <button
+                      type="button"
+                      className="btn small"
+                      disabled={gpaySweeping || !gpayConfig?.watchFolderPath}
+                      onClick={handleSweepGPay}
+                    >
+                      <FiDownloadCloud size={13} />
+                      {gpaySweeping ? 'Checking folder…' : 'Sweep / Sync now'}
+                    </button>
+                  </div>
+
+                  {browse?.accId === 'gpay' && (
+                    <div className="folder-browser">
+                      <div className="folder-browser-head">
+                        <span className="folder-browser-path">
+                          {browse.path || 'Quick access & drives'}
+                        </span>
+                        {browse.path && (
+                          <button type="button" className="btn small" onClick={() => loadBrowse('gpay', browse.parent)}>Up</button>
+                        )}
+                        <button type="button" className="btn small" onClick={() => setBrowse(null)}>Close</button>
+                      </div>
+                      {browse.error && (
+                        <div className="folder-browser-error">{browse.error}</div>
+                      )}
+                      <div className="folder-browser-list">
+                        {browse.folders.length === 0 ? (
+                          <div className="folder-browser-empty">No subfolders</div>
+                        ) : browse.folders.map(f => (
+                          <button
+                            key={f.path}
+                            type="button"
+                            className="btn small folder-browser-item"
+                            onClick={() => loadBrowse('gpay', f.path)}
+                          >
+                            <FiFolder size={12} style={{ flexShrink: 0 }} /> {f.name}
+                          </button>
+                        ))}
+                      </div>
+                      {browse.path && (
+                        <button
+                          type="button"
+                          className="btn primary small"
+                          style={{ marginTop: 'var(--space-2)' }}
+                          onClick={() => { setGpayDraftPath(browse.path); setBrowse(null); }}
+                        >
+                          Use this folder
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="setting-note">
+                    <span>
+                      Drop new <code>takeout-*.zip</code> archives (includes UPI activity, Cashback &amp; Subscriptions) or <code>Group expenses.json</code> into this folder.
+                      The backend watcher sweeps the folder periodically and syncs splits, UPI merchant names, cashback, and subscriptions.
+                    </span>
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Split & Repayment Preferences */}
+          {isAdmin && (
+            <div className="account-panel" style={{ marginTop: 'var(--space-3)' }}>
+              <div className="account-panel-head" style={{ marginBottom: '10px' }}>
+                <div style={{ minWidth: 0 }}>
+                  <h4 className="account-panel-title" style={{ fontSize: '14px' }}>Splits &amp; Repayment Preferences</h4>
+                  <span className="account-panel-hint" style={{ fontSize: '12px' }}>Configure your split identity and transaction linking options</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+                {/* Name setting */}
+                <div className="settings-field">
+                  <span className="settings-field-label" style={{ fontSize: '12px', fontWeight: 600 }}>Your Name in Splits / Google Pay</span>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      value={gpayUserName}
+                      onChange={(e) => setGpayUserName(e.target.value)}
+                      onBlur={(e) => handleSaveGPayUserName(e.target.value)}
+                      placeholder="e.g. ARUN G, Arun"
+                      className="field-input"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn small btn--outline"
+                      onClick={handleOpenNamePicker}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', padding: '6px 10px', fontSize: '12px', cursor: 'pointer' }}
+                      title="Pick name from detected bank accounts or contacts"
+                    >
+                      <FiUserCheck size={13} style={{ color: 'var(--primary, #3b82f6)' }} /> Pick...
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                    <span>Matches your share and expenses.</span>
+                    {gpayConfig?.candidateUserNames && gpayConfig.candidateUserNames.length > 0 && (
+                      <span style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 600 }}>Detected:</span>
+                        {gpayConfig.candidateUserNames.slice(0, 3).map((name, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => handleSaveGPayUserName(name)}
+                            style={{
+                              fontSize: '11px', padding: '1px 6px', borderRadius: '10px',
+                              border: gpayUserName.trim().toLowerCase() === name.toLowerCase() ? '1px solid var(--primary, #3b82f6)' : '1px solid var(--border-color, #d1d5db)',
+                              background: gpayUserName.trim().toLowerCase() === name.toLowerCase() ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                              color: gpayUserName.trim().toLowerCase() === name.toLowerCase() ? 'var(--primary, #3b82f6)' : 'var(--text-muted)',
+                              cursor: 'pointer', fontWeight: 600
+                            }}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Default display setting */}
+                <div className="settings-field">
+                  <span className="settings-field-label" style={{ fontSize: '12px', fontWeight: 600 }}>Default Splits Display</span>
+                  <select
+                    value={splitDisplayFilter}
+                    onChange={(e) => {
+                      setSplitDisplayFilter(e.target.value);
+                      localStorage.setItem('bsp_gpay_split_filter', e.target.value);
+                    }}
+                    className="field-input"
+                  >
+                    <option value="all">All Confirmed Splits</option>
+                    <option value="owed_by_me">Owed by Me (Pending shares to pay)</option>
+                    <option value="to_collect">To Collect (Pending debts owed to you)</option>
+                    <option value="created_by_me">Only splits created by me (I paid the bill)</option>
+                    <option value="included">Only splits involving me (I paid or have a share)</option>
+                  </select>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Initial filter tab shown on the Splits page.
+                  </span>
+                </div>
+              </div>
+
+              {/* Compact linking preference toggle */}
+              <div style={{ marginTop: '12px', padding: '10px 14px', background: 'var(--surface-2, #f9fafb)', borderRadius: '6px', border: '1px solid var(--border-color, #e5e7eb)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
+                      Only allow transaction linking for splits created by me
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px', lineHeight: 1.3 }}>
+                      Hides incoming credit matching on friend-paid bills to avoid matching repayments when you were not the bill payer.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={onlyLinkCreatedByMe}
+                    onChange={(checked) => {
+                      setOnlyLinkCreatedByMe(checked);
+                      localStorage.setItem('bsp_gpay_only_link_created_by_me', checked ? 'true' : 'false');
+                    }}
+                    label="Only link splits created by me"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
     )
   );
@@ -2326,6 +2732,111 @@ export default function Settings() {
           </div>
         )}
       </Drawer>
+
+      {/* ── NAME PICKER MODAL ── */}
+      <Modal
+        open={namePickerOpen}
+        onClose={() => setNamePickerOpen(false)}
+        title="Pick Your Name in Google Pay & Splits"
+        subtitle="Choose how your name appears in your bank accounts or Google Pay group expenses"
+        width={520}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '8px 0' }}>
+          <div style={{ position: 'relative' }}>
+            <FiSearch size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              placeholder="Search contacts or type name..."
+              value={namePickerSearch}
+              onChange={(e) => setNamePickerSearch(e.target.value)}
+              className="field-input"
+              style={{ width: '100%', paddingLeft: '32px' }}
+              autoFocus
+            />
+          </div>
+
+          {/* Quick candidates */}
+          {gpayConfig?.candidateUserNames && gpayConfig.candidateUserNames.length > 0 && (
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+                DETECTED FROM ACCOUNTS &amp; SPLITS:
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {gpayConfig.candidateUserNames
+                  .filter(n => !namePickerSearch || n.toLowerCase().includes(namePickerSearch.toLowerCase()))
+                  .map((name, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleSelectCandidateName(name)}
+                      className="btn btn--outline"
+                      style={{ padding: '4px 10px', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
+                    >
+                      <FiUserCheck size={12} style={{ marginRight: '4px', color: 'var(--primary, #3b82f6)' }} />
+                      {name}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Contacts / Participants list */}
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>
+              ALL DETECTED PARTICIPANTS &amp; CONTACTS:
+            </div>
+            {loadingParticipants ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                Loading contacts...
+              </div>
+            ) : (
+              <div style={{ maxHeight: '240px', overflowY: 'auto', border: '1px solid var(--border-color, #e5e7eb)', borderRadius: '6px' }}>
+                {participantList
+                  .filter(p => !namePickerSearch || p.name.toLowerCase().includes(namePickerSearch.toLowerCase()) || (p.vpa && p.vpa.toLowerCase().includes(namePickerSearch.toLowerCase())))
+                  .map((p, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => handleSelectCandidateName(p.name)}
+                      style={{
+                        padding: '8px 12px',
+                        borderBottom: '1px solid var(--border-subtle, #f3f4f6)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-2, #f9fafb)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>{p.name}</div>
+                        {p.vpa && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{p.vpa}</div>}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn--outline"
+                        style={{ padding: '3px 8px', fontSize: '11px' }}
+                      >
+                        Use Name
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+            <button
+              type="button"
+              className="btn btn--outline"
+              onClick={() => setNamePickerOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={!!confirmDialog}

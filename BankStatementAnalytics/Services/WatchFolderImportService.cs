@@ -165,6 +165,18 @@ namespace BankStatementAnalytics.Services
                     await ImportFileAsync(account, file);
                 }
             }
+
+            // Also sweep Google Pay Takeout watch folder if configured and enabled
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var gpay = scope.ServiceProvider.GetRequiredService<GPayTakeoutService>();
+                await gpay.SweepBackgroundAsync(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Google Pay watch-folder sweep error", ex);
+            }
         }
 
         private async Task ImportFileAsync(Account account, string file)

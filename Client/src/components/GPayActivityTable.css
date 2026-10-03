@@ -1,0 +1,38 @@
+.gpay-activity-list { min-width:0; }
+.gpay-activity-scroll { max-height:calc(100vh - 310px); min-height:180px; overflow:auto; border:1px solid var(--border-color,#e2e8f0); border-radius:12px; background:var(--surface,#fff); }
+.gpay-activity-table { width:100%; border-collapse:separate !important; border-spacing:0; table-layout:fixed; min-width:850px !important; }
+.gpay-activity-table th { position:sticky; top:0; z-index:1; background:var(--surface-2,#f4f5fa); padding:14px 16px !important; color:var(--text-muted,#64748b); text-transform:uppercase; font-size:11px; letter-spacing:.04em; text-align:left; }
+.gpay-activity-table th:first-child { width:85px; }
+.gpay-activity-table th:nth-child(3) { width:160px; }
+.gpay-activity-table th:nth-child(4) { width:165px; }
+.gpay-activity-table th:last-child { width:145px; text-align:right; }
+.gpay-activity-table th button { border:0; padding:0; border-radius:0; background:transparent; font:inherit; color:inherit; text-transform:inherit; letter-spacing:inherit; display:inline-flex; gap:5px; align-items:center; }
+.gpay-activity-table th[aria-sort="ascending"] button,.gpay-activity-table th[aria-sort="descending"] button { color:var(--primary,#4f46e5); }
+.gpay-activity-table td { padding:13px 16px !important; vertical-align:middle !important; border-bottom:1px solid var(--border-subtle,#e2e8f0); font-size:13px; }
+.gpay-activity-table tr:last-child td { border-bottom:0; }
+.gpay-activity-table tbody tr:hover { background:var(--surface-2,#f4f5fa); }
+.gpay-activity-table tbody tr { cursor:pointer; }
+.gpay-activity-table tbody tr.is-selected { background:var(--primary-light,#eef2ff); }
+.gpay-activity-table tbody tr.is-selected td:first-child { box-shadow:inset 3px 0 var(--primary,#4f46e5); }
+.gpay-activity-table .gpay-activity-detail-link { display:block; max-width:100%; border:0; padding:0; background:transparent; color:var(--text-main); font:inherit; font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; cursor:pointer; }
+.gpay-activity-date { text-align:center !important; font-variant-numeric:tabular-nums; }
+.gpay-activity-date strong { display:block; font-size:17px; }
+.gpay-activity-date small { text-transform:uppercase; font-size:10px; margin-top:2px !important; }
+.gpay-activity-merchant { display:flex; gap:12px; align-items:center; min-width:0; }
+.gpay-activity-merchant > :first-child { flex-shrink:0; }
+.gpay-activity-merchant > div:last-child { min-width:0; }
+.gpay-activity-merchant strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.gpay-activity-meta { display:flex; align-items:center; gap:6px; margin-top:4px; font-size:11px; color:var(--text-muted,#64748b); min-width:0; }
+.gpay-activity-meta > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gpay-activity-account { flex-shrink:0; padding:1px 5px; border:1px solid var(--border-subtle,#e2e8f0); border-radius:5px; font-size:10px; background:var(--surface-2,#f4f5fa); }
+.gpay-activity-status { font-size:12px; font-weight:500; }
+.gpay-activity-status.is-complete { color:var(--success,#059669); }
+.gpay-activity-status.is-failed { color:var(--danger,#dc2626); }
+.gpay-activity-table td small { font-size:11px; }
+.gpay-activity-table td button { white-space:nowrap; font-size:12px; margin:0; }
+.gpay-activity-table .gpay-activity-amount { text-align:right; font-weight:750; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.gpay-activity-amount.is-credit { color:var(--success,#059669); }
+.gpay-activity-amount.is-debit { color:var(--danger,#dc2626); }
+.gpay-activity-table .gpay-activity-empty { text-align:center; padding:32px !important; color:var(--text-muted,#64748b); }
+.gpay-activity-scroll:focus-visible { outline:2px solid var(--primary,#4f46e5); outline-offset:3px; }
+@media(max-width:640px) { .gpay-activity-scroll { max-height:65vh; } .gpay-activity-table { min-width:790px !important; } }

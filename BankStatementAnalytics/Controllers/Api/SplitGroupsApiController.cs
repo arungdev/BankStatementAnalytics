@@ -6,21 +6,35 @@ using Microsoft.AspNetCore.Mvc;
 namespace BankStatementAnalytics.Controllers.Api
 {
     [ApiController]
+    [TypeFilter(typeof(GPayValidationFilter))]
     [Route("api/split-groups")]
     public class SplitGroupsApiController : TenantControllerBase
     {
         private readonly GPaySplitService _splitService;
+        private readonly GPayTakeoutService _takeoutService;
 
-        public SplitGroupsApiController(GPaySplitService splitService)
+        public SplitGroupsApiController(GPaySplitService splitService, GPayTakeoutService takeoutService)
         {
             _splitService = splitService;
+            _takeoutService = takeoutService;
         }
 
         // GET: api/split-groups — confirmed/created split groups
         [HttpGet]
-        public async Task<IActionResult> GetGroups()
+        public async Task<IActionResult> GetGroups([FromQuery] string? filter = null)
         {
             var groups = await _splitService.GetGroupsAsync(CurrentUserId);
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                if (filter.Equals("created_by_me", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    groups = groups.Where(g => g.IsCreatedByUser).ToList();
+                }
+                else if (filter.Equals("included", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    groups = groups.Where(g => g.IsUserInvolved).ToList();
+                }
+            }
             return Ok(groups);
         }
 
@@ -102,8 +116,15 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request == null || string.IsNullOrWhiteSpace(request.BankReference))
                 return BadRequest("Transaction details are required.");
 
-            var linked = await _splitService.LinkTransactionToMemberAsync(CurrentUserId, id, memberId, request);
-            return linked != null ? Ok(linked) : NotFound();
+            try
+            {
+                var linked = await _splitService.LinkTransactionToMemberAsync(CurrentUserId, id, memberId, request);
+                return linked != null ? Ok(linked) : NotFound();
+            }
+            catch (System.ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         // POST: api/split-groups/{id}/members/{memberId}/unlink-transaction — unlink bank transaction
@@ -129,5 +150,181 @@ namespace BankStatementAnalytics.Controllers.Api
             var deleted = await _splitService.DeleteGroupAsync(CurrentUserId, id);
             return deleted ? NoContent() : NotFound();
         }
+
+        // ────────────────────────────────────────────────────────────────────
+        // PARTICIPANT SUGGESTIONS
+        // ────────────────────────────────────────────────────────────────────
+
+        // GET: api/split-groups/participants/suggest — smart suggestions from contacts & previous splits
+        [HttpGet("participants/suggest")]
+        public async Task<IActionResult> GetParticipantSuggestions([FromQuery] string? q = null, [FromQuery] int limit = 20)
+        {
+            var suggestions = await _splitService.GetParticipantSuggestionsAsync(CurrentUserId, q, limit);
+            return Ok(suggestions);
+        }
+
+        // ────────────────────────────────────────────────────────────────────
+        // PERSISTENT GPAY BILL GROUPS
+        // ────────────────────────────────────────────────────────────────────
+
+        // GET: api/split-groups/bill-groups — all persistent bill groups with members, splits, and owed balances
+        [HttpGet("bill-groups")]
+        public async Task<IActionResult> GetBillGroups()
+        {
+            var groups = await _splitService.GetBillGroupsAsync(CurrentUserId);
+            return Ok(groups);
+        }
+
+        // GET: api/split-groups/bill-groups/{id:int}
+        [HttpGet("bill-groups/{id:int}")]
+        public async Task<IActionResult> GetBillGroupById(int id)
+        {
+            var group = await _splitService.GetBillGroupByIdAsync(CurrentUserId, id);
+            return group != null ? Ok(group) : NotFound();
+        }
+
+        // POST: api/split-groups/bill-groups — create persistent bill group with initial members
+        [HttpPost("bill-groups")]
+        public async Task<IActionResult> CreateBillGroup([FromBody] CreateBillGroupRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Name))
+                return BadRequest("Group name is required.");
+
+            var created = await _splitService.CreateBillGroupAsync(CurrentUserId, request);
+            return CreatedAtAction(nameof(GetBillGroupById), new { id = created.Id }, created);
+        }
+
+        // PUT: api/split-groups/bill-groups/{id:int} — update group name or description
+        [HttpPut("bill-groups/{id:int}")]
+        public async Task<IActionResult> UpdateBillGroup(int id, [FromBody] UpdateBillGroupRequest request)
+        {
+            if (request == null)
+                return BadRequest("Invalid request.");
+
+            var updated = await _splitService.UpdateBillGroupAsync(CurrentUserId, id, request);
+            return updated != null ? Ok(updated) : NotFound();
+        }
+
+        // DELETE: api/split-groups/bill-groups/{id:int} — delete group (unlinks splits)
+        [HttpDelete("bill-groups/{id:int}")]
+        public async Task<IActionResult> DeleteBillGroup(int id)
+        {
+            var deleted = await _splitService.DeleteBillGroupAsync(CurrentUserId, id);
+            return deleted ? NoContent() : NotFound();
+        }
+
+        // POST: api/split-groups/bill-groups/{id:int}/members — add member to group
+        [HttpPost("bill-groups/{id:int}/members")]
+        public async Task<IActionResult> AddBillGroupMember(int id, [FromBody] AddBillGroupMemberRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Name))
+                return BadRequest("Member name is required.");
+
+            var member = await _splitService.AddBillGroupMemberAsync(CurrentUserId, id, request);
+            return member != null ? Ok(member) : NotFound();
+        }
+
+        // DELETE: api/split-groups/bill-groups/{id:int}/members/{memberId:int} — remove member from group
+        [HttpDelete("bill-groups/{id:int}/members/{memberId:int}")]
+        public async Task<IActionResult> RemoveBillGroupMember(int id, int memberId)
+        {
+            var deleted = await _splitService.RemoveBillGroupMemberAsync(CurrentUserId, id, memberId);
+            return deleted ? NoContent() : NotFound();
+        }
+
+        // ────────────────────────────────────────────────────────────────────
+        // GOOGLE PAY TAKEOUT IMPORT
+        // ────────────────────────────────────────────────────────────────────
+
+        // GET: api/split-groups/import-takeout/status — check if local takeout file is available
+        [HttpGet("import-takeout/status")]
+        public IActionResult GetLocalTakeoutStatus()
+        {
+            const string defaultPath = @"D:\BankStatements\Gpay\takeout-20261003T045601Z-1-001.zip";
+            var exists = System.IO.File.Exists(defaultPath);
+            long size = 0;
+            if (exists)
+            {
+                try { size = new System.IO.FileInfo(defaultPath).Length; } catch { }
+            }
+
+            return Ok(new
+            {
+                localFileDetected = exists,
+                defaultPath = defaultPath,
+                fileSizeBytes = size
+            });
+        }
+
+        // POST: api/split-groups/import-takeout — upload Takeout .zip or Group expenses.json
+        [HttpPost("import-takeout")]
+        [RequestSizeLimit(250_000_000)]
+        public async Task<IActionResult> ImportTakeout([FromForm] Microsoft.AspNetCore.Http.IFormFile? file, [FromForm] string? filePath = null, [FromForm] string? expectedArchiveHash = null)
+        {
+            if (file != null && file.Length > 0)
+            {
+                await using var stream = file.OpenReadStream();
+                var result = await _takeoutService.ImportFromStreamAsync(CurrentUserId, stream, file.FileName, expectedArchiveHash);
+                return Ok(result);
+            }
+
+            var path = !string.IsNullOrWhiteSpace(filePath) ? filePath : @"D:\BankStatements\Gpay\takeout-20261003T045601Z-1-001.zip";
+            if (System.IO.File.Exists(path))
+            {
+                var result = await _takeoutService.ImportFromPathAsync(CurrentUserId, path, expectedArchiveHash);
+                return Ok(result);
+            }
+
+            return BadRequest(new { success = false, message = "No file uploaded or file not found at path." });
+        }
+
+        // POST: api/split-groups/import-takeout-path — import directly from server-side file path
+        [HttpPost("import-takeout-path")]
+        public async Task<IActionResult> ImportTakeoutFromPath([FromBody] ImportTakeoutPathRequest request)
+        {
+            var path = !string.IsNullOrWhiteSpace(request?.FilePath)
+                ? request.FilePath
+                : @"D:\BankStatements\Gpay\takeout-20261003T045601Z-1-001.zip";
+
+            var result = await _takeoutService.ImportFromPathAsync(CurrentUserId, path, request?.ExpectedArchiveHash);
+            return Ok(result);
+        }
+
+        // ────────────────────────────────────────────────────────────────────
+        // GPAY AUTO-IMPORT / WATCH FOLDER CONFIGURATION & SWEEP
+        // ────────────────────────────────────────────────────────────────────
+
+        // GET: api/split-groups/auto-import — get GPay watch folder config and current stats
+        [HttpGet("auto-import")]
+        public async Task<IActionResult> GetAutoImportConfig()
+        {
+            var config = await _takeoutService.GetAutoImportConfigAsync(CurrentUserId);
+            return Ok(config);
+        }
+
+        // PUT: api/split-groups/auto-import — update GPay watch folder path and enabled status
+        [HttpPut("auto-import")]
+        public async Task<IActionResult> UpdateAutoImportConfig([FromBody] UpdateGPayAutoImportRequest request)
+        {
+            if (request == null)
+                return BadRequest("Invalid request.");
+
+            var config = await _takeoutService.UpdateAutoImportConfigAsync(CurrentUserId, request);
+            return Ok(config);
+        }
+
+        // POST: api/split-groups/auto-import/sweep — trigger an immediate sweep of the GPay watch folder
+        [HttpPost("auto-import/sweep")]
+        public async Task<IActionResult> SweepAutoImport()
+        {
+            var result = await _takeoutService.SweepAsync(CurrentUserId);
+            return Ok(result);
+        }
+    }
+
+    public class ImportTakeoutPathRequest
+    {
+        public string? FilePath { get; set; }
+        public string? ExpectedArchiveHash { get; set; }
     }
 }

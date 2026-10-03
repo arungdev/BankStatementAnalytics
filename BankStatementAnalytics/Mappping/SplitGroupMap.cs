@@ -31,6 +31,12 @@ namespace BankStatementAnalytics.Mappping
                 m.NotNullable(true);
             });
 
+            Property(x => x.SourceKey, m => m.Length(64));
+            Property(x => x.SourceState, m => m.Length(50));
+            Property(x => x.CreatorName, m => m.Length(250));
+            Property(x => x.SourceSnapshot, m => m.Type(NHibernate.NHibernateUtil.StringClob));
+            Property(x => x.SourceImportedUtc);
+
             Property(x => x.Description, m => m.Length(1000));
             Property(x => x.Date, m => m.Index("IX_SplitGroups_Date"));
 
@@ -41,6 +47,8 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.Status, m => m.Length(50));
             Property(x => x.Confidence, m => m.Length(50));
             Property(x => x.SplitType, m => m.Length(50));
+            Property(x => x.BillGroupId, m => m.Index("IX_SplitGroups_BillGroupId"));
+            Property(x => x.GroupName, m => m.Length(250));
 
             Property(x => x.ParentAccountId);
             Property(x => x.ParentBankReference, m => m.Length(100));

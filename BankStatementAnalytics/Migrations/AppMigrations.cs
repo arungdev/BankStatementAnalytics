@@ -165,6 +165,76 @@ namespace BankStatementAnalytics.Migrations
                       createdon {dateType} NOT NULL
                   )");
               });
+
+            // ── Version 5 ────────────────────────────────────────────────────────────
+            // Persistent GPay-style groups with multiple splits & member tracking
+            mb.ForVersion(5)
+              .AddStep("Guard: bill_groups table", ctx =>
+              {
+                  if (ctx.TableExists("bill_groups") || ctx.TableExists("Bill_Groups")) return;
+                  var isPg = ctx.Provider == DatabaseProvider.PostgreSQL;
+                  var idType = isPg ? "SERIAL PRIMARY KEY" : "INTEGER PRIMARY KEY AUTOINCREMENT";
+                  var dateType = isPg ? "TIMESTAMP" : "DATETIME";
+                  ctx.Execute($@"CREATE TABLE bill_groups (
+                      id {idType},
+                      owneruserid BIGINT NULL,
+                      name VARCHAR(250) NOT NULL,
+                      description VARCHAR(1000) NULL,
+                      createdon {dateType} NOT NULL,
+                      updatedon {dateType} NULL
+                  )");
+              })
+              .AddStep("Guard: bill_group_members table", ctx =>
+              {
+                  if (ctx.TableExists("bill_group_members") || ctx.TableExists("Bill_Group_Members")) return;
+                  var isPg = ctx.Provider == DatabaseProvider.PostgreSQL;
+                  var idType = isPg ? "SERIAL PRIMARY KEY" : "INTEGER PRIMARY KEY AUTOINCREMENT";
+                  var dateType = isPg ? "TIMESTAMP" : "DATETIME";
+                  ctx.Execute($@"CREATE TABLE bill_group_members (
+                      id {idType},
+                      owneruserid BIGINT NULL,
+                      billgroupid INT NOT NULL,
+                      name VARCHAR(250) NOT NULL,
+                      vpa VARCHAR(255) NULL,
+                      createdon {dateType} NOT NULL
+                  )");
+              })
+              .AddStep("Guard: billgroupid and groupname on split_groups", ctx =>
+              {
+                  if (!ctx.ColumnExists("split_groups", "billgroupid"))
+                  {
+                      ctx.Execute("ALTER TABLE split_groups ADD COLUMN billgroupid INT NULL");
+                  }
+                  if (!ctx.ColumnExists("split_groups", "groupname"))
+                  {
+                      ctx.Execute("ALTER TABLE split_groups ADD COLUMN groupname VARCHAR(250) NULL");
+                  }
+              });
+
+            mb.ForVersion(6).AddStep("Google Pay source evidence and allocations", ctx => {
+                var pg = ctx.Provider == DatabaseProvider.PostgreSQL;
+                var id = pg ? "SERIAL PRIMARY KEY" : "INTEGER PRIMARY KEY AUTOINCREMENT";
+                var date = pg ? "TIMESTAMP" : "DATETIME";
+                foreach (var column in new[] { "sourcekey VARCHAR(64)", "sourcestate VARCHAR(50)", "creatorname VARCHAR(250)", "sourcesnapshot TEXT", $"sourceimportedutc {date}" }) {
+                    var name = column.Split(' ')[0];
+                    if (!ctx.ColumnExists("split_groups", name)) ctx.Execute($"ALTER TABLE split_groups ADD COLUMN {column} NULL");
+                }
+                foreach (var column in new[] { "sourcestate VARCHAR(50)", "settlementevidence VARCHAR(50)" }) {
+                    if (!ctx.ColumnExists("split_group_members", column.Split(' ')[0])) ctx.Execute($"ALTER TABLE split_group_members ADD COLUMN {column} NULL");
+                }
+                if (!ctx.TableExists("gpay_evidence_records")) {
+                    ctx.Execute($"CREATE TABLE gpay_evidence_records (id {id}, owneruserid BIGINT NOT NULL, kind VARCHAR(40) NOT NULL, sourcekey VARCHAR(64) NOT NULL, payload TEXT NOT NULL, createdutc {date} NOT NULL)");
+
+                }
+
+                ctx.Execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_gpay_evidence_source ON gpay_evidence_records(owneruserid,kind,sourcekey)");
+                ctx.Execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_gpay_expense_source ON split_groups(owneruserid,sourcekey)");
+                if (!ctx.TableExists("gpay_settlement_allocations")) {
+                    ctx.Execute($"CREATE TABLE gpay_settlement_allocations (id {id}, owneruserid BIGINT NOT NULL, splitid INT NOT NULL, memberid INT NOT NULL, accountid BIGINT NOT NULL, bankreference VARCHAR(100) NOT NULL, banktype VARCHAR(50) NOT NULL, transactiontype VARCHAR(10) NOT NULL, amount NUMERIC(18,2) NOT NULL, createdutc {date} NOT NULL)");
+
+                }
+                ctx.Execute("CREATE INDEX IF NOT EXISTS ix_gpay_alloc_transaction ON gpay_settlement_allocations(owneruserid,accountid,bankreference,banktype,transactiontype)");
+            });
         }
     }
 }
