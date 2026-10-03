@@ -36,3 +36,8 @@ Client/node_modules/
 /.analysis-*.json
 /.analysis-*.sql
 /Client/.analysis-*
+/.claude/settings.local.json
+/splits_all.txt
+/splits_eval.csv
+/GPAY_AUDIT.md
+/GPAY_TAKEOUT_ANALYSIS.md

@@ -41,6 +41,20 @@ namespace BankStatementAnalytics.Controllers.Api
             // Totals computed in SQL rather than by loading every row.
             var totalIncome = await analyticsQuery.SumAsync(t => (decimal?)t.Credit) ?? 0m;
             var totalSpends = await analyticsQuery.SumAsync(t => (decimal?)t.Debit) ?? 0m;
+
+            // Adjust for bill splits: repayments collected from friends are not new income,
+            // and recovered amounts reduce your gross spending to your true personal share.
+            var settledRepaymentSum = await session.Query<SplitGroupMember>()
+                .Where(m => m.LinkedAccountId != null && ids.Contains(m.LinkedAccountId.Value) && m.IsSettled)
+                .SumAsync(m => (decimal?)m.PaidAmount) ?? 0m;
+
+            var settledBillOffsetSum = await session.Query<SplitGroup>()
+                .Where(g => g.ParentAccountId != null && ids.Contains(g.ParentAccountId.Value) && g.SettledAmount > 0)
+                .SumAsync(g => (decimal?)g.SettledAmount) ?? 0m;
+
+            totalIncome = Math.Max(0m, totalIncome - settledRepaymentSum);
+            totalSpends = Math.Max(0m, totalSpends - settledBillOffsetSum);
+
             var totalTransactions = await baseQuery.CountAsync();
 
             // Top spending merchants — grouped server-side.

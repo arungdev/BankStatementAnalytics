@@ -55,18 +55,41 @@ namespace BankStatementAnalytics.Controllers.Api
             // .Date is applied in memory (in the group keys) rather than in SQL: date-part
             // extraction on a COALESCE expression is a dialect-translation risk.
             var all = await query
-                .Select(t => new { Date = t.EffectiveDate ?? t.TransactionDate, Spend = t.Debit, Income = t.Credit })
+                .Select(t => new {
+                    AccountId = t.AccountId,
+                    BankReference = t.BankReference,
+                    BankType = t.BankType,
+                    Date = t.EffectiveDate ?? t.TransactionDate,
+                    Spend = t.Debit,
+                    Income = t.Credit
+                })
                 .ToListAsync();
 
             if (!all.Any())
                 return Ok(new List<object>());
+
+            var repaymentKeys = await SplitGroupHelper.GetSettledRepaymentKeysAsync(session, ids);
+            var parentOffsets = await SplitGroupHelper.GetParentBillOffsetsAsync(session, ids);
+
+            var adjusted = all.Select(t =>
+            {
+                var isRepayment = t.Income > 0 && repaymentKeys.Contains(new SplitGroupHelper.TransactionKey(t.AccountId, t.BankReference, t.BankType ?? string.Empty));
+                var netSpend = t.Spend > 0 ? SplitGroupHelper.GetNetSpend(t.AccountId, t.BankReference, t.BankType ?? string.Empty, t.Spend, parentOffsets) : 0m;
+                var netIncome = isRepayment ? 0m : t.Income;
+                return new
+                {
+                    Date = t.Date,
+                    Spend = netSpend,
+                    Income = netIncome
+                };
+            }).ToList();
 
             IEnumerable<object> result;
 
             switch (period.ToLower())
             {
                 case "day":
-                    result = all
+                    result = adjusted
                         .GroupBy(t => t.Date.Date)
                         .OrderBy(g => g.Key)
                         .Select(g => new {
@@ -78,7 +101,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     break;
 
                 case "week":
-                    result = all
+                    result = adjusted
                         .GroupBy(t => GetStartOfWeek(t.Date))
                         .OrderBy(g => g.Key)
                         .Select(g => {
@@ -96,7 +119,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     break;
 
                 case "month":
-                    result = all
+                    result = adjusted
                         .GroupBy(t => new DateTime(t.Date.Year, t.Date.Month, 1))
                         .OrderBy(g => g.Key)
                         .Select(g => new {
@@ -117,7 +140,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
                     if (statementDay == null)
                     {
-                        result = all
+                        result = adjusted
                             .GroupBy(t => new DateTime(t.Date.Year, t.Date.Month, 1))
                             .OrderBy(g => g.Key)
                             .Select(g => new {
@@ -129,7 +152,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     }
                     else
                     {
-                        result = all
+                        result = adjusted
                             .GroupBy(t => GetBillingCycle(t.Date, statementDay.Value))
                             .OrderBy(g => g.Key)
                             .Select(g => new {

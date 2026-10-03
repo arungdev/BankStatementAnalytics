@@ -83,7 +83,7 @@ namespace BankStatementAnalytics.Services
         }
 
         // ── Shared resolution logic (no session/transaction management) ───────────
-        private static Merchant ResolveOrCreateCore(
+        public static Merchant ResolveOrCreateCore(
             ISession session, long? ownerUserId, string name, string? bankCode, long accountId, string? upiId)
         {
             Merchant? found = null;
