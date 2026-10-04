@@ -15,6 +15,7 @@ namespace BankStatementAnalytics.Models
         public virtual long? OwnerUserId { get; set; }
 
         public virtual string Name { get; set; } = string.Empty;
+        public virtual string? GPayProfileId { get; set; }
 
         public virtual string? Description { get; set; }
 

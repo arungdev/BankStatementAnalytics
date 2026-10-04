@@ -82,9 +82,13 @@ export default function Splits() {
   const [activityPanelWidth, setActivityPanelWidth] = useState(0);
 
   // Main data states
-  const [billGroups, setBillGroups] = useState([]);
+  const [allBillGroups, setBillGroups] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [allGroups, setGroups] = useState([]);
+  const [gpayProfiles, setGpayProfiles] = useState([{ id: 'default', name: 'Primary GPay' }]);
+  const [gpayProfileId, setGpayProfileId] = useState('all');
+  const groups = useMemo(() => allGroups.filter(group => gpayProfileId === 'all' || (gpayProfileId === 'custom' ? !isImportedGPayExpense(group) : isImportedGPayExpense(group) && (group.gPayProfileId || 'default') === gpayProfileId)), [allGroups, gpayProfileId]);
+  const billGroups = useMemo(() => allBillGroups.filter(group => gpayProfileId === 'all' || (gpayProfileId === 'custom' ? !isImportedGPayGroup(group) : isImportedGPayGroup(group) && (group.gPayProfileId || 'default') === gpayProfileId)), [allBillGroups, gpayProfileId]);
   const [participantSuggestions, setParticipantSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -137,13 +141,15 @@ export default function Splits() {
       getBillGroups().then(res => res.data || []).catch(() => []),
       getSplitSuggestions().then(res => res.data || []).catch(() => []),
       getSplitGroups().then(res => res.data || []).catch(() => []),
-      getParticipantSuggestions().then(res => res.data || []).catch(() => [])
+      getParticipantSuggestions().then(res => res.data || []).catch(() => []),
+      api.get('/split-groups/gpay-profiles').then(res => res.data || []).catch(() => [{ id: 'default', name: 'Primary GPay' }])
     ])
-      .then(([bGrps, suggs, grps, pSuggs]) => {
+      .then(([bGrps, suggs, grps, pSuggs, profiles]) => {
         setBillGroups(bGrps);
         setSuggestions(suggs);
         setGroups(grps);
         setParticipantSuggestions(pSuggs);
+        setGpayProfiles(profiles);
 
         // If no persistent groups exist yet but suggestions or splits exist, pick tab smartly
         if (bGrps.length === 0) {
@@ -228,6 +234,7 @@ export default function Splits() {
       setSplitLinkError(null);
       setActiveTab('splits');
       setSplitFilter('all');
+      setGpayProfileId('all');
       setSelectedBillGroupId(null);
       setLinkedTransaction(null);
       setSelectedSplitDetail(res.data);
@@ -271,6 +278,7 @@ export default function Splits() {
   }, [configuredUserName]);
 
   const isSelfMember = (m) => {
+    if (m?.sourceState != null) return !!m.isUser;
     if (m?.isUser) return true;
     const name = (m?.participantName || m?.name || '').trim().toLowerCase();
     return selfNameTokens.includes(name);
@@ -1198,6 +1206,7 @@ export default function Splits() {
 
       {/* KPI Stat Cards */}
       {splitLinkError?.key === location.key && <div role="alert" className="shared-bills-summary"><p>{splitLinkError.message}</p><button className="btn btn--outline" onClick={() => setSplitLinkAttempt(value => value + 1)}>Retry opening expense</button></div>}
+      {gpayProfiles.length > 1 && <label className="splits-profile-filter">GPay profile<select value={gpayProfileId} onChange={event => { setGpayProfileId(event.target.value); setSelectedBillGroupId(null); setSelectedSplitDetail(null); setLinkedTransaction(null); }}><option value="all">All profiles &amp; custom splits</option>{gpayProfiles.map(profile => <option key={profile.id} value={profile.id}>{maskName(profile.name)}</option>)}<option value="custom">Custom splits only</option></select></label>}
       <div className="splits-summary">
         <StatCard
           label="Total Bill Volume"
@@ -1243,7 +1252,7 @@ export default function Splits() {
         ))}
       </nav>
 
-      {activeTab === 'evidence' && <GPayTakeoutReview onRefresh={() => loadData(true)} onTransaction={setLinkedTransaction} onPanelWidthChange={setActivityPanelWidth} />}
+      {activeTab === 'evidence' && <GPayTakeoutReview key={gpayProfileId} profileId={gpayProfileId} onRefresh={() => loadData(true)} onTransaction={setLinkedTransaction} onPanelWidthChange={setActivityPanelWidth} />}
       {/* ── TAB 1: PERSISTENT GPAY GROUPS ── */}
       {activeTab === 'billGroups' && (
         <div>
@@ -1263,6 +1272,7 @@ export default function Splits() {
           ) : (
             <GPayGroupList
               groups={billGroups}
+              profiles={gpayProfiles}
               onOpen={group => { setSelectedBillGroupId(group.id); setGroupViewSubTab('chat'); }}
               onExpense={setSelectedSplitDetail}
               onAddSplit={openCreateSplitForGroup}
@@ -1334,6 +1344,7 @@ export default function Splits() {
                           }}>
                             {group.status}
                           </span>
+                          {isImportedGPayExpense(group) && gpayProfiles.length > 1 && <span className="gpay-source-tag">{maskName(gpayProfiles.find(profile => profile.id === (group.gPayProfileId || 'default'))?.name || 'GPay profile')}</span>}
                           {group.isCreatedByUser ? (
                             <span style={{ background: 'rgba(59,130,246,0.12)', color: '#1d4ed8', fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px' }}>
                               Created by You

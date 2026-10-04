@@ -11,6 +11,7 @@ import { useAccount } from "../context/useAccount";
 import { Badge, Drawer, FONT_SIZE_OPTIONS, Switch, useAuth, useTheme, Modal } from "@common/client";
 import { usePrivacy } from "../context/usePrivacy";
 import ProfileSettings from "../components/ProfileSettings";
+import GPayProfileSettings from "../components/GPayProfileSettings";
 import NetworkSettings from "../components/NetworkSettings";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RulesManager from "../components/RulesManager";
@@ -315,9 +316,9 @@ export default function Settings() {
   const handleSaveGPayUserName = async (val) => {
     const trimmed = (val || '').trim();
     setGpayUserName(trimmed);
-    localStorage.setItem('bsp_gpay_user_name', trimmed || 'ARUN G');
+    if (!gpayConfig?.profileId) localStorage.setItem('bsp_gpay_user_name', trimmed || 'ARUN G');
     try {
-      const res = await updateGPayAutoImportConfig({ userName: trimmed });
+      const res = await updateGPayAutoImportConfig({ userName: trimmed }, gpayConfig?.profileId);
       setGpayConfig(res.data);
     } catch (err) {
       console.error("Failed to update split user name", err);
@@ -348,7 +349,7 @@ export default function Settings() {
   const handleToggleGPayAutoImport = async () => {
     try {
       const next = !gpayConfig?.watchEnabled;
-      const res = await updateGPayAutoImportConfig({ watchEnabled: next });
+      const res = await updateGPayAutoImportConfig({ watchEnabled: next }, gpayConfig?.profileId);
       setGpayConfig(res.data);
     } catch (err) {
       console.error("Failed to toggle Google Pay auto-import", err);
@@ -361,7 +362,7 @@ export default function Settings() {
       const res = await updateGPayAutoImportConfig({
         watchFolderPath: gpayDraftPath.trim(),
         watchEnabled: true
-      });
+      }, gpayConfig?.profileId);
       setGpayConfig(res.data);
       setGpayMessage("Google Pay auto-import settings saved.");
       setTimeout(() => setGpayMessage(null), 4000);
@@ -375,9 +376,9 @@ export default function Settings() {
     setGpaySweeping(true);
     setGpayMessage(null);
     try {
-      const res = await triggerGPayAutoImportSweep();
+      const res = await triggerGPayAutoImportSweep(gpayConfig?.profileId);
       setGpayMessage(res.data.message || "Google Pay sweep complete.");
-      const c = await getGPayAutoImportConfig();
+      const c = await getGPayAutoImportConfig(gpayConfig?.profileId);
       setGpayConfig(c.data);
       setTimeout(() => setGpayMessage(null), 5000);
     } catch (err) {
@@ -1954,6 +1955,8 @@ export default function Settings() {
               </div>
             )}
           </div>
+
+          <GPayProfileSettings config={gpayConfig} accounts={accounts} canEdit={isAdmin} busy={gpaySweeping} onConfig={config => { setGpayConfig(config); setGpayDraftPath(config.watchFolderPath || ''); setGpayUserName(config.userName || ''); setGpayMessage(null); setBrowse(null); setParticipantList([]); }} />
 
           {/* Auto-import: Google Pay watch folder */}
           {isAdmin && (

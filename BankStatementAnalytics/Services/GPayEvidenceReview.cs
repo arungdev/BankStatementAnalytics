@@ -15,11 +15,11 @@ public sealed partial class GPayEvidenceService
         var groups = await session.Query<SplitGroup>().Where(g => g.OwnerUserId == userId).ToListAsync();
         var members = await session.Query<SplitGroupMember>().Where(m => m.OwnerUserId == userId).ToListAsync();
         var names = await OwnerNames(session, userId);
-        var sources = records.Where(r => r.Kind == "Expense").Select(r => new { r, p = JsonSerializer.Deserialize<EvidencePayload>(r.Payload, Json)! }).GroupBy(x => x.p.IdentityKey).Select(g => g.OrderByDescending(x => x.r.CreatedUtc).ThenByDescending(x => x.r.Id).First()).ToList();
+        var sources = records.Where(r => r.Kind == "Expense").Select(r => new { r, p = JsonSerializer.Deserialize<EvidencePayload>(r.Payload, Json)! }).GroupBy(x => (x.p.ProfileId, x.p.IdentityKey)).Select(g => g.OrderByDescending(x => x.r.CreatedUtc).ThenByDescending(x => x.r.Id).First()).ToList();
         var repairs = new List<object>();
         foreach (var source in sources) {
             var e = JsonSerializer.Deserialize<GPayExpenseItem>(source.p.Data, Json)!;
-            var matches = Corresponding(groups, e);
+            var matches = Corresponding(groups, e, source.p.ProfileId);
             if (matches.Count != 1) { repairs.Add(new { RecordId = source.r.Id, SplitId = (int?)null, Title = e.Title ?? e.GroupName, Reason = matches.Count == 0 ? "No stored counterpart — import this source" : "Ambiguous source identity", Before = "", After = e.State, CanApply = false }); continue; }
             var g = matches[0]; var changes = new List<string>();
             var structural=g.TotalAmount!=Money(e.TotalAmount)||(e.Items??new()).Count!=g.Members.Count||(e.Items??new()).Any(i=>g.Members.Count(m=>Normalize(m.ParticipantName)==Normalize(i.Payer)&&m.AssignedAmount==Money(i.Amount))!=1);
@@ -30,14 +30,22 @@ public sealed partial class GPayEvidenceService
                 var ms = g.Members.Where(m => Normalize(m.ParticipantName) == Normalize(item.Payer) && m.AssignedAmount == Money(item.Amount)).ToList();
                 if (ms.Count != 1) { changes.Add($"participant {item.Payer}: ambiguous/missing"); continue; }
                 var m = ms[0];
-                if (m.IsUser != names.Contains(Normalize(item.Payer))) changes.Add($"owner identity: {item.Payer}");
+                if (m.IsUser != IsSelf(m, names)) changes.Add($"owner identity: {item.Payer}");
                 if (m.SourceState != item.State || (m.LinkedBankReference == null && m.PaidAmount != (IsPaid(item.State) ? m.AssignedAmount : 0))) changes.Add($"{item.Payer}: {item.State}");
             }
             if (changes.Count > 0) repairs.Add(new { RecordId = source.r.Id, SplitId = (int?)g.Id, Title = g.Title, Reason = string.Join("; ", changes), Before = Fingerprint(g), After = e.State, CanApply = !structural });
         }
         var duplicates = members.Where(m => m.LinkedBankReference != null).GroupBy(m => TxKey(m.LinkedAccountId ?? 0, m.LinkedBankReference!, m.LinkedBankType ?? "", m.LinkedTransactionType ?? "")).Where(g => g.Count() > 1).Select(g => new { Key = g.Key, Members = g.Select(m => new { m.Id, SplitId = m.Group.Id, m.ParticipantName, m.PaidAmount }) }).ToList();
-        var accounts = (await session.Query<Account>().Where(a => a.OwnerUserId == userId).ToListAsync()).Select(a=>a.Id).ToList();
+        var ownedAccounts = await session.Query<Account>().Where(a => a.OwnerUserId == userId).ToListAsync();
+        var accounts = ownedAccounts.Select(a=>a.Id).ToList();
         var banks = await session.Query<BankTransaction>().Where(t=>accounts.Contains(t.AccountId)).ToListAsync();
+        var activityMatches = PlanAutomaticActivityMatches(records, ownedAccounts, banks);
+        var confirmedSources = records.Where(record => record.Kind == "Decision").Select(record => JsonSerializer.Deserialize<ReviewSourceRequest>(record.Payload, Json)!).Where(decision => decision.Accept).GroupBy(decision => decision.RecordId);
+        foreach (var confirmed in confirmedSources.Where(group => !activityMatches.ContainsKey(group.Key) && group.Count() == 1)) {
+            var decision = confirmed.Single();
+            var bank = banks.SingleOrDefault(bank => TxKey(bank.AccountId, bank.BankReference, bank.BankType, bank.TransactionType) == TxKey(decision.AccountId, decision.BankReference, decision.BankType, decision.TransactionType));
+            if (bank != null) activityMatches[confirmed.Key] = new ActivityBankMatch("Linked", "Previously confirmed bank transaction.", new ActivityBankLink(bank.AccountId, bank.BankReference, bank.BankType, bank.TransactionType));
+        }
         var linkWarnings = members.Where(m=>m.LinkedBankReference!=null).Select(m=> {
             var bank=banks.FirstOrDefault(t=>TxKey(t.AccountId,t.BankReference,t.BankType,t.TransactionType)==TxKey(m.LinkedAccountId??0,m.LinkedBankReference!,m.LinkedBankType??"",m.LinkedTransactionType??""));
             var own=IsCreator(m.Group,names);var self=IsSelf(m,names);
@@ -45,7 +53,11 @@ public sealed partial class GPayEvidenceService
             return new { MemberId=m.Id,SplitId=m.Group.Id,m.ParticipantName,Reason=reason };
         }).Where(x=>x.Reason!=null).ToList();
         var settlements = members.Where(m => Imported(m.Group)).Select(m => new { SplitId = m.Group.Id, Title = m.Group.Title, m.Id, m.ParticipantName, m.SourceState, m.SettlementEvidence, m.AssignedAmount, m.PaidAmount, EligibleFlow = IsCreator(m.Group,names) != IsSelf(m,names), IsOwner = IsSelf(m, names), Direction = IsCreator(m.Group, names) ? "To collect" : "Owed by me", Active = m.Group.Status is not ("Closed" or "Cancelled"), AgeDays = Math.Max(0, (DateTime.UtcNow.AddMinutes(330).Date - m.Group.Date.Date).Days), HasBankLink = m.LinkedBankReference != null }).ToList();
-        object[] Read(string kind) => records.Where(r => r.Kind == kind).OrderByDescending(r => r.Id).Select(r => (object)new { r.Id, r.CreatedUtc, Source = JsonSerializer.Deserialize<EvidencePayload>(r.Payload, Json) }).ToArray();
+        var profiles = records.Where(record => record.Kind == "Profile").Select(record => JsonSerializer.Deserialize<GPayAutoImportConfigDto>(record.Payload, Json)!).ToDictionary(profile => profile.ProfileId!, profile => profile.ProfileName);
+        object[] Read(string kind) => records.Where(r => r.Kind == kind).OrderByDescending(r => r.Id).Select(r => {
+            var payload = JsonSerializer.Deserialize<EvidencePayload>(r.Payload, Json)!;
+            return (object)new { r.Id, r.CreatedUtc, Source = payload, ProfileName = payload.ProfileId == null ? "Primary GPay" : profiles.GetValueOrDefault(payload.ProfileId, "GPay profile"), BankMatch = activityMatches.GetValueOrDefault(r.Id) };
+        }).ToArray();
         return new {
             Batches = records.Where(r => r.Kind == "Batch").OrderByDescending(r => r.Id).Select(r => JsonSerializer.Deserialize<JsonElement>(r.Payload)),
             Repairs = repairs, DuplicateLinks = duplicates, LinkWarnings=linkWarnings, Settlements = settlements,
@@ -64,7 +76,7 @@ public sealed partial class GPayEvidenceService
         var p = JsonSerializer.Deserialize<EvidencePayload>(record.Payload, Json)!;
         var e = JsonSerializer.Deserialize<GPayExpenseItem>(p.Data, Json)!;
         var groups = await session.Query<SplitGroup>().Where(g => g.OwnerUserId == userId).ToListAsync();
-        var matches = Corresponding(groups, e); if (matches.Count != 1) throw new ArgumentException("Source is ambiguous or missing. Import before repairing.");
+        var matches = Corresponding(groups, e, p.ProfileId); if (matches.Count != 1) throw new ArgumentException("Source is ambiguous or missing. Import before repairing.");
         var g = matches[0]; await session.LockAsync(g, LockMode.Upgrade);
         await session.RefreshAsync(g); if (Fingerprint(g) != expected) throw new ArgumentException("Expense changed. Refresh the review before applying.");
         if(g.TotalAmount!=Money(e.TotalAmount)||(e.Items??new()).Count!=g.Members.Count)throw new ArgumentException("Bill total or participant structure changed; manual mapping required.");
@@ -73,12 +85,12 @@ public sealed partial class GPayEvidenceService
         foreach (var item in e.Items ?? new()) {
             var ms = g.Members.Where(m => Normalize(m.ParticipantName) == Normalize(item.Payer) && m.AssignedAmount == Money(item.Amount)).ToList();
             if (ms.Count != 1) throw new ArgumentException("Participant identity is ambiguous; manual review required.");
-            var m = ms[0]; m.IsUser = names.Contains(Normalize(item.Payer)); m.SourceState = item.State;
+            var m = ms[0]; m.IsUser = IsSelf(m, names); m.SourceState = item.State;
             if (m.LinkedBankReference == null && !await session.Query<GPaySettlementAllocation>().AnyAsync(a => a.OwnerUserId == userId && a.MemberId == m.Id)) { m.PaidAmount = IsPaid(item.State) ? m.AssignedAmount : 0; m.IsSettled = IsPaid(item.State); m.SettlementEvidence = Evidence(item.State); }
             if (string.IsNullOrWhiteSpace(m.Notes)) m.Notes = item.Note;
             await session.UpdateAsync(m);
         }
-        g.SourceKey = p.IdentityKey; g.SourceState = e.State; g.CreatorName = e.Creator; g.SourceSnapshot = p.Data; g.SourceImportedUtc = record.CreatedUtc;
+        g.SourceKey = ProfileExpenseKey(e, p.ProfileId); g.SourceState = e.State; g.CreatorName = e.Creator; g.SourceSnapshot = p.Data; g.SourceImportedUtc = record.CreatedUtc;
         g.Title=string.IsNullOrWhiteSpace(e.Title)?(e.GroupName?.Trim() ?? "General Split")+" Expense":e.Title.Trim();
         g.UserShareAmount = g.Members.Where(m => m.IsUser).Sum(m => m.AssignedAmount);
         Recalculate(g, names); await session.UpdateAsync(g);

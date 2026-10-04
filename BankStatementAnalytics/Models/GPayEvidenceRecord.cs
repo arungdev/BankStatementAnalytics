@@ -1,7 +1,7 @@
 using Common.Framework.Tenancy;
 namespace BankStatementAnalytics.Models;
 
-/// <summary>Tenant-owned immutable imported record, batch inventory or explicit review decision.</summary>
+/// <summary>Tenant-owned source evidence, matching decisions, audit history, or GPay profile configuration.</summary>
 public class GPayEvidenceRecord : IOwnedEntity
 {
     public virtual int Id { get; set; }

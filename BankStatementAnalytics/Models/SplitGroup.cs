@@ -21,6 +21,8 @@ namespace BankStatementAnalytics.Models
         public virtual string Title { get; set; } = string.Empty;
 
         public virtual string? SourceKey { get; set; }
+        public virtual string? GPayProfileId { get; set; }
+        public virtual string? GPayOwnerName { get; set; }
         public virtual string? SourceState { get; set; }
         public virtual string? CreatorName { get; set; }
         public virtual string? SourceSnapshot { get; set; }

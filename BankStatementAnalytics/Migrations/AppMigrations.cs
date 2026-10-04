@@ -235,6 +235,11 @@ namespace BankStatementAnalytics.Migrations
                 }
                 ctx.Execute("CREATE INDEX IF NOT EXISTS ix_gpay_alloc_transaction ON gpay_settlement_allocations(owneruserid,accountid,bankreference,banktype,transactiontype)");
             });
+            mb.ForVersion(7).AddStep("Separate Google Pay export profiles", ctx => {
+                if (!ctx.ColumnExists("split_groups", "gpayprofileid")) ctx.Execute("ALTER TABLE split_groups ADD COLUMN gpayprofileid VARCHAR(64) NULL");
+                if (!ctx.ColumnExists("split_groups", "gpayownername")) ctx.Execute("ALTER TABLE split_groups ADD COLUMN gpayownername VARCHAR(250) NULL");
+                if (!ctx.ColumnExists("bill_groups", "gpayprofileid")) ctx.Execute("ALTER TABLE bill_groups ADD COLUMN gpayprofileid VARCHAR(64) NULL");
+            });
         }
     }
 }

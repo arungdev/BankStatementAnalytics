@@ -916,7 +916,7 @@ namespace BankStatementAnalytics.Services
                 var balances = new List<GroupMemberBalanceDto>();
                 var userCreatedGroupSplits = splits.Where(s => userCreatedSplits.Any(d => d.Id == s.Id) && s.Status is not ("Closed" or "Cancelled") && s.SourceState != "CLOSED").ToList();
                 var splitMembersAcrossSplits = userCreatedGroupSplits.SelectMany(s => s.Members ?? new List<SplitGroupMember>())
-                    .Where(m => !m.IsUser && !userNames.Contains(GPayEvidenceService.Normalize(m.ParticipantName)))
+                    .Where(m => !GPayEvidenceService.IsSelf(m, userNames))
                     .GroupBy(m => m.ParticipantName.Trim(), StringComparer.OrdinalIgnoreCase);
 
                 var allMemberNames = new HashSet<string>(members.Select(m => m.Name.Trim()), StringComparer.OrdinalIgnoreCase);
@@ -924,7 +924,7 @@ namespace BankStatementAnalytics.Services
 
                 foreach (var memberName in allMemberNames)
                 {
-                    if (userNames.Contains(GPayEvidenceService.Normalize(memberName))) continue;
+                    if (g.GPayProfileId != null ? splits.Any(s => GPayEvidenceService.Normalize(s.GPayOwnerName) == GPayEvidenceService.Normalize(memberName)) : userNames.Contains(GPayEvidenceService.Normalize(memberName))) continue;
 
                     var matchingSplits = userCreatedGroupSplits.SelectMany(s => s.Members ?? new List<SplitGroupMember>())
                         .Where(m => string.Equals(m.ParticipantName.Trim(), memberName, StringComparison.OrdinalIgnoreCase))
@@ -950,6 +950,7 @@ namespace BankStatementAnalytics.Services
                 {
                     Id = g.Id,
                     Name = g.Name,
+                    GPayProfileId = g.GPayProfileId,
                     Description = g.Description,
                     CreatedOn = g.CreatedOn,
                     UpdatedOn = g.UpdatedOn,
@@ -1160,6 +1161,7 @@ namespace BankStatementAnalytics.Services
                 GroupUid = g.GroupUid,
                 BillGroupId = g.BillGroupId,
                 GroupName = g.GroupName,
+                GPayProfileId = g.GPayProfileId,
                 Title = g.Title,
                 Description = g.Description,
                 Date = g.Date,
@@ -1275,6 +1277,7 @@ namespace BankStatementAnalytics.Services
 
     public class SplitGroupDetailDto
     {
+        public string? GPayProfileId { get; set; }
         public int Id { get; set; }
         public Guid GroupUid { get; set; }
         public int? BillGroupId { get; set; }
@@ -1429,6 +1432,7 @@ namespace BankStatementAnalytics.Services
 
     public class BillGroupDto
     {
+        public string? GPayProfileId { get; set; }
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }

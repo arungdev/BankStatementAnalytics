@@ -68,6 +68,6 @@ export const importTakeoutUpload = (formData) =>
   });
 
 // ── Google Pay Auto-Import (Watch Folder) ──
-export const getGPayAutoImportConfig = () => api.get('/split-groups/auto-import');
-export const updateGPayAutoImportConfig = (data) => api.put('/split-groups/auto-import', data);
-export const triggerGPayAutoImportSweep = () => api.post('/split-groups/auto-import/sweep');
+export const getGPayAutoImportConfig = (profileId) => api.get('/split-groups/auto-import', { params: { profileId } });
+export const updateGPayAutoImportConfig = (data, profileId) => api.put('/split-groups/auto-import', data, { params: { profileId } });
+export const triggerGPayAutoImportSweep = (profileId) => api.post('/split-groups/auto-import/sweep', null, { params: { profileId } });

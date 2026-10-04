@@ -622,3 +622,5 @@
   .splits-summary .stat-card-value { font-size:19px !important; }
   .gpay-list-metrics,.confirmed-split-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+.splits-profile-filter { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:0 0 16px; color:var(--text-muted); font-size:13px; font-weight:600; }
+.splits-profile-filter select { padding:8px 10px; max-width:100%; border:1px solid var(--border-color); border-radius:8px; background:var(--surface); color:var(--text-main); font:inherit; }

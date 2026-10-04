@@ -11,6 +11,7 @@ public class GPayEvidenceApiController : TenantControllerBase
     private readonly GPayEvidenceService _service;
     public GPayEvidenceApiController(GPayEvidenceService service) => _service=service;
     [HttpGet] public async Task<IActionResult> Get() => Ok(await _service.Workspace(CurrentUserId));
+    [HttpPost("auto-match")] public async Task<IActionResult> AutoMatch() => Ok(await _service.AutoMatchActivities(CurrentUserId));
     [HttpPost("preview-path")]
     public async Task<IActionResult> PreviewPath(ImportTakeoutPathRequest request) {
         try {

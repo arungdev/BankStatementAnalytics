@@ -18,7 +18,7 @@ const dateParts = value => {
   return [date.toLocaleDateString('en-GB', { ...options, day: '2-digit' }), date.toLocaleDateString('en-GB', { ...options, month: 'short', year: '2-digit' })];
 };
 
-export default function GPayActivityTable({ records, kind, busy, onReview, onSelect, selectedId, page, onPageChange }) {
+export default function GPayActivityTable({ records, kind, onBank, onSelect, selectedId, page, onPageChange }) {
   const [pageSize, setPageSize] = useState(20);
   const [loadedAt] = useState(() => Date.now());
   const [sort, setSort] = useState({ field: 'date', direction: 'desc' });
@@ -39,7 +39,7 @@ export default function GPayActivityTable({ records, kind, busy, onReview, onSel
   return <div className="gpay-activity-list">
     <div className="gpay-activity-scroll" tabIndex={0} aria-label="GPay records table, scroll for more rows">
       <table className="gpay-activity-table">
-        <thead><tr>{header('date', vouchers ? 'Expires' : 'Date')}{header('name', 'Description')}<th scope="col">Status / method</th><th scope="col">Action</th>{vouchers ? <th scope="col">Voucher code</th> : header('amount', 'Amount')}</tr></thead>
+        <thead><tr>{header('date', vouchers ? 'Expires' : 'Date')}{header('name', 'Description')}<th scope="col">Status / method</th><th scope="col">Bank transaction</th>{vouchers ? <th scope="col">Voucher code</th> : header('amount', 'Amount')}</tr></thead>
         <tbody>{visible.map(row => {
           const { record, data, name } = row;
           const [day, month] = dateParts(row.date);
@@ -48,9 +48,9 @@ export default function GPayActivityTable({ records, kind, busy, onReview, onSel
           const direction = kind === 'rewards' || data.Type === 'Received' ? 'credit' : ['Paid', 'Sent'].includes(data.Type) ? 'debit' : '';
           return <tr key={record.id} className={selectedId === record.id ? 'is-selected' : ''} onClick={event => onSelect?.(record, event.currentTarget)}>
             <td className="gpay-activity-date"><strong>{day}</strong><small>{month}</small></td>
-            <td><div className="gpay-activity-merchant"><Avatar name={maskName(name) || '?'} size={36} /><div><button type="button" className="gpay-activity-detail-link" aria-label={`View details: ${maskName(name)}`} aria-expanded={selectedId === record.id} title={maskName(name)}>{maskName(name)}</button><div className="gpay-activity-meta">{data.AccountSuffix && <span className="gpay-activity-account">Account ••••{data.AccountSuffix}</span>}<span title={maskName(data.RefId || data.TransactionId || data.Details)}>{maskName(data.RefId || data.TransactionId || data.Details)}</span></div></div></div></td>
+            <td><div className="gpay-activity-merchant"><Avatar name={maskName(name) || '?'} size={36} /><div><button type="button" className="gpay-activity-detail-link" aria-label={`View details: ${maskName(name)}`} aria-expanded={selectedId === record.id} title={maskName(name)}>{maskName(name)}</button><div className="gpay-activity-meta">{record.source?.profileId && <span className="gpay-activity-account">{maskName(record.profileName || 'GPay profile')}</span>}{data.AccountSuffix && <span className="gpay-activity-account">Account ••••{data.AccountSuffix}</span>}<span title={maskName(data.RefId || data.TransactionId || data.Details)}>{maskName(data.RefId || data.TransactionId || data.Details)}</span></div></div></div></td>
             <td><span className={`gpay-activity-status ${state === 'Completed' || state === 'Complete' || state === 'Earned' ? 'is-complete' : state === 'Failed' ? 'is-failed' : ''}`}>{state}</span>{data.PaymentMethod && <small>{maskName(data.PaymentMethod)}</small>}</td>
-            <td>{!vouchers && <button type="button" className="btn btn--outline" disabled={busy} onClick={event => { event.stopPropagation(); onReview({ recordId: record.id, title: data.Description || data.Type || name }); }}>Review bank match</button>}</td>
+            <td>{!vouchers && (record.bankMatch?.bank ? <button type="button" className="btn btn--outline" title={record.bankMatch.reason} onClick={event => { event.stopPropagation(); onBank?.(record); }}>View bank transaction</button> : record.bankMatch?.status === 'Ambiguous' ? <button type="button" className="gpay-activity-match-options" title={record.bankMatch.reason} aria-label={`View possible bank matches for ${maskName(name)}, ${currencyFormatter.format(data.Amount ?? 0)}`} aria-expanded={selectedId === record.id}>{record.bankMatch.candidates?.length ? `${record.bankMatch.candidates.length} possible match${record.bankMatch.candidates.length === 1 ? '' : 'es'}` : 'Multiple possible matches'}<small>Not linked · View details</small></button> : <span className="gpay-activity-bank-state" title={record.bankMatch?.reason}>{record.bankMatch?.status === 'Ready' ? 'Awaiting match' : record.bankMatch?.status || 'Not linked'}</span>)}</td>
             <td className={`gpay-activity-amount ${direction ? `is-${direction}` : ''}`}>{vouchers ? maskName(data.Code) : <>{direction === 'credit' ? '+' : direction === 'debit' ? '−' : ''}{currencyFormatter.format(data.Amount ?? 0)}</>}</td>
           </tr>;
         })}{rows.length === 0 && <tr><td colSpan={5} className="gpay-activity-empty">No matching records. Try another search or view.</td></tr>}</tbody>

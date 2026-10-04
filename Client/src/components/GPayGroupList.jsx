@@ -4,7 +4,7 @@ import { currencyFormatter, maskName, formatDate } from '../utils/format';
 import { getGroupDisplayMembers, isImportedGPayGroup } from '../utils/groupMembers';
 import { usePrivacy } from '../context/usePrivacy';
 
-export default function GPayGroupList({ groups, onOpen, onExpense, onAddSplit, onAddMember, onDelete }) {
+export default function GPayGroupList({ groups, profiles = [], onOpen, onExpense, onAddSplit, onAddMember, onDelete }) {
   usePrivacy();
   const [search, setSearch] = useState('');
   const [source, setSource] = useState('all');
@@ -31,7 +31,7 @@ export default function GPayGroupList({ groups, onOpen, onExpense, onAddSplit, o
           <div className="gpay-list-icon"><FiUsers size={21} /></div>
           <div className="gpay-list-card-heading"><div className="gpay-list-kicker"><span className={`gpay-source-tag ${imported ? 'is-imported' : ''}`}>{imported ? <FiDownload size={11} /> : <FiUsers size={11} />}{imported ? 'GPay import' : 'Custom group'}</span><span>Latest activity {formatDate(lastDate)}</span></div>
             <button className="gpay-group-name" onClick={() => onOpen(group)}>{maskName(group.name)}<FiChevronRight size={17} /></button>
-            <p>{members.length} {members.length === 1 ? (imported ? 'observed participant' : 'member') : (imported ? 'observed participants' : 'members')}<span>·</span>{splits.length} {splits.length === 1 ? 'expense' : 'expenses'}</p>
+            <p>{members.length} {members.length === 1 ? (imported ? 'observed participant' : 'member') : (imported ? 'observed participants' : 'members')}<span>·</span>{splits.length} {splits.length === 1 ? 'expense' : 'expenses'}{imported && profiles.length > 1 && <><span>·</span>{maskName(profiles.find(profile => profile.id === (group.gPayProfileId || 'default'))?.name || 'GPay profile')}</>}</p>
           </div>
           <button className="btn btn--outline gpay-view-group" onClick={() => onOpen(group)}>View group <FiChevronRight size={14} /></button>
         </header>

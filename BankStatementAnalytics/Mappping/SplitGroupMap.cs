@@ -32,6 +32,8 @@ namespace BankStatementAnalytics.Mappping
             });
 
             Property(x => x.SourceKey, m => m.Length(64));
+            Property(x => x.GPayProfileId, m => m.Length(64));
+            Property(x => x.GPayOwnerName, m => m.Length(250));
             Property(x => x.SourceState, m => m.Length(50));
             Property(x => x.CreatorName, m => m.Length(250));
             Property(x => x.SourceSnapshot, m => m.Type(NHibernate.NHibernateUtil.StringClob));

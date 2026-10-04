@@ -287,19 +287,19 @@ namespace BankStatementAnalytics.Controllers.Api
         // POST: api/split-groups/import-takeout — upload Takeout .zip or Group expenses.json
         [HttpPost("import-takeout")]
         [RequestSizeLimit(250_000_000)]
-        public async Task<IActionResult> ImportTakeout([FromForm] Microsoft.AspNetCore.Http.IFormFile? file, [FromForm] string? filePath = null, [FromForm] string? expectedArchiveHash = null)
+        public async Task<IActionResult> ImportTakeout([FromForm] Microsoft.AspNetCore.Http.IFormFile? file, [FromForm] string? filePath = null, [FromForm] string? expectedArchiveHash = null, [FromForm] string? profileId = null)
         {
             if (file != null && file.Length > 0)
             {
                 await using var stream = file.OpenReadStream();
-                var result = await _takeoutService.ImportFromStreamAsync(CurrentUserId, stream, file.FileName, expectedArchiveHash);
+                var result = await _takeoutService.ImportFromStreamAsync(CurrentUserId, stream, file.FileName, expectedArchiveHash, profileId);
                 return Ok(result);
             }
 
             var path = !string.IsNullOrWhiteSpace(filePath) ? filePath : @"D:\BankStatements\Gpay\takeout-20261003T045601Z-1-001.zip";
             if (System.IO.File.Exists(path))
             {
-                var result = await _takeoutService.ImportFromPathAsync(CurrentUserId, path, expectedArchiveHash);
+                var result = await _takeoutService.ImportFromPathAsync(CurrentUserId, path, expectedArchiveHash, profileId);
                 return Ok(result);
             }
 
@@ -314,7 +314,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 ? request.FilePath
                 : @"D:\BankStatements\Gpay\takeout-20261003T045601Z-1-001.zip";
 
-            var result = await _takeoutService.ImportFromPathAsync(CurrentUserId, path, request?.ExpectedArchiveHash);
+            var result = await _takeoutService.ImportFromPathAsync(CurrentUserId, path, request?.ExpectedArchiveHash, request?.ProfileId);
             return Ok(result);
         }
 
@@ -324,29 +324,35 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // GET: api/split-groups/auto-import — get GPay watch folder config and current stats
         [HttpGet("auto-import")]
-        public async Task<IActionResult> GetAutoImportConfig()
+        public async Task<IActionResult> GetAutoImportConfig(string? profileId = null)
         {
-            var config = await _takeoutService.GetAutoImportConfigAsync(CurrentUserId);
+            var config = await _takeoutService.GetAutoImportConfigAsync(CurrentUserId, profileId);
             return Ok(config);
         }
 
         // PUT: api/split-groups/auto-import — update GPay watch folder path and enabled status
         [HttpPut("auto-import")]
-        public async Task<IActionResult> UpdateAutoImportConfig([FromBody] UpdateGPayAutoImportRequest request)
+        public async Task<IActionResult> UpdateAutoImportConfig([FromBody] UpdateGPayAutoImportRequest request, string? profileId = null)
         {
             if (request == null)
                 return BadRequest("Invalid request.");
 
-            var config = await _takeoutService.UpdateAutoImportConfigAsync(CurrentUserId, request);
+            var config = await _takeoutService.UpdateAutoImportConfigAsync(CurrentUserId, request, profileId);
             return Ok(config);
         }
 
         // POST: api/split-groups/auto-import/sweep — trigger an immediate sweep of the GPay watch folder
         [HttpPost("auto-import/sweep")]
-        public async Task<IActionResult> SweepAutoImport()
+        public async Task<IActionResult> SweepAutoImport(string? profileId = null)
         {
-            var result = await _takeoutService.SweepAsync(CurrentUserId);
+            var result = await _takeoutService.SweepAsync(CurrentUserId, profileId);
             return Ok(result);
+        }
+        [HttpGet("gpay-profiles")] public async Task<IActionResult> GPayProfiles() => Ok(await _takeoutService.ListProfilesAsync(CurrentUserId));
+        [HttpPost("gpay-profiles")] public async Task<IActionResult> AddGPayProfile(CreateGPayProfileRequest request)
+        {
+            try { return Ok(await _takeoutService.CreateProfileAsync(CurrentUserId, request)); }
+            catch (ArgumentException exception) { return BadRequest(new { message = exception.Message }); }
         }
     }
 
@@ -354,5 +360,6 @@ namespace BankStatementAnalytics.Controllers.Api
     {
         public string? FilePath { get; set; }
         public string? ExpectedArchiveHash { get; set; }
+        public string? ProfileId { get; set; }
     }
 }

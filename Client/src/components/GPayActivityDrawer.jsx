@@ -9,7 +9,7 @@ const titles = { activities: 'Payment details', orders: 'Order details', rewards
 const labels = { CounterPartyName: 'Recipient / sender', AccountSuffix: 'Account', RefId: 'GPay activity ID', TransactionId: 'Order transaction ID', PaymentMethod: 'Payment method', ExpiryTimestamp: 'Expires', Timestamp: 'Date and time', Time: 'Date and time', Date: 'Date', Type: 'Payment type' };
 const dateFields = new Set(['Timestamp', 'Time', 'Date', 'ExpiryTimestamp']);
 
-export default function GPayActivityDrawer({ selection, onClose, onReview, busy, width = 450, onWidthChange }) {
+export default function GPayActivityDrawer({ selection, onClose, onBank, width = 450, onWidthChange }) {
   const { maskAmounts } = usePrivacy();
   const [viewport, setViewport] = useState(() => window.innerWidth);
   const closeButton = useRef(null);
@@ -60,13 +60,22 @@ export default function GPayActivityDrawer({ selection, onClose, onReview, busy,
       <div className="gpay-detail-hero">
         <Avatar name={maskName(name) || '?'} size={48} />
         <h3>{maskName(name)}</h3>
+        {record?.profileName && <span>{maskName(record.profileName)}</span>}
         {source.Amount !== undefined && source.Amount !== null && <strong className={`gpay-detail-amount ${direction ? `is-${direction}` : ''}`}>{direction === 'credit' ? '+' : direction === 'debit' ? '−' : ''}{currencyFormatterFull.format(source.Amount)}</strong>}
         {source.Status && <span>{source.Status}</span>}
       </div>
       <dl className="gpay-detail-fields">{fields.map(([key, value]) => <div key={key} className={['Description', 'Summary', 'Details', 'Product', 'RefId', 'TransactionId', 'Code'].includes(key) ? 'is-wide' : ''}><dt>{labels[key] || key.replace(/([a-z])([A-Z])/g, '$1 $2')}</dt><dd>{display(key, value)}</dd></div>)}</dl>
       {fields.length === 0 && <p>Source details are unavailable for this record.</p>}
       <p className="gpay-detail-note">Details from your GPay export.{kind === 'activities' ? ' The activity ID is a source identifier, not a verified bank reference.' : kind === 'vouchers' ? ' Expiry does not confirm whether a voucher has been redeemed.' : ''}</p>
-      {kind !== 'vouchers' && record && <button type="button" className="btn btn--outline gpay-detail-review" disabled={busy} onClick={() => onReview({ recordId: record.id, title: source.Description || source.Type || name })}><FiLink /> Review bank match</button>}
+      {kind !== 'vouchers' && record && <div className="gpay-detail-bank-match"><strong>{record.bankMatch?.bank ? 'Linked bank transaction' : record.bankMatch?.status === 'Ambiguous' ? 'Multiple possible matches · Not linked' : record.bankMatch?.status || 'Not linked'}</strong>{record.bankMatch?.reason && <p className="gpay-detail-note">{record.bankMatch.reason}</p>}{record.bankMatch?.bank && <button type="button" className="btn btn--outline gpay-detail-review" onClick={() => onBank?.(record)}><FiLink /> View bank transaction</button>}
+        {record.bankMatch?.status === 'Ambiguous' && record.bankMatch.candidates?.length > 0 && <ul className="gpay-detail-candidates" aria-label="Possible bank matches, none linked">{record.bankMatch.candidates.map(candidate => <li key={`${candidate.bank.accountId}|${candidate.bank.bankReference}|${candidate.bank.bankType}|${candidate.bank.transactionType}`}>
+          <div className="gpay-detail-candidate-heading"><strong>{maskName(candidate.payee || 'Unnamed bank payee')}</strong><strong>{currencyFormatterFull.format(candidate.amount)}</strong></div>
+          <p>{candidate.bank.bankType} · {display('Date', candidate.transactionDate)}<br /><span>{text(candidate.bank.bankReference)}</span></p>
+          {candidate.valueDate && candidate.valueDate.slice(0, 10) !== candidate.transactionDate.slice(0, 10) && <p>Value date: {display('Date', candidate.valueDate)}</p>}
+          {candidate.competingActivities > 0 && <p>Also fits {candidate.competingActivities} other GPay payment{candidate.competingActivities === 1 ? '' : 's'}.</p>}
+          <button type="button" className="btn btn--outline" onClick={() => onBank?.(record, candidate)}>View possible bank transaction</button>
+        </li>)}</ul>}
+      </div>}
     </section>
   </Drawer>;
 }

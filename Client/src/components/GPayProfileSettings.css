@@ -1,0 +1,12 @@
+.gpay-profile-settings { border-top:1px solid var(--border-color); padding:16px 0; }
+.gpay-profile-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px; }
+.gpay-profile-toolbar label { flex:1; min-width:180px; font-size:12px; color:var(--text-muted); font-weight:600; }
+.gpay-profile-toolbar select,.gpay-profile-form input:not([type=checkbox]) { display:block; width:100%; box-sizing:border-box; margin-top:6px; padding:8px 10px; border:1px solid var(--border-color); border-radius:6px; background:var(--surface); color:var(--text-main); font:inherit; }
+.gpay-profile-form { display:grid; gap:16px; padding:4px; }
+.gpay-profile-form label { font-size:13px; font-weight:600; }
+.gpay-profile-form p,.gpay-profile-banks p { font-size:12px; color:var(--text-muted); margin:4px 0; }
+.gpay-profile-banks { border:1px solid var(--border-color); border-radius:8px; padding:12px; margin:12px 0 0; display:flex; flex-wrap:wrap; gap:12px; }
+.gpay-profile-banks legend { font-size:12px; font-weight:600; }
+.gpay-profile-banks p { flex-basis:100%; }
+.gpay-profile-banks label { display:flex; align-items:center; gap:6px; font-size:12px; }
+.gpay-profile-error { color:var(--danger); font-size:13px; }

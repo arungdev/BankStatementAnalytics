@@ -22,6 +22,7 @@ namespace BankStatementAnalytics.Mappping
                 m.NotNullable(true);
             });
             Property(x => x.Description, m => m.Length(1000));
+            Property(x => x.GPayProfileId, m => m.Length(64));
             Property(x => x.CreatedOn);
             Property(x => x.UpdatedOn);
 

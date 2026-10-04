@@ -50,6 +50,7 @@ public sealed partial class GPayEvidenceService
 
     public async Task ReviewSourceMatch(long userId, ReviewSourceRequest req)
     {
+        req.MatchMethod = "Manual";
         using var session = DbHelper.GetSession(); using var transaction = session.BeginTransaction();
         var source = await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(r => r.Id == req.RecordId && r.OwnerUserId == userId) ?? throw new ArgumentException("Source not found.");
         var key = Hash($"{source.Id}|{req.AccountId}|{req.BankReference}|{req.BankType}|{req.TransactionType}");

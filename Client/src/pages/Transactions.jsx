@@ -15,6 +15,7 @@ import CategoryPicker from "../components/CategoryPicker";
 import SplitTransactionModal from "../components/SplitTransactionModal";
 import TransactionGPayContext from "../components/TransactionGPayContext";
 import TransactionBillSplits from "../components/TransactionBillSplits";
+import { getPersonalTransactionNote, withPersonalTransactionNote } from "../utils/gpayContext";
 import TagPicker from "../components/TagPicker";
 import ManageTagsModal from "../components/ManageTagsModal";
 import { currencyFormatter, maskName } from "../utils/format";
@@ -645,7 +646,7 @@ export default function Transactions() {
   };
 
   const updateNote = (t, newNote) => {
-    const trimmed = (newNote ?? '').trim();
+    const trimmed = withPersonalTransactionNote(t.note, newNote);
     const previousNote = t.note;
     if (trimmed === (previousNote || '')) return; // nothing changed
 
@@ -1321,6 +1322,7 @@ export default function Transactions() {
               const d = new Date(t.transactionDate);
               const catValue = t.subCategory || t.category || '';
               const rowTags = t.tags || [];
+              const personalNote = getPersonalTransactionNote(t.note);
               const rowKey = txKey(t);
               const isChecked = selectedIds.has(rowKey);
               return (
@@ -1430,8 +1432,9 @@ export default function Transactions() {
                           <input
                             className="tx-note-input"
                             autoFocus
-                            defaultValue={t.note || ''}
+                            defaultValue={personalNote}
                             placeholder="note…"
+                            aria-label="Personal transaction note"
                             onClick={(e) => e.stopPropagation()}
                             onBlur={(e) => { updateNote(t, e.target.value); setNoteEditRowId(null); }}
                             onKeyDown={(e) => {
@@ -1439,12 +1442,12 @@ export default function Transactions() {
                               else if (e.key === 'Escape') setNoteEditRowId(null);
                             }}
                           />
-                        ) : t.note ? (
+                        ) : personalNote ? (
                           <span
                             className="tx-note"
-                            title={t.note}
+                            title={personalNote}
                             onClick={(e) => { e.stopPropagation(); setTagEditRowId(null); setNoteEditRowId(rowKey); }}
-                          >✎ {t.note}</span>
+                          >✎ {personalNote}</span>
                         ) : (
                           <span
                             className="tx-tag-add"
@@ -1722,7 +1725,8 @@ export default function Transactions() {
                 {isAdmin ? (
                   <textarea
                     key={selectedTx.id}
-                    defaultValue={selectedTx.note || ''}
+                    defaultValue={getPersonalTransactionNote(selectedTx.note)}
+                    aria-label="Personal transaction note"
                     placeholder="Add a note for this transaction…"
                     className="field-input"
                     rows={3}
@@ -1731,7 +1735,7 @@ export default function Transactions() {
                   />
                 ) : (
                   <div style={{ marginTop: '4px', color: 'var(--text-main)', fontWeight: 500, whiteSpace: 'pre-wrap' }}>
-                    {selectedTx.note || '-'}
+                    {getPersonalTransactionNote(selectedTx.note) || '-'}
                   </div>
                 )}
               </div>

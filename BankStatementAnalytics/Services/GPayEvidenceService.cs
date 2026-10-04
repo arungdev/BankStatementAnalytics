@@ -24,8 +24,8 @@ public sealed partial class GPayEvidenceService
     public static string Evidence(string? state) => state == "MARK_AS_PAID" ? "Manual adjustment" : state == "PAID_RECEIVED" ? "Source reported paid" : state == "FAILED" ? "Failed" : "Pending";
     public static bool Imported(SplitGroup g) => g.SourceKey != null || (g.Description?.StartsWith("Google Pay expense created by ", StringComparison.OrdinalIgnoreCase) ?? false);
     public static string Creator(SplitGroup g) => g.CreatorName ?? (g.Description?.StartsWith("Google Pay expense created by ", StringComparison.OrdinalIgnoreCase) == true ? g.Description["Google Pay expense created by ".Length..].Trim() : "You");
-    public static bool IsCreator(SplitGroup g, HashSet<string> names) => !Imported(g) || names.Contains(Normalize(Creator(g)));
-    public static bool IsSelf(SplitGroupMember m, HashSet<string> names) => Imported(m.Group) ? names.Contains(Normalize(m.ParticipantName)) : m.IsUser || names.Contains(Normalize(m.ParticipantName));
+    public static bool IsCreator(SplitGroup g, HashSet<string> names) => !Imported(g) || (g.GPayProfileId != null ? Normalize(g.GPayOwnerName) == Normalize(Creator(g)) : names.Contains(Normalize(Creator(g))));
+    public static bool IsSelf(SplitGroupMember m, HashSet<string> names) => Imported(m.Group) ? (m.Group.GPayProfileId != null ? Normalize(m.Group.GPayOwnerName) == Normalize(m.ParticipantName) : names.Contains(Normalize(m.ParticipantName))) : m.IsUser || names.Contains(Normalize(m.ParticipantName));
 
     public static async Task<HashSet<string>> OwnerNames(ISession session, long userId)
     {
@@ -97,8 +97,8 @@ public sealed partial class GPayEvidenceService
             if (!stored.Add((kind, key))) return;
             await session.SaveAsync(new GPayEvidenceRecord { OwnerUserId = userId, Kind = kind, SourceKey = key, Payload = payload });
         }
-        foreach (var r in bundle.Records) await Add(r.Kind, Hash(r.IdentityKey + r.Payload), JsonSerializer.Serialize(new EvidencePayload(r.IdentityKey, r.Payload, bundle.ArchiveHash)));
-        await Add("Batch", bundle.ArchiveHash, JsonSerializer.Serialize(new { bundle.FileName, bundle.ArchiveHash, bundle.Inventory, bundle.Warnings, ImportedUtc = DateTime.UtcNow, ParserVersion = 1 }));
+        foreach (var r in bundle.Records) await Add(r.Kind, Hash((bundle.ProfileId == null ? "" : bundle.ProfileId + "|") + r.IdentityKey + r.Payload), JsonSerializer.Serialize(new EvidencePayload(r.IdentityKey, r.Payload, bundle.ArchiveHash, bundle.ProfileId)));
+        await Add("Batch", bundle.ProfileId == null ? bundle.ArchiveHash : Hash(bundle.ProfileId + "|" + bundle.ArchiveHash), JsonSerializer.Serialize(new { bundle.FileName, bundle.ArchiveHash, bundle.ProfileId, bundle.Inventory, bundle.Warnings, ImportedUtc = DateTime.UtcNow, ParserVersion = 1 }));
     }
 
     public async Task<object> Preview(long userId, GPayBundle bundle)
@@ -106,14 +106,16 @@ public sealed partial class GPayEvidenceService
         using var session = DbHelper.GetSession();
         var groups = await session.Query<SplitGroup>().Where(g => g.OwnerUserId == userId).ToListAsync();
         var rows = bundle.Expenses.Select(e => {
-            var matches = Corresponding(groups, e);
+            var matches = Corresponding(groups, e, bundle.ProfileId);
             return new { SourceKey = ExpenseKey(e), Title = string.IsNullOrWhiteSpace(e.Title) ? e.GroupName + " Expense" : e.Title, e.GroupName, Creator = e.Creator, e.State, Total = Money(e.TotalAmount), Matches = matches.Select(g => g.Id), Action = matches.Count == 0 ? "New expense" : matches.Count > 1 ? "Ambiguous — review" : matches[0].SourceSnapshot == JsonSerializer.Serialize(e) ? "Unchanged" : "Existing — review source differences" };
         }).ToList();
         return new { bundle.FileName, bundle.ArchiveHash, bundle.Inventory, bundle.Warnings, Expenses = rows, Note = "Import adds source records and missing expenses; existing financial repairs require review." };
     }
 
-    public static List<SplitGroup> Corresponding(List<SplitGroup> groups, GPayExpenseItem e) {
-        var key = ExpenseKey(e); var date = LocalDate(e.CreationTime); var title = string.IsNullOrWhiteSpace(e.Title) ? e.GroupName?.Trim() + " Expense" : e.Title.Trim();
+    public static string ProfileExpenseKey(GPayExpenseItem e, string? profileId) => profileId == null ? ExpenseKey(e) : Hash(profileId + "|" + ExpenseKey(e));
+    public static List<SplitGroup> Corresponding(List<SplitGroup> groups, GPayExpenseItem e, string? profileId = null) {
+        groups = groups.Where(group => group.GPayProfileId == profileId).ToList();
+        var key = ProfileExpenseKey(e, profileId); var date = LocalDate(e.CreationTime); var title = string.IsNullOrWhiteSpace(e.Title) ? e.GroupName?.Trim() + " Expense" : e.Title.Trim();
         var exact=groups.Where(g => g.SourceKey == key || (Imported(g) && Normalize(g.GroupName) == Normalize(e.GroupName) && Normalize(g.Title) == Normalize(title) && g.TotalAmount == Money(e.TotalAmount) && Math.Abs((g.Date - date).TotalSeconds) < 1)).ToList();
         if(exact.Count>0)return exact;
         // A changed title/amount/allocation is a source-version review, not a new bill.
@@ -124,12 +126,13 @@ public sealed partial class GPayEvidenceService
 }
 
 public sealed class GPayBundle {
+    public string? ProfileId {get;set;}
     public string FileName {get;set;}="";public string ArchiveHash {get;set;}="";
     public List<GPaySourceFile> Files {get;}=new();public List<object> Inventory {get;}=new();public List<string> Warnings {get;}=new();
     public List<GPayExpenseItem> Expenses {get;}=new();public List<GPaySourceRow> Records {get;}=new();
 }
 public record GPaySourceFile(string Path,long Bytes,string Content);
 public record GPaySourceRow(string Kind,string IdentityKey,string Payload);
-public record EvidencePayload(string IdentityKey,string Data,string ArchiveHash);
-public class ReviewSourceRequest { public int RecordId{get;set;} public bool Accept{get;set;} public long AccountId{get;set;} public string BankReference{get;set;}="";public string BankType{get;set;}="";public string TransactionType{get;set;}=""; }
+public record EvidencePayload(string IdentityKey,string Data,string ArchiveHash,string? ProfileId = null);
+public class ReviewSourceRequest { public int RecordId{get;set;} public bool Accept{get;set;} public long AccountId{get;set;} public string BankReference{get;set;}="";public string BankType{get;set;}="";public string TransactionType{get;set;}=""; public string? MatchMethod{get;set;} }
 public class AllocateRepaymentRequest : ReviewSourceRequest {public int SplitId{get;set;} public int MemberId{get;set;}public decimal Amount{get;set;}}

@@ -16,7 +16,7 @@ using NHibernate.Linq;
 
 namespace BankStatementAnalytics.Services
 {
-    public class GPayTakeoutService
+    public partial class GPayTakeoutService
     {
         private static readonly Regex CurrencyCleanRegex = new(@"[^\d.-]", RegexOptions.Compiled);
         private static readonly Regex TokenSplitRegex = new(@"[_\s\-\.\d]+", RegexOptions.Compiled);
@@ -34,7 +34,7 @@ namespace BankStatementAnalytics.Services
             return await GPayEvidenceService.OwnerNames(session, userId);
         }
 
-        public async Task<GPayAutoImportConfigDto> GetAutoImportConfigAsync(long userId)
+        public async Task<GPayAutoImportConfigDto> GetAutoImportConfigAsync(long userId, string? profileId = null)
         {
             var filePath = GetConfigFilePath();
             GPayAutoImportConfigDto config;
@@ -67,12 +67,14 @@ namespace BankStatementAnalytics.Services
                 config.UserName = "ARUN G";
             }
 
+            if (!string.IsNullOrWhiteSpace(profileId) && profileId != "default") config = await GetProfileAsync(userId, profileId);
+
             // Populate current stats from database
             using var session = DbHelper.GetSession();
-            var billGroups = await session.Query<BillGroup>().Where(b => b.OwnerUserId == userId).ToListAsync();
-            var splits = await session.Query<SplitGroup>().Where(s => s.OwnerUserId == userId).ToListAsync();
+            var billGroups = await session.Query<BillGroup>().Where(b => b.OwnerUserId == userId && b.GPayProfileId == config.ProfileId).ToListAsync();
+            var splits = await session.Query<SplitGroup>().Where(s => s.OwnerUserId == userId && s.GPayProfileId == config.ProfileId).ToListAsync();
             var matchedCount = splits.Count(s => s.ParentBankReference != null) +
-                               await session.Query<SplitGroupMember>().CountAsync(m => m.OwnerUserId == userId && m.LinkedBankReference != null);
+                               await session.Query<SplitGroupMember>().CountAsync(m => m.OwnerUserId == userId && m.Group.GPayProfileId == config.ProfileId && m.LinkedBankReference != null);
 
             var userAccountIds = await session.Query<Account>()
                 .Where(a => a.OwnerUserId == userId)
@@ -80,7 +82,7 @@ namespace BankStatementAnalytics.Services
                 .ToListAsync();
 
             int upiEnriched = 0;
-            if (userAccountIds.Count > 0)
+            if (userAccountIds.Count > 0 && config.ProfileId == null)
             {
                 upiEnriched = await session.Query<BankTransaction>()
                     .CountAsync(t => userAccountIds.Contains(t.AccountId) && t.Note != null && t.Note.Contains("GPay:"));
@@ -103,15 +105,16 @@ namespace BankStatementAnalytics.Services
                     candidates.Add(a.AccountHolderName.Trim());
             }
 
-            candidates.Add("ARUN G");
+            if (config.ProfileId == null) candidates.Add("ARUN G");
             config.CandidateUserNames = candidates.OrderBy(c => c).ToList();
+            config.Profiles = await ListProfilesAsync(userId);
 
             return config;
         }
 
-        public async Task<GPayAutoImportConfigDto> UpdateAutoImportConfigAsync(long userId, UpdateGPayAutoImportRequest request)
+        public async Task<GPayAutoImportConfigDto> UpdateAutoImportConfigAsync(long userId, UpdateGPayAutoImportRequest request, string? profileId = null)
         {
-            var config = await GetAutoImportConfigAsync(userId);
+            var config = await GetAutoImportConfigAsync(userId, profileId);
             if (request.WatchFolderPath != null)
             {
                 var cleanPath = request.WatchFolderPath.Trim().Trim('"').Trim();
@@ -127,16 +130,16 @@ namespace BankStatementAnalytics.Services
                 config.UserName = string.IsNullOrEmpty(cleanName) ? null : cleanName;
             }
 
-            var filePath = GetConfigFilePath();
-            var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(filePath, json);
+            if (request.BankAccountIds != null) config.BankAccountIds = request.BankAccountIds.Distinct().ToList();
+            await ValidateProfileConfigAsync(userId, config);
+            await SaveProfileConfigAsync(userId, config);
 
-            return await GetAutoImportConfigAsync(userId);
+            return await GetAutoImportConfigAsync(userId, profileId);
         }
 
-        public async Task<GPayTakeoutImportResultDto> SweepAsync(long userId)
+        public async Task<GPayTakeoutImportResultDto> SweepAsync(long userId, string? profileId = null)
         {
-            var config = await GetAutoImportConfigAsync(userId);
+            var config = await GetAutoImportConfigAsync(userId, profileId);
             if (string.IsNullOrWhiteSpace(config.WatchFolderPath) || !Directory.Exists(config.WatchFolderPath))
             {
                 return new GPayTakeoutImportResultDto
@@ -162,7 +165,7 @@ namespace BankStatementAnalytics.Services
             }
 
             var latestFile = files[0];
-            var result = await ImportFromPathAsync(userId, latestFile.FullName);
+            var result = await ImportFromPathAsync(userId, latestFile.FullName, profileId: config.ProfileId);
 
             config.LastSyncUtc = DateTime.UtcNow;
             config.LastResult = result.Success ? result.Message : $"Failed: {result.Message}";
@@ -170,15 +173,14 @@ namespace BankStatementAnalytics.Services
             if (result.UpiActivitiesEnriched > 0) config.UpiActivitiesEnriched = result.UpiActivitiesEnriched;
             if (result.ActiveVouchersCount > 0) config.ActiveVouchersCount = result.ActiveVouchersCount;
 
-            var cfgPath = GetConfigFilePath();
-            var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(cfgPath, json);
+            await SaveProfileConfigAsync(userId, config);
 
             return result;
         }
 
         public async Task SweepBackgroundAsync(CancellationToken stoppingToken)
         {
+            await SweepAdditionalProfilesAsync(stoppingToken);
             var filePath = GetConfigFilePath();
             if (!File.Exists(filePath)) return;
 
@@ -215,7 +217,7 @@ namespace BankStatementAnalytics.Services
             }
         }
 
-        public async Task<GPayTakeoutImportResultDto> ImportFromPathAsync(long userId, string filePath, string? expectedArchiveHash = null)
+        public async Task<GPayTakeoutImportResultDto> ImportFromPathAsync(long userId, string filePath, string? expectedArchiveHash = null, string? profileId = null)
         {
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
             {
@@ -228,19 +230,32 @@ namespace BankStatementAnalytics.Services
 
             if (new FileInfo(filePath).Length > 250_000_000) throw new ArgumentException("Takeout file exceeds 250 MB.");
             await using var stream = File.OpenRead(filePath);
-            return await ImportFromStreamAsync(userId, stream, Path.GetFileName(filePath), expectedArchiveHash);
+            return await ImportFromStreamAsync(userId, stream, Path.GetFileName(filePath), expectedArchiveHash, profileId);
         }
 
-        public async Task<GPayTakeoutImportResultDto> ImportFromStreamAsync(long userId, Stream stream, string fileName, string? expectedArchiveHash = null)
+        public async Task<GPayTakeoutImportResultDto> ImportFromStreamAsync(long userId, Stream stream, string fileName, string? expectedArchiveHash = null, string? profileId = null)
         {
             using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer);
             var bundle = GPayEvidenceService.Scan(buffer.ToArray(), fileName);
+            if (!string.IsNullOrWhiteSpace(profileId) && profileId != "default") { _ = await GetProfileAsync(userId, profileId); bundle.ProfileId = profileId; }
             if (expectedArchiveHash != null && !string.Equals(expectedArchiveHash, bundle.ArchiveHash, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Archive changed since preview. Preview it again before importing.");
             string? Find(string suffix) => bundle.Files.FirstOrDefault(f => f.Path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))?.Content;
-            return await ProcessImportDataAsync(userId, JsonSerializer.Serialize(new GPayTakeoutData { GroupExpenses = bundle.Expenses }),
+            var result = await ProcessImportDataAsync(userId, JsonSerializer.Serialize(new GPayTakeoutData { GroupExpenses = bundle.Expenses }),
                 Find("Cashback rewards.csv"), bundle.Files.FirstOrDefault(f => f.Path.Contains("Google transactions/transactions_", StringComparison.OrdinalIgnoreCase))?.Content,
                 Find("My Activity.html"), Find("Voucher rewards.json"), bundle);
+            if (result.Success) {
+                try {
+                    var matches = await new GPayEvidenceService().AutoMatchActivities(userId);
+                    result.UpiActivitiesEnriched = matches.Linked;
+                    if (matches.Linked > 0) result.Message += $" Automatically linked {matches.Linked} GPay payments to bank transactions.";
+                } catch (Exception exception) {
+                    // The source import has committed. Keep it successful and retry matching on the activity page.
+                    result.Message += " Source import completed; automatic bank matching will retry when GPay Activity opens.";
+                    Common.Framework.Logging.Log.Warn("Automatic GPay matching after import failed: " + exception.Message);
+                }
+            }
+            return result;
         }
 
         private async Task<GPayTakeoutImportResultDto> ProcessImportDataAsync(
@@ -281,11 +296,12 @@ namespace BankStatementAnalytics.Services
                 .Where(a => a.OwnerUserId == userId)
                 .ToListAsync();
 
-            var userNames = await GPayEvidenceService.OwnerNames(session, userId);
+            var profile = bundle.ProfileId == null ? null : await GetProfileAsync(userId, bundle.ProfileId);
+            var userNames = profile == null ? await GPayEvidenceService.OwnerNames(session, userId) : new HashSet<string> { GPayEvidenceService.Normalize(profile.UserName) };
 
             // 3. Pre-fetch existing BillGroups and SplitGroups to prevent duplicates
             var existingBillGroups = await session.Query<BillGroup>()
-                .Where(b => b.OwnerUserId == userId)
+                .Where(b => b.OwnerUserId == userId && b.GPayProfileId == bundle.ProfileId)
                 .ToListAsync();
 
             var billGroupMap = new Dictionary<string, BillGroup>(StringComparer.OrdinalIgnoreCase);
@@ -295,7 +311,7 @@ namespace BankStatementAnalytics.Services
             }
 
             var existingSplits = await session.Query<SplitGroup>()
-                .Where(s => s.OwnerUserId == userId)
+                .Where(s => s.OwnerUserId == userId && s.GPayProfileId == bundle.ProfileId)
                 .ToListAsync();
 
             int groupsCreated = 0;
@@ -337,6 +353,7 @@ namespace BankStatementAnalytics.Services
                             billGroup = new BillGroup
                             {
                                 OwnerUserId = userId,
+                                GPayProfileId = bundle.ProfileId,
                                 Name = groupName,
                                 Description = $"Google Pay Group ({expensesInGroup.Count} expenses)",
                                 CreatedOn = earliestDate,
@@ -390,7 +407,7 @@ namespace BankStatementAnalytics.Services
                                 : $"{groupName} Expense";
 
                             // Check duplicate
-                            if (GPayEvidenceService.Corresponding(existingSplits, exp).Count > 0)
+                            if (GPayEvidenceService.Corresponding(existingSplits, exp, bundle.ProfileId).Count > 0)
                             {
                                 continue;
                             }
@@ -419,7 +436,9 @@ namespace BankStatementAnalytics.Services
                                 GroupName = billGroup.Name,
                                 Title = splitTitle,
                                 Description = $"Google Pay expense created by {exp.Creator ?? "Participant"}",
-                                SourceKey = GPayEvidenceService.ExpenseKey(exp),
+                                SourceKey = GPayEvidenceService.ProfileExpenseKey(exp, bundle.ProfileId),
+                                GPayProfileId = bundle.ProfileId,
+                                GPayOwnerName = profile?.UserName,
                                 SourceState = exp.State,
                                 CreatorName = exp.Creator,
                                 SourceSnapshot = JsonSerializer.Serialize(exp),
@@ -723,6 +742,10 @@ namespace BankStatementAnalytics.Services
 
     public class GPayAutoImportConfigDto
     {
+        public string? ProfileId { get; set; }
+        public string ProfileName { get; set; } = "Primary GPay";
+        public List<long> BankAccountIds { get; set; } = new();
+        public List<GPayProfileSummary> Profiles { get; set; } = new();
         public string? WatchFolderPath { get; set; }
         public bool WatchEnabled { get; set; }
         public string? UserName { get; set; }
@@ -743,5 +766,6 @@ namespace BankStatementAnalytics.Services
         public string? WatchFolderPath { get; set; }
         public bool? WatchEnabled { get; set; }
         public string? UserName { get; set; }
+        public List<long>? BankAccountIds { get; set; }
     }
 }
