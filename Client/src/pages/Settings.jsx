@@ -924,7 +924,7 @@ export default function Settings() {
       if (res.data?.updateInfo?.isUpdateAvailable) {
         setUpdateMessage(`New version v${res.data.updateInfo.latestVersion} is available!`);
       } else {
-        setUpdateMessage(`You are running the latest version (v${res.data?.updateInfo?.currentVersion || "2.0.0"}).`);
+        setUpdateMessage(`You are running the latest version (v${res.data?.updateInfo?.currentVersion || "3.0.0"}).`);
       }
     } catch (err) {
       setUpdateError(err?.response?.data?.message || "Failed to check for updates. Check internet connectivity.");
@@ -1407,7 +1407,7 @@ export default function Settings() {
 
   const renderUpdates = () => {
     const info = updateStatus?.updateInfo;
-    const currentVer = info?.currentVersion || '2.0.0';
+    const currentVer = info?.currentVersion || '3.0.0';
     const latestVer = info?.latestVersion || currentVer;
     const isAvailable = !!info?.isUpdateAvailable;
     const state = updateStatus?.state;
