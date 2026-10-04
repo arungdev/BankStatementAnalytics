@@ -3,6 +3,8 @@ import { useOutletContext } from 'react-router-dom';
 import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
+import SharedBillSummary from '../components/SharedBillSummary';
+import { sharedBillReportRange } from '../utils/sharedBills';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
@@ -184,6 +186,7 @@ export default function Reports() {
   } = useOutletContext() ?? {};
   const { selectedAccountId } = useAccount();
   const { theme } = useTheme();
+  const sharedBillRange = sharedBillReportRange(type, period);
 
   // Resolved chart colors (recharts SVG can't read CSS var()). Category slots
   // share the same fixed order as Insights so a category keeps its color.
@@ -406,6 +409,10 @@ export default function Reports() {
     }
   };
 
+  const sharedBillPanel = accountIdsParam && sharedBillRange ? <SharedBillSummary report
+    accountId={selectedAccountId === ALL_ACCOUNTS ? 0 : selectedAccountId}
+    {...sharedBillRange} /> : null;
+
   return (
     <div style={{ display: 'flex', position: 'relative', overflow: 'hidden' }}>
       <div
@@ -457,7 +464,7 @@ export default function Reports() {
             <EmptyState icon="📄" title="Nothing in this period" subtitle="No transactions were found for the selected period and accounts." />
           </div>
         ) : type === 'annual' ? (
-          <AnnualSummaryView data={report} palette={palette} chartC={chartC} />
+          <><AnnualSummaryView data={report} palette={palette} chartC={chartC} />{sharedBillPanel}</>
         ) : (
           <>
             {/* ── Summary ── */}
@@ -496,6 +503,8 @@ export default function Reports() {
                 title="Show every transaction in this period"
               />
             </div>
+
+            {sharedBillPanel}
 
             {/* ── Balance band — what the account actually held at each edge of the
                 period, so the spend totals above have something to sit against. ── */}

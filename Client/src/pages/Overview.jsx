@@ -9,6 +9,7 @@ import api from '../api/client';
 import StatCard from '../components/StatCard';
 import CreditCardPanel from '../components/CreditCardPanel';
 import CashFlowForecast from '../components/CashFlowForecast';
+import SharedBillSummary from '../components/SharedBillSummary';
 import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
 import { getToken } from "../theme/chartTheme";
 import { currencyFormatter as fmt, formatDate, maskName } from '../utils/format';
@@ -470,6 +471,8 @@ export default function Overview() {
           title="Show every transaction on this account"
         />
       </div>
+
+      {selectedAccountId && <SharedBillSummary accountId={isAllAccounts ? 0 : selectedAccountId} />}
 
       {isCreditCard && (
         <CreditCardPanel accountId={selectedAccountId} onOpenSettings={openSettings} />

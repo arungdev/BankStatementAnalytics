@@ -13,6 +13,9 @@ export const getCandidateTransactions = (type, search) =>
 // Get single split group detail
 export const getSplitGroupById = (id) => api.get(`/split-groups/${id}`);
 
+export const getSharedBillSummary = (params, signal) => api.get('/split-groups/summary', { params, signal });
+export const getTransactionBillSplits = (params, signal) => api.get('/split-groups/transaction-context', { params, signal });
+
 // Create a split group (manual or from an auto-detected candidate)
 export const createSplitGroup = (data) => api.post("/split-groups", data);
 

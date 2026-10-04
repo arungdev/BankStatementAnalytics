@@ -1,0 +1,30 @@
+.shared-bills-summary { margin: 16px 0; padding: 18px 20px; background: var(--surface); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 12px; }
+.shared-bills-summary header, .shared-bills-summary footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.shared-bills-summary h2, .transaction-bill-splits h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; }
+.shared-bills-summary p, .shared-bills-drawer p, .transaction-bill-splits p { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 5px 0; }
+.shared-bills-link { display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; border: 0; background: transparent; color: var(--primary); font: inherit; font-size: 13px; text-decoration: none; cursor: pointer; }
+.shared-bills-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+.shared-bills-metrics.is-report { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.shared-bills-metric { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: var(--surface-2, var(--bg)); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 8px; text-align: left; font: inherit; min-width: 0; }
+button.shared-bills-metric { cursor: pointer; }
+.shared-bills-metric span { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--text-muted); }
+.shared-bills-metric strong { font-size: 22px; overflow-wrap: anywhere; }
+.shared-bills-metric.is-collect { border-inline-start: 3px solid var(--warning, #b45309); }
+.shared-bills-metric.is-owe { border-inline-start: 3px solid var(--primary); }
+.shared-bills-summary footer { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.shared-bills-drawer { padding: 20px; }
+.shared-bill-row { display: flex; align-items: center; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border-color); color: var(--text-main); text-decoration: none; font-size: 14px; }
+.shared-bill-row > div:first-child { flex: 1; min-width: 0; }
+.shared-bill-row > div:nth-child(2) { text-align: right; }
+.shared-bill-row strong, .shared-bill-row small { display: block; overflow-wrap: anywhere; }
+.shared-bill-row small { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
+.transaction-bill-splits { margin: 18px 0; padding: 16px 0; border-block: 1px solid var(--border-color); }
+.shared-bill-context { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); text-decoration: none; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.shared-bill-context-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.shared-bill-context small { font-size: 12px; color: var(--text-muted); }
+.shared-bills-link:hover, .shared-bill-row:hover, .shared-bill-context:hover { color: var(--primary); }
+button.shared-bills-metric:hover, .shared-bill-context:hover { border-color: var(--primary); }
+.shared-bills-summary :focus-visible, .shared-bills-drawer :focus-visible, .transaction-bill-splits :focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+@media (max-width: 700px) { .shared-bills-metrics.is-report { grid-template-columns: repeat(2, minmax(0, 1fr)); } .shared-bills-summary { padding: 16px; } }
+@media (max-width: 360px) { .shared-bills-metrics, .shared-bills-metrics.is-report { grid-template-columns: 1fr; } }
+@media print { .shared-bills-summary, .shared-bills-drawer { display: none !important; } }

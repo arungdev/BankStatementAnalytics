@@ -38,6 +38,34 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(groups);
         }
 
+        // Current split balances, optionally scoped by a linked bank account and bill date.
+        [HttpGet("summary")]
+        public async Task<IActionResult> GetSummary([FromQuery] long accountId = 0,
+            [FromQuery] System.DateTime? startDate = null, [FromQuery] System.DateTime? endDate = null)
+        {
+            if (startDate.HasValue && endDate.HasValue && startDate.Value.Date > endDate.Value.Date)
+                return BadRequest("Start date must be on or before end date.");
+            HashSet<long>? scope = null;
+            if (accountId != 0)
+            {
+                var owned = await AccountAccess.OwnedIdSetAsync(CurrentUserId);
+                if (!owned.Contains(accountId)) return NotFound();
+                scope = new HashSet<long> { accountId };
+            }
+            return Ok(await _splitService.GetSharedBillSummaryAsync(CurrentUserId, scope, startDate, endDate));
+        }
+
+        [HttpGet("transaction-context")]
+        public async Task<IActionResult> GetTransactionContext([FromQuery] long accountId,
+            [FromQuery] string bankReference, [FromQuery] string bankType, [FromQuery] string transactionType)
+        {
+            if (accountId <= 0 || string.IsNullOrWhiteSpace(bankReference) || string.IsNullOrWhiteSpace(bankType) || string.IsNullOrWhiteSpace(transactionType))
+                return BadRequest("A complete bank transaction key is required.");
+            var context = await _splitService.GetSharedBillTransactionContextAsync(CurrentUserId,
+                accountId, bankReference, bankType, transactionType);
+            return context == null ? NotFound() : Ok(context);
+        }
+
         // GET: api/split-groups/suggestions — auto-detected GPay / UPI split candidate clusters
         [HttpGet("suggestions")]
         public IActionResult GetSuggestions()

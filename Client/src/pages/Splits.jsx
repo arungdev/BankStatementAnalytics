@@ -25,7 +25,7 @@ import {
   getBillGroups, getBillGroupById, createBillGroup,
   updateBillGroup, deleteBillGroup, addBillGroupMember,
   removeBillGroupMember, getTakeoutStatus, importTakeoutPath,
-  importTakeoutUpload
+  importTakeoutUpload, getSplitGroupById
 } from '../api/splits';
 
 const fmtDate = (d) =>
@@ -65,6 +65,11 @@ const formatChatDate = (d) => {
 export default function Splits() {
   usePrivacy();
   const location = useLocation();
+  const [splitLinkError, setSplitLinkError] = useState(null);
+  const [splitLinkAttempt, setSplitLinkAttempt] = useState(0);
+  const [splitFilter, setSplitFilter] = useState(
+    () => localStorage.getItem('bsp_gpay_split_filter') || 'all'
+  );
 
   // Navigation tab: 'billGroups' (GPay Style), 'splits' (All Confirmed Splits), 'suggestions' (Auto-detected)
   const [activeTab, setActiveTab] = useState('billGroups');
@@ -213,6 +218,25 @@ export default function Splits() {
     }
   }, [location.state]);
 
+  // Open the same expense details from Overview, Reports, or a bank transaction.
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('splitId');
+    if (!id || !/^[1-9]\d*$/.test(id)) return;
+    let active = true;
+    getSplitGroupById(id).then(res => {
+      if (!active) return;
+      setSplitLinkError(null);
+      setActiveTab('splits');
+      setSplitFilter('all');
+      setSelectedBillGroupId(null);
+      setLinkedTransaction(null);
+      setSelectedSplitDetail(res.data);
+    }).catch(() => {
+      if (active) setSplitLinkError({ key: location.key, message: 'Could not open the linked expense. It may have been removed or is unavailable.' });
+    });
+    return () => { active = false; };
+  }, [location.key, location.search, splitLinkAttempt]);
+
   // Summary stats
   const stats = useMemo(() => {
     const totalGroups = billGroups.length > 0 ? billGroups.length : groups.length;
@@ -237,9 +261,6 @@ export default function Splits() {
   const isImportedSplit = split => isImportedGPayExpense(split)
     || isImportedGPayGroup(billGroups.find(group => group.id === split?.billGroupId));
 
-  const [splitFilter, setSplitFilter] = useState(
-    () => localStorage.getItem('bsp_gpay_split_filter') || 'all'
-  );
   const onlyLinkCreatedByMe = localStorage.getItem('bsp_gpay_only_link_created_by_me') !== 'false';
   const configuredUserName = localStorage.getItem('bsp_gpay_user_name') || 'ARUN G';
 
@@ -1176,6 +1197,7 @@ export default function Splits() {
       </div>
 
       {/* KPI Stat Cards */}
+      {splitLinkError?.key === location.key && <div role="alert" className="shared-bills-summary"><p>{splitLinkError.message}</p><button className="btn btn--outline" onClick={() => setSplitLinkAttempt(value => value + 1)}>Retry opening expense</button></div>}
       <div className="splits-summary">
         <StatCard
           label="Total Bill Volume"

@@ -9,7 +9,7 @@ using NHibernate.Linq;
 
 namespace BankStatementAnalytics.Services
 {
-    public class GPaySplitService
+    public partial class GPaySplitService
     {
         private const int LookbackMonths = 12;
         private const int MaxDaysApart = 1;

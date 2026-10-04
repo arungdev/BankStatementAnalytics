@@ -14,6 +14,7 @@ import Pagination from "../components/Pagination";
 import CategoryPicker from "../components/CategoryPicker";
 import SplitTransactionModal from "../components/SplitTransactionModal";
 import TransactionGPayContext from "../components/TransactionGPayContext";
+import TransactionBillSplits from "../components/TransactionBillSplits";
 import TagPicker from "../components/TagPicker";
 import ManageTagsModal from "../components/ManageTagsModal";
 import { currencyFormatter, maskName } from "../utils/format";
@@ -1548,6 +1549,7 @@ export default function Transactions() {
             </div>
 
             <TransactionGPayContext note={selectedTx.note} detail />
+            <TransactionBillSplits transaction={selectedTx} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
               {isAllAccounts && (
                 <div style={{ gridColumn: 'span 2' }}>

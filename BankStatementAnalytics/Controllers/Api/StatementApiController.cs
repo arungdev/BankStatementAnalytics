@@ -268,6 +268,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 {
                     Id = t.BankReference,
                     AccountId = t.AccountId,
+                    TransactionType = t.TransactionType,
                     TransactionDate = t.TransactionDate,
                     Description = t.Description,
                     UpiReference = t.UpiReference,
@@ -299,6 +300,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     t.Id,
                     BankReference = t.Id,
                     t.AccountId,
+                    t.TransactionType,
                     t.TransactionDate,
                     t.Description,
                     t.UpiReference,
