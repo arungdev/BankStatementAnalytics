@@ -25,7 +25,8 @@ import NetworkSettings from "../components/NetworkSettings";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RulesManager from "../components/RulesManager";
 import { getBackupStatus, downloadBackup, restoreBackup, readApiError } from "../api/backup";
-import { getUpdateStatus, checkForUpdates, downloadUpdate, cancelDownload, applyUpdate, downloadUpdateBinary } from "../api/update";
+import { getUpdateStatus, getUpdateInstallation, checkForUpdates, downloadUpdate, cancelDownload, applyUpdate, downloadUpdateBinary } from "../api/update";
+import { getUpdateOutcome, isInstallingUpdate } from "../utils/updateProgress";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
 
 import "./Settings.css";
@@ -899,30 +900,66 @@ export default function Settings() {
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const [updateMessage, setUpdateMessage] = useState(null);
   const [updateError, setUpdateError] = useState(null);
+  const updateRestart = useRef(null);
+  // Use the desktop installer unless the server explicitly supports an elevated launch.
+  const [manualInstallation, setManualInstallation] = useState(true);
+  const updateState = updateStatus?.state;
+
+  useEffect(() => {
+    let disposed = false;
+    getUpdateInstallation().then(res => {
+      if (!disposed) setManualInstallation(res.data?.requiresManualInstallation !== false);
+    }).catch(() => { /* Older servers also need the safe desktop installation flow. */ });
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     let timer;
+    let disposed = false;
+    let fetching = false;
+    let latestStatus = null;
     const fetchStatus = async () => {
+      if (fetching || disposed) return;
+      fetching = true;
       try {
         const res = await getUpdateStatus();
+        if (disposed) return;
+        latestStatus = res.data;
         setUpdateStatus(res.data);
+        if (isInstallingUpdate(res.data) && !manualInstallation && !updateRestart.current) {
+          updateRestart.current = { target: res.data?.updateInfo?.latestVersion, startedAt: Date.now() };
+        }
+        if (getUpdateOutcome(res.data, updateRestart.current) === "complete") {
+          updateRestart.current = null;
+          window.location.reload();
+        }
       } catch {
-        // quiet catch
+        // The service can be unreachable while the installer restarts it.
+      } finally {
+        fetching = false;
+        const outcome = getUpdateOutcome(latestStatus, updateRestart.current);
+        if (!disposed && updateRestart.current && !updateRestart.current.reported && (outcome === "timeout" || outcome === "failed")) {
+          updateRestart.current.reported = true;
+          setApplyingUpdate(false);
+          setUpdateMessage(null);
+          setUpdateError(outcome === "failed"
+            ? "The installer reported a failure. Download setup and run it as administrator on the server computer. Check the application logs if setup fails again."
+            : "The upgrade has not completed after 3 minutes. Download setup and run it as administrator on the server computer. The running version has not yet been verified as updated.");
+        }
       }
     };
 
     fetchStatus();
 
     const isBusy =
-      updateStatus?.state === "Downloading" ||
-      updateStatus?.state === 4 ||
-      updateStatus?.state === "Installing" ||
-      updateStatus?.state === 6;
+      updateState === "Downloading" ||
+      updateState === 4 ||
+      (!manualInstallation && (updateState === "Installing" || updateState === 6));
 
     const interval = isBusy ? 1000 : (activeTab === "updates" ? 5000 : 60000);
     timer = setInterval(fetchStatus, interval);
-    return () => clearInterval(timer);
-  }, [activeTab, updateStatus?.state]);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [activeTab, manualInstallation, updateState]);
 
   const handleCheckUpdate = async () => {
     setCheckingUpdate(true);
@@ -964,6 +1001,7 @@ export default function Settings() {
   };
 
   const handleApplyUpdate = () => {
+    if (applyingUpdate || isInstallingUpdate(updateStatus)) return;
     setConfirmDialog({
       title: "Apply update and restart?",
       message:
@@ -975,28 +1013,14 @@ export default function Settings() {
       onConfirm: async () => {
         setApplyingUpdate(true);
         setUpdateError(null);
+        setUpdateMessage(null);
         try {
           const res = await applyUpdate(true);
           setUpdateMessage(res.data?.message || "Update started. Application is restarting...");
-
-          let attempts = 0;
-          const pollRestart = setInterval(async () => {
-            attempts++;
-            try {
-              const check = await getUpdateStatus();
-              if (check.status === 200) {
-                clearInterval(pollRestart);
-                window.location.reload();
-              }
-            } catch {
-              if (attempts > 30) {
-                clearInterval(pollRestart);
-                setApplyingUpdate(false);
-              }
-            }
-          }, 2500);
+          updateRestart.current = { target: updateStatus?.updateInfo?.latestVersion, startedAt: Date.now() };
         } catch (err) {
           setApplyingUpdate(false);
+          if (err?.response?.data?.code === "manual_install_required") setManualInstallation(true);
           setUpdateError(err?.response?.data?.message || "Failed to launch installer.");
         }
       },
@@ -1004,10 +1028,17 @@ export default function Settings() {
   };
 
   const handleSaveFileDirectly = async () => {
+    if (applyingUpdate) return;
+    setApplyingUpdate(true);
+    setUpdateError(null);
+    setUpdateMessage(null);
     try {
       await downloadUpdateBinary();
+      setUpdateMessage("Setup downloaded. On the computer hosting Bank Statement Analytics, open the downloaded file, choose Run as administrator, and approve the Windows prompt. After setup finishes, refresh this page to verify the version.");
     } catch {
       setUpdateError("Failed to download setup file to browser.");
+    } finally {
+      setApplyingUpdate(false);
     }
   };
 
@@ -1123,7 +1154,7 @@ export default function Settings() {
 
   const renderBackup = () => <BackupSettings SettingCard={SettingCard} backupError={backupError} backupStatus={backupStatus} downloadingBackup={downloadingBackup} formatBytes={formatBytes} handleDownloadBackup={handleDownloadBackup} handleRestore={handleRestore} isAdmin={isAdmin} restoreFile={restoreFile} restoreInputRef={restoreInputRef} restoreProgress={restoreProgress} restoring={restoring} setBackupError={setBackupError} setRestoreFile={setRestoreFile} />;
 
-  const renderUpdates = () => <UpdateSettings SettingCard={SettingCard} applyingUpdate={applyingUpdate} checkingUpdate={checkingUpdate} formatBytes={formatBytes} handleApplyUpdate={handleApplyUpdate} handleCancelDownload={handleCancelDownload} handleCheckUpdate={handleCheckUpdate} handleDownloadUpdate={handleDownloadUpdate} handleSaveFileDirectly={handleSaveFileDirectly} updateError={updateError} updateMessage={updateMessage} updateStatus={updateStatus} />;
+  const renderUpdates = () => <UpdateSettings SettingCard={SettingCard} applyingUpdate={applyingUpdate} manualInstallation={manualInstallation} checkingUpdate={checkingUpdate} formatBytes={formatBytes} handleApplyUpdate={handleApplyUpdate} handleCancelDownload={handleCancelDownload} handleCheckUpdate={handleCheckUpdate} handleDownloadUpdate={handleDownloadUpdate} handleSaveFileDirectly={handleSaveFileDirectly} updateError={updateError} updateMessage={updateMessage} updateStatus={updateStatus} />;
 
   const renderAccounts = () => <AccountSettings accounts={accounts} autoDraft={autoDraft} autoDrafts={autoDrafts} autoOpen={autoOpen} browse={browse} cardAccounts={cardAccounts} cardDraft={cardDraft} cardDrafts={cardDrafts} editAccountName={editAccountName} editingAccountId={editingAccountId} gpayAutoOpen={gpayAutoOpen} gpayConfig={gpayConfig} gpayDraftPath={gpayDraftPath} gpayMessage={gpayMessage} gpaySweeping={gpaySweeping} gpayUserName={gpayUserName} handleDeleteAccount={handleDeleteAccount} handleImportNow={handleImportNow} handleOpenNamePicker={handleOpenNamePicker} handleSaveAutoImport={handleSaveAutoImport} handleSaveCardSettings={handleSaveCardSettings} handleSaveGPayAutoImport={handleSaveGPayAutoImport} handleSaveGPayUserName={handleSaveGPayUserName} handleSweepGPay={handleSweepGPay} handleToggleAutoImport={handleToggleAutoImport} handleToggleGPayAutoImport={handleToggleGPayAutoImport} handleUpdateAccount={handleUpdateAccount} isAdmin={isAdmin} loadBrowse={loadBrowse} onlyLinkCreatedByMe={onlyLinkCreatedByMe} openBrowse={openBrowse} openBrowseGPay={openBrowseGPay} openHistory={openHistory} setAutoDraft={setAutoDraft} setAutoOpen={setAutoOpen} setBrowse={setBrowse} setCardDraft={setCardDraft} setCardDrafts={setCardDrafts} setEditAccountName={setEditAccountName} setEditingAccountId={setEditingAccountId} setGpayAutoOpen={setGpayAutoOpen} setGpayConfig={setGpayConfig} setGpayDraftPath={setGpayDraftPath} setGpayMessage={setGpayMessage} setGpayUserName={setGpayUserName} setOnlyLinkCreatedByMe={setOnlyLinkCreatedByMe} setParticipantList={setParticipantList} setShowPw={setShowPw} setSplitDisplayFilter={setSplitDisplayFilter} showPw={showPw} splitDisplayFilter={splitDisplayFilter} sweeping={sweeping} />;
 

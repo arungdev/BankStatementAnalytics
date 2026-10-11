@@ -40,15 +40,19 @@ rem Preserve args so self-elevation re-launches with the same /silent flag.
 set "ELEV_ARGS=%*"
 
 rem --- Self-elevate to administrator ----------------------------------------
-net session >nul 2>&1
+powershell -NoProfile -NonInteractive -Command "if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 0 } else { exit 1 }"
 if %errorlevel% neq 0 (
+    if /i "%~1"=="/silent" (
+        echo ERROR: Setup must run as administrator.
+        exit /b 1
+    )
     echo Requesting administrator privileges...
     if defined ELEV_ARGS (
-        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -ArgumentList '%ELEV_ARGS%'"
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WindowStyle Hidden -ArgumentList '%ELEV_ARGS%'"
     ) else (
-        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WindowStyle Hidden"
     )
-    exit /b
+    exit /b 1
 )
 
 if not exist "%EXE%" (
@@ -88,6 +92,11 @@ timeout /t 2 /nobreak >nul
 
 :do_delete
 sc delete "%SERVICE_NAME%" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to remove the previous service registration.
+    %PAUSE_CMD%
+    exit /b 1
+)
 
 set /a _tries=0
 :wait_gone
@@ -120,6 +129,11 @@ rem right under this install directory, so the service account needs write acces
 rem read/execute on the bundled pgsql binaries.
 echo Granting LocalService write access to "%APP_DIR%"...
 icacls "%APP_DIR%" /grant *S-1-5-19:(OI)(CI)M /T /C >nul
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to grant service account permissions.
+    %PAUSE_CMD%
+    exit /b 1
+)
 
 echo Creating service "%SERVICE_NAME%"...
 sc create "%SERVICE_NAME%" binPath= "\"%EXE%\"" start= auto obj= "%SERVICE_ACCOUNT%" password= "" DisplayName= "%DISPLAY_NAME%"
@@ -141,6 +155,26 @@ sc failure "%SERVICE_NAME%" reset= 86400 actions= restart/5000/restart/5000/rest
 
 echo Starting service...
 sc start "%SERVICE_NAME%"
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to start the service.
+    %PAUSE_CMD%
+    exit /b 1
+)
+
+set /a _tries=0
+:wait_running
+sc query "%SERVICE_NAME%" | find "RUNNING" >nul
+if %errorlevel% equ 0 goto service_running
+set /a _tries+=1
+if %_tries% geq 30 (
+    echo ERROR: Service did not reach RUNNING. Check the application logs.
+    %PAUSE_CMD%
+    exit /b 1
+)
+timeout /t 1 /nobreak >nul
+goto wait_running
+
+:service_running
 
 echo.
 echo ============================================================

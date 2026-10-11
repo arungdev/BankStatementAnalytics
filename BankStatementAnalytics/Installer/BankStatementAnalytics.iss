@@ -53,11 +53,12 @@
 #endif
 
 [Setup]
+SetupMutex=Global\BankStatementAnalyticsSetup
 ; Fixed GUID for this product - do not change between releases, or upgrades
 ; will be seen as a different app (install side-by-side instead of updating).
 AppId={{5FE7BEC0-D13C-4A11-BFAA-4DDB8770E5F3}
 
-#include "..\..\Common.Framework\Installer\Framework.iss"
+#include "Framework.iss"
 
 [Files]
 Source: "{#PgsqlBundleDir}\*"; DestDir: "{app}\pgsql"; Flags: ignoreversion recursesubdirs createallsubdirs

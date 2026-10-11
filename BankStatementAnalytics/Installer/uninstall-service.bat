@@ -19,15 +19,19 @@ rem Preserve args so self-elevation re-launches with the same /silent flag.
 set "ELEV_ARGS=%*"
 
 rem --- Self-elevate to administrator ----------------------------------------
-net session >nul 2>&1
+powershell -NoProfile -NonInteractive -Command "if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 0 } else { exit 1 }"
 if %errorlevel% neq 0 (
+    if /i "%~1"=="/silent" (
+        echo ERROR: Setup must run as administrator.
+        exit /b 1
+    )
     echo Requesting administrator privileges...
     if defined ELEV_ARGS (
-        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -ArgumentList '%ELEV_ARGS%'"
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WindowStyle Hidden -ArgumentList '%ELEV_ARGS%'"
     ) else (
-        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+        powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WindowStyle Hidden"
     )
-    exit /b
+    exit /b 1
 )
 
 sc query "%SERVICE_NAME%" >nul 2>&1
@@ -67,17 +71,30 @@ timeout /t 2 /nobreak >nul
 :stopped
 echo Removing service...
 sc delete "%SERVICE_NAME%" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to remove the service registration.
+    %PAUSE_CMD%
+    exit /b 1
+)
 
 rem Confirm it's really gone. If a handle is still open (e.g. services.msc / Task Manager's
 rem Services tab), Windows keeps it marked-for-deletion until those close - tell the user.
+set /a _tries=0
+:wait_gone
 sc query "%SERVICE_NAME%" >nul 2>&1
-if %errorlevel% equ 0 (
+if %errorlevel% neq 0 goto service_removed
+set /a _tries+=1
+if %_tries% geq 15 (
     echo.
     echo WARNING: "%SERVICE_NAME%" is still marked for deletion. Close the Services window
     echo ^(services.msc^) and Task Manager's Services tab, then re-run this script.
     %PAUSE_CMD%
     exit /b 1
 )
+timeout /t 1 /nobreak >nul
+goto wait_gone
+
+:service_removed
 
 echo.
 echo Service "%SERVICE_NAME%" removed.

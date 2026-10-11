@@ -104,6 +104,26 @@ On the frontend, the axios client uses a relative `baseURL` of `/api`, so no
 config is needed for normal dev or production; copy `Client/.env.example` to
 `Client/.env` only to point the SPA at a non-default API origin.
 
+## Installing updates on Windows
+
+For a Windows service installation, use **Settings → Updates → Download setup (.exe)**.
+Run the downloaded setup as administrator on the computer hosting the application
+and approve the Windows prompt. Setup stops the service before replacing program
+files and restarts it afterwards; `Data/` and `Uploads/` are preserved. Refresh the
+Updates page after setup finishes and verify the running version.
+
+The service runs as LocalService and cannot display a desktop administrator prompt.
+The update API therefore rejects service-session installer launches without changing
+the update state. Desktop installation is also the fallback for older servers. An
+elevated interactive host can use Install & Restart; the page reloads only after the
+target version is reported and displays an error after three minutes or an installer
+failure. Service-script errors abort setup instead of being silently ignored.
+
+The installer lifecycle is maintained in `BankStatementAnalytics/Installer/Framework.iss`
+so its fixes are included in this repository. Verify update regressions with
+`dotnet run --project Tests/UpdateInstallation -p:ValidationBuild=true` and `npm test`
+in `Client/`. Compile the product `.iss` with Inno Setup when validating installer edits.
+
 ## Builds & deployment
 
 Next release: **v3.1.0**. See [release notes and readiness checklist](RELEASE_NOTES_v3.1.0.md)

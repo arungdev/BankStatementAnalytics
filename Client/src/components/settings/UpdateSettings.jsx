@@ -2,9 +2,9 @@ import { FiAlertCircle, FiCheckCircle, FiRefreshCw, FiZap, FiX, FiDownloadCloud,
 import { Badge } from "@common/client";
 import { formatDate } from "../../utils/format";
 
-export default function UpdateSettings({ SettingCard, applyingUpdate, checkingUpdate, formatBytes, handleApplyUpdate, handleCancelDownload, handleCheckUpdate, handleDownloadUpdate, handleSaveFileDirectly, updateError, updateMessage, updateStatus }) {
+export default function UpdateSettings({ SettingCard, applyingUpdate, manualInstallation = true, checkingUpdate, formatBytes, handleApplyUpdate, handleCancelDownload, handleCheckUpdate, handleDownloadUpdate, handleSaveFileDirectly, updateError, updateMessage, updateStatus }) {
     const info = updateStatus?.updateInfo;
-    const currentVer = info?.currentVersion || '3.1.0';
+    const currentVer = info?.currentVersion || 'unknown';
     const latestVer = info?.latestVersion || currentVer;
     const isAvailable = !!info?.isUpdateAvailable;
     const state = updateStatus?.state;
@@ -31,7 +31,18 @@ export default function UpdateSettings({ SettingCard, applyingUpdate, checkingUp
           </p>
         )}
 
-        {isInstalling && (
+        {manualInstallation && isAvailable && (
+          <div className="card" style={{ padding: '20px' }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: '16px' }}>Install on the server computer</h3>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+              Download setup below, then run it as administrator on the computer hosting Bank Statement Analytics.
+              Approve the Windows prompt. Setup will stop the service, update the application, and restart it.
+              After setup finishes, refresh this page to verify the new version.
+            </p>
+          </div>
+        )}
+
+        {isInstalling && !manualInstallation && (
           <div className="card" style={{ padding: '20px', textAlign: 'center', borderColor: 'var(--primary)' }}>
             <FiRefreshCw size={28} className="spin" color="var(--primary)" style={{ margin: '0 auto 12px' }} />
             <h3 style={{ margin: '0 0 6px', fontSize: '16px' }}>Upgrading Bank Statement Analytics...</h3>
@@ -50,19 +61,19 @@ export default function UpdateSettings({ SettingCard, applyingUpdate, checkingUp
           status={
             isAvailable
               ? <Badge variant="blue">Update available: v{latestVer}</Badge>
-              : (state === 'Checking' ? <Badge variant="gray">Checking…</Badge> : <Badge variant="green">Up to date</Badge>)
+              : (!info ? <Badge variant="gray">Status unavailable</Badge> : state === 'Checking' ? <Badge variant="gray">Checking…</Badge> : <Badge variant="green">Up to date</Badge>)
           }
           description={
             isAvailable
               ? `A newer version (v${latestVer}) was released on ${info?.publishedAt ? formatDate(info.publishedAt) : 'GitHub'}. Upgrade to get the latest features and bug fixes.`
-              : `You are running the latest version of Bank Statement Analytics. The app checks for new releases daily.`
+              : (!info ? 'Check for updates to retrieve the running version and latest release.' : `You are running the latest version of Bank Statement Analytics. The app checks for new releases daily.`)
           }
           control={
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <button
                 className="btn small"
                 onClick={handleCheckUpdate}
-                disabled={checkingUpdate || isDownloading || isInstalling}
+                disabled={checkingUpdate || isDownloading || (isInstalling && !manualInstallation)}
                 title="Query GitHub Releases for the latest version"
               >
                 <FiRefreshCw size={14} className={checkingUpdate ? 'spin' : ''} />
@@ -96,7 +107,11 @@ export default function UpdateSettings({ SettingCard, applyingUpdate, checkingUp
                 </p>
               </div>
               <div className="setting-card-control" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {isReady ? (
+                {manualInstallation ? (
+                  <button className="btn primary small" onClick={handleSaveFileDirectly} disabled={applyingUpdate || !info?.downloadUrl}>
+                    <FiDownload size={14} /> {applyingUpdate ? 'Downloading setup…' : 'Download setup (.exe)'}
+                  </button>
+                ) : isReady ? (
                   <button
                     className="btn primary small"
                     onClick={handleApplyUpdate}
@@ -115,19 +130,20 @@ export default function UpdateSettings({ SettingCard, applyingUpdate, checkingUp
                   <button
                     className="btn primary small"
                     onClick={handleDownloadUpdate}
-                    disabled={checkingUpdate || !info?.downloadUrl}
+                    disabled={checkingUpdate || isInstalling || applyingUpdate || !info?.downloadUrl}
                   >
                     <FiDownloadCloud size={14} /> Download update
                   </button>
                 )}
 
-                <button
+                {!manualInstallation && <button
                   className="btn small"
                   onClick={handleSaveFileDirectly}
+                  disabled={applyingUpdate}
                   title="Download installer .exe directly to this computer"
                 >
                   <FiDownload size={14} /> Download setup (.exe)
-                </button>
+                </button>}
 
                 {info?.htmlUrl && (
                   <a

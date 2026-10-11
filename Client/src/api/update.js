@@ -1,6 +1,8 @@
 import api from "./client";
 
-export const getUpdateStatus = () => api.get("/update/status");
+export const getUpdateStatus = () => api.get("/update/status", { timeout: 10000 });
+
+export const getUpdateInstallation = () => api.get("/update/installation", { timeout: 10000 });
 
 export const checkForUpdates = () => api.post("/update/check");
 
