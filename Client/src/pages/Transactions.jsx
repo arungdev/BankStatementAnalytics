@@ -62,7 +62,7 @@ export default function Transactions() {
   // (the same contract Trends/Insights use), with each row carrying its own
   // account. A specific selection stays the single-account path.
   const linkedUploadId = searchParams.get('uploadId');
-  const linkedAccountId = linkedUploadId && /^[1-9]\d*$/.test(searchParams.get('accountId') || '')
+  const linkedAccountId = /^[1-9]\d*$/.test(searchParams.get('accountId') || '')
     ? Number(searchParams.get('accountId')) : null;
   const isAllAccounts = !linkedAccountId && selectedAccountId === ALL_ACCOUNTS;
   const effectiveAccountId = linkedAccountId || (isAllAccounts ? (accounts.length > 0 ? 0 : null) : selectedAccountId);
@@ -142,8 +142,16 @@ export default function Transactions() {
   };
 
   // Search — searchInput follows the textbox, search is its debounced value used for fetching
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const linkedSearch = searchParams.get('search') ?? searchParams.get('q') ?? '';
+  const [searchInput, setSearchInput] = useState(linkedSearch);
+  const [search, setSearch] = useState(linkedSearch.trim());
+  const [previousLinkedSearch, setPreviousLinkedSearch] = useState(linkedSearch);
+  if (previousLinkedSearch !== linkedSearch) {
+    setPreviousLinkedSearch(linkedSearch);
+    setSearchInput(linkedSearch);
+    setSearch(linkedSearch.trim());
+    setCurrentPage(1);
+  }
   useEffect(() => {
     const handle = setTimeout(() => {
       setSearch(searchInput.trim());

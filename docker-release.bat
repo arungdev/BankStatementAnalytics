@@ -5,14 +5,20 @@ REM Usage:
 REM   docker-release.bat [version] [registry/repo]
 REM
 REM Examples:
-REM   docker-release.bat                                     (builds bankstatementanalytics:1.0.0 locally, no push)
+REM   docker-release.bat                                     (reads the app version locally, no push)
 REM   docker-release.bat 1.1.0                                (builds bankstatementanalytics:1.1.0 locally, no push)
 REM   docker-release.bat 1.1.0 myuser/bankstatementanalytics  (builds, tags, and pushes to Docker Hub/GHCR/ACR/etc.)
 
 setlocal
 
 set VERSION=%1
-if "%VERSION%"=="" set VERSION=1.0.0
+if "%VERSION%"=="" (
+    for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "([xml](Get-Content -LiteralPath '%~dp0BankStatementAnalytics\BankStatementAnalytics.csproj')).SelectSingleNode('/Project/PropertyGroup/Version').InnerText"`) do set "VERSION=%%V"
+)
+if "%VERSION%"=="" (
+    echo ERROR: Could not read the app version. Pass a version explicitly.
+    exit /b 1
+)
 
 set REGISTRY=%2
 

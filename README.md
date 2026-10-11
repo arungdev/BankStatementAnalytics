@@ -106,6 +106,9 @@ config is needed for normal dev or production; copy `Client/.env.example` to
 
 ## Builds & deployment
 
+Next release: **v3.1.0**. See [release notes and readiness checklist](RELEASE_NOTES_v3.1.0.md)
+for changes, upgrade requirements, and remaining publication checks.
+
 - **Single-file EXE** — `build.bat` (repo root) publishes a self-contained
   win-x64 executable to `Publish\`, bundling the built SPA (and the embedded
   PostgreSQL runtime when available).

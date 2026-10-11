@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FiSearch, FiArrowRight, FiTag, FiCalendar, FiX } from 'react-icons/fi';
 import api from '../api/client';
 import RequestError from './RequestError';
+import { searchResultPath } from '../utils/searchNavigation';
 import { currencyFormatter as fmt, maskName, isAmountMasked, MASKED_AMOUNT } from '../utils/format';
 
 export default function SearchModal({ isOpen, onClose }) {
@@ -66,13 +67,7 @@ export default function SearchModal({ isOpen, onClose }) {
   const handleSelect = (item) => {
     if (!item) return;
     onClose();
-    if (item.type === 'nav') {
-      navigate(item.data.path);
-    } else if (item.type === 'merchant') {
-      navigate(`/transactions?q=${encodeURIComponent(item.data.name)}`);
-    } else if (item.type === 'tx') {
-      navigate(`/transactions?q=${encodeURIComponent(item.data.bankReference || item.data.description)}`);
-    }
+    navigate(searchResultPath(item));
   };
 
   const handleKeyDown = (e) => {

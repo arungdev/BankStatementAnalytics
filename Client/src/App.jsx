@@ -6,8 +6,8 @@ import { Modal, useAuth, usePersistedState } from "@common/client";
 import { usePrivacy } from "./context/usePrivacy";
 import { FiHelpCircle, FiSearch } from "react-icons/fi";
 import CreateAccount from "./components/CreateAccount";
-import OnboardingGuide from "./components/OnboardingGuide";
-import SearchModal from "./components/SearchModal";
+const OnboardingGuide = lazy(() => import("./components/OnboardingGuide"));
+const SearchModal = lazy(() => import("./components/SearchModal"));
 const Settings = lazy(() => import("./pages/Settings"));
 import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
@@ -301,17 +301,19 @@ function Layout() {
           onSettings={location.pathname === '/settings' ? undefined : goSettings}
         />
 
-        <SearchModal
+        <Suspense fallback={null}>
+        {searchOpen && <SearchModal
           isOpen={searchOpen}
           onClose={() => setSearchOpen(false)}
-        />
+        />}
 
-        <OnboardingGuide
+        {guideOpen && <OnboardingGuide
           open={guideOpen}
           onClose={closeGuide}
           hasAccounts={accounts.some(a => typeof a.id === 'number')}
           onAddAccount={() => setShowCreate(true)}
-        />
+        />}
+        </Suspense>
 
         <Modal
           open={showCreate}

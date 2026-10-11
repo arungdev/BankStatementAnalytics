@@ -8,7 +8,7 @@
 
 #define MyAppName      "Bank Statement Analytics"
 #ifndef MyAppVersion
-  #define MyAppVersion "3.0.0"
+  #define MyAppVersion "3.1.0"
 #endif
 #define MyAppPublisher "Arun G"
 #define MyAppExeName   "BankStatementAnalytics.exe"

@@ -192,4 +192,15 @@ using (var session = DbHelper.GetSession()) {
 }
 try { UploadStorage.ResolvePath("../outside.txt"); throw new Exception("unsafe path accepted"); }
 catch (ArgumentException) { Check(true, "stored statement paths cannot escape the upload directory"); }
+var searchController = new SearchApiController { ControllerContext = controller.ControllerContext };
+var searchResult = (OkObjectResult)await searchController.Search("CARD-");
+var searchJson = System.Text.Json.JsonSerializer.SerializeToElement(searchResult.Value);
+var searchRows = searchJson.GetProperty("transactions").EnumerateArray().ToList();
+Check(searchRows.Count == 3 && searchRows.All(row => row.GetProperty("accountId").GetInt64() == card.Id),
+    "global search projects bounded transaction results within owned accounts");
+using (var cancelledSearch = new CancellationTokenSource()) {
+    cancelledSearch.Cancel();
+    try { await searchController.Search("CARD-", cancelledSearch.Token); throw new Exception("cancelled search continued"); }
+    catch (OperationCanceledException) { Check(true, "cancelled search stops database work"); }
+}
 Console.WriteLine($"Passed {checks} import reliability checks ({(postgres == null ? "SQLite" : "PostgreSQL")}). Synthetic artifacts: {scratch}");

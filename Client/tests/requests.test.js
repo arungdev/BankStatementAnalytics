@@ -3,8 +3,18 @@ import assert from 'node:assert/strict';
 import { startGuardedRequest } from '../src/utils/guardedRequest.js';
 import { buildTransactionParams } from '../src/utils/transactionQuery.js';
 import { resolvePreset } from '../src/utils/dateRanges.js';
+import { searchResultPath } from '../src/utils/searchNavigation.js';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test('global search links preserve account scope and encode references and merchant names', () => {
+  const transaction = new URL(searchResultPath({ type: 'tx', data: { accountId: 42, bankReference: 'UPI/a&b' } }), 'http://localhost');
+  assert.equal(transaction.searchParams.get('accountId'), '42');
+  assert.equal(transaction.searchParams.get('search'), 'UPI/a&b');
+  const merchant = new URL(searchResultPath({ type: 'merchant', data: { name: 'A & B' } }), 'http://localhost');
+  assert.equal(merchant.searchParams.get('search'), 'A & B');
+  assert.equal(searchResultPath({ type: 'nav', data: { path: '/settings?tab=rules' } }), '/settings?tab=rules');
+});
 
 test('an older request cannot replace a newer account/filter result', async () => {
   let resolveOld;
@@ -28,6 +38,14 @@ test('cleanup aborts transport and suppresses cancellation errors', async () => 
   assert.equal(signal.aborted, true);
   rejectRequest(new Error('cancelled'));
   await tick();
+});
+
+test('immediate cleanup prevents a scheduled request from reaching the server', async () => {
+  let calls = 0;
+  const stop = startGuardedRequest(() => { calls++; }, assert.fail, assert.fail);
+  stop();
+  await tick();
+  assert.equal(calls, 0);
 });
 
 test('active failures reach the retry UI instead of looking like empty data', async () => {

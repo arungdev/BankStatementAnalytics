@@ -107,13 +107,18 @@ export function useImportFailureNotifications() {
 
     let cancelled = false;
 
+    let checking = false;
     const check = async () => {
+      if (cancelled || checking) return;
+      checking = true;
       let failures;
       try {
         const res = await getAutoImports();
         failures = (res.data || []).filter((h) => h.status === "Failed");
       } catch {
         return; // offline or restarting — try again on the next tick
+      } finally {
+        checking = false;
       }
       if (cancelled) return;
 

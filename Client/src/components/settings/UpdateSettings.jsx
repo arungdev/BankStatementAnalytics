@@ -4,7 +4,7 @@ import { formatDate } from "../../utils/format";
 
 export default function UpdateSettings({ SettingCard, applyingUpdate, checkingUpdate, formatBytes, handleApplyUpdate, handleCancelDownload, handleCheckUpdate, handleDownloadUpdate, handleSaveFileDirectly, updateError, updateMessage, updateStatus }) {
     const info = updateStatus?.updateInfo;
-    const currentVer = info?.currentVersion || '3.0.0';
+    const currentVer = info?.currentVersion || '3.1.0';
     const latestVer = info?.latestVersion || currentVer;
     const isAvailable = !!info?.isUpdateAvailable;
     const state = updateStatus?.state;

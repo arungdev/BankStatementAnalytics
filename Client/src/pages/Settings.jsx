@@ -934,7 +934,7 @@ export default function Settings() {
       if (res.data?.updateInfo?.isUpdateAvailable) {
         setUpdateMessage(`New version v${res.data.updateInfo.latestVersion} is available!`);
       } else {
-        setUpdateMessage(`You are running the latest version (v${res.data?.updateInfo?.currentVersion || "3.0.0"}).`);
+        setUpdateMessage(`You are running the latest version (v${res.data?.updateInfo?.currentVersion || "3.1.0"}).`);
       }
     } catch (err) {
       setUpdateError(err?.response?.data?.message || "Failed to check for updates. Check internet connectivity.");

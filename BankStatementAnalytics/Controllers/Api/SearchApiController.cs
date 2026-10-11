@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 using Microsoft.AspNetCore.Mvc;
 using NHibernate.Linq;
 using Common.Framework.Data;
@@ -16,7 +17,7 @@ namespace BankStatementAnalytics.Controllers.Api
     public class SearchApiController : TenantControllerBase
     {
         [HttpGet]
-        public async Task<IActionResult> Search([FromQuery] string? q)
+        public async Task<IActionResult> Search([FromQuery] string? q, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
             {
@@ -29,10 +30,13 @@ namespace BankStatementAnalytics.Controllers.Api
             }
 
             var query = q.Trim();
-            var lower = query.ToLower();
+            var lower = query.ToLowerInvariant();
             using var session = DbHelper.GetSession();
 
-            var ownedIds = await AccountAccess.OwnedIdSetAsync(CurrentUserId);
+            var ownedIds = await session.Query<Account>()
+                .Where(a => a.OwnerUserId == CurrentUserId)
+                .Select(a => a.Id)
+                .ToListAsync(cancellationToken);
             if (ownedIds.Count == 0)
             {
                 return Ok(new { transactions = new List<object>(), merchants = new List<object>(), navigation = new List<object>() });
@@ -65,6 +69,9 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var txResults = await txQuery
                 .OrderByDescending(t => t.TransactionDate)
+                .ThenBy(t => t.AccountId)
+                .ThenBy(t => t.BankType)
+                .ThenBy(t => t.BankReference)
                 .Take(25)
                 .Select(t => new
                 {
@@ -81,7 +88,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     tags = t.Tags,
                     note = t.Note
                 })
-                .ToListAsync();
+                .ToListAsync(cancellationToken);
 
             // 2. Merchants search
             var merchantResults = await session.Query<Merchant>()
@@ -90,6 +97,8 @@ namespace BankStatementAnalytics.Controllers.Api
                     (m.Category != null && m.Category.ToLower().Contains(lower)) ||
                     (m.SubCategory != null && m.SubCategory.ToLower().Contains(lower))
                 ))
+                .OrderBy(m => m.Name)
+                .ThenBy(m => m.Id)
                 .Take(5)
                 .Select(m => new
                 {
@@ -99,7 +108,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     category = m.Category,
                     subCategory = m.SubCategory
                 })
-                .ToListAsync();
+                .ToListAsync(cancellationToken);
 
             // 3. Quick Navigation links
             var navItems = new List<dynamic>
