@@ -119,6 +119,14 @@ public sealed partial class GPayEvidenceService
         var bankIndex = banks.ToDictionary(BankKey);
         var decisions = records.Where(record => record.Kind == "Decision")
             .Select(record => JsonSerializer.Deserialize<ReviewSourceRequest>(record.Payload, Json)!).ToList();
+        var decisionsByRecord = decisions.ToLookup(decision => decision.RecordId);
+        // Index both allowed dates once instead of scanning the entire bank ledger per activity.
+        var datedBanks = banks.SelectMany(bank => {
+            var dates = new List<DateTime> { bank.TransactionDate.Date };
+            if (bank.Mode == "UPI" && bank.ValueDate.HasValue && Math.Abs((bank.TransactionDate.Date - bank.ValueDate.Value.Date).Days) == 1)
+                dates.Add(bank.ValueDate.Value.Date);
+            return dates.Select(date => (Date: date, Credit: bank.Credit > 0, Amount: bank.Credit > 0 ? bank.Credit : bank.Debit, Bank: bank));
+        }).ToLookup(entry => (entry.Date, entry.Credit, entry.Amount), entry => entry.Bank);
         var activities = records.Where(record => record.Kind == "Activity")
             .Select(record => (Record: record, Payload: JsonSerializer.Deserialize<EvidencePayload>(record.Payload, Json)!)).ToList();
         var activityIds = activities.Select(activity => activity.Record.Id).ToHashSet();
@@ -135,7 +143,7 @@ public sealed partial class GPayEvidenceService
             var activity = JsonSerializer.Deserialize<GPayUpiActivityItem>(payload.Data, Json)!;
             var credit = activity.Type == "Received";
             bool AmountAgrees(BankTransaction bank) => (credit ? bank.Credit : bank.Debit) == activity.Amount && (credit ? bank.Debit : bank.Credit) == 0;
-            var previous = decisions.Where(decision => decision.RecordId == record.Id).ToList();
+            var previous = decisionsByRecord[record.Id].ToList();
             var confirmed = previous.Where(decision => decision.Accept).ToList();
             if (confirmed.Count > 0)
             {
@@ -165,7 +173,7 @@ public sealed partial class GPayEvidenceService
             if (!string.IsNullOrWhiteSpace(activity.AccountSuffix) && suffixAccounts.Count != 1)
             { result[record.Id] = new("Unlinked", "The source account hint does not identify a unique imported bank account."); continue; }
             var eligibleAccounts = suffixAccounts.Select(account => account.Id).ToHashSet();
-            var dateMatches = banks.Where(bank => eligibleAccounts.Contains(bank.AccountId)
+            var dateMatches = datedBanks[(activity.Timestamp.Date, credit, activity.Amount)].Where(bank => eligibleAccounts.Contains(bank.AccountId)
                 && ActivityDateAgrees(activity, bank) && AmountAgrees(bank)).ToList();
             var eligible = dateMatches.Where(bank => bank.TransferGroupId == null && bank.Mode != "TRANSFER" && !reserved.Contains(BankKey(bank))).ToList();
             unmatchedReasons[record.Id] = dateMatches.Count == 0

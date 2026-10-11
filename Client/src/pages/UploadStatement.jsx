@@ -1,15 +1,18 @@
-import { useEffect, useState, useRef } from "react";
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
+import ImportWarnings from '../components/ImportWarnings';
+import PaginatedTable from '../components/PaginatedTable';
+import { useCallback, useState, useRef } from "react";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { Badge, useAuth } from "@common/client";
-import { uploadStatement, revertStatement, getUploads } from "../api/statements";
+import { uploadStatement, revertStatement } from "../api/statements";
 import api from "../api/client";
 import { FiUploadCloud, FiFileText, FiTrash2, FiCheckCircle, FiAlertCircle, FiRotateCcw, FiHelpCircle } from "react-icons/fi";
 
 export default function UploadStatement({ onUploaded, showHistory = true } = {}) {
   const { isAdmin } = useAuth();
-  const [accounts, setAccounts]           = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState("");
+  const [accountDraft, setSelectedAccount] = useState("");
   const [file, setFile]                   = useState(null);
   const [password, setPassword]           = useState("");
   const [progress, setProgress]           = useState(null);
@@ -17,9 +20,6 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
   // { text, isError } — the flag is set explicitly at each call site so server
   // messages (e.g. PDF password errors) never get mis-styled by keyword sniffing.
   const [message, setMessage]             = useState(null);
-  const [uploads, setUploads]             = useState([]);
-  const [formats, setFormats]             = useState({ formats: [], label: 'TXT, CSV', bankName: '', downloadGuide: null });
-  const [loadingFormats, setLoadingFormats] = useState(false);
   const fileInputRef = useRef(null);
 
   const { selectedAccountId } = useAccount();
@@ -27,54 +27,26 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
   const forcedAccountId =
     selectedAccountId && selectedAccountId !== ALL_ACCOUNTS ? selectedAccountId : null;
 
-  // ── Load accounts + upload history ───────────────────────────────────
-  useEffect(() => {
-    let mounted = true;
-    api.get("/statements/accounts").then((res) => {
-      if (!mounted) return;
-      setAccounts(res.data || []);
-      if (forcedAccountId) {
-        setSelectedAccount(forcedAccountId);
-      } else if ((res.data || []).length > 0) {
-        setSelectedAccount(res.data[0].id);
-      }
-    }).catch(() => { if (!mounted) return; setAccounts([]); });
-
-    getUploads().then((res) => {
-      if (!mounted) return;
-      if (res.data && Array.isArray(res.data)) {
-        const loaded = res.data.map(u => ({
-          id: u.id,
-          fileName: u.fileName,
-          accountId: u.accountId,
-          time: new Date(u.uploadedAt).getTime(),
-          transactionCount: u.transactionCount || 0,
-          autoImported: u.autoImported === true,
-          response: u
-        }));
-        setUploads(loaded);
-      }
-    }).catch(console.error);
-
-    return () => (mounted = false);
+  const loadUploadPage = useCallback(async signal => {
+    const [accounts, uploads] = await Promise.all([
+      api.get('/statements/accounts', { signal }), api.get('/statements/uploads', { signal })]);
+    return { accounts: accounts.data || [], uploads: (uploads.data || []).map(u => ({
+      id: u.id, fileName: u.fileName, accountId: u.accountId, time: new Date(u.uploadedAt).getTime(),
+      transactionCount: u.transactionCount || 0, autoImported: u.autoImported === true, response: u })) };
   }, []);
-
-  // ── Fetch supported formats whenever account changes ──────────────────
-  useEffect(() => {
-    if (!selectedAccount) return;
-    setLoadingFormats(true);
-    setFile(null);
-    setPassword("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    api.get(`/accounts/${selectedAccount}/supported-formats`)
-      .then(res => setFormats(res.data))
-      .finally(() => setLoadingFormats(false));
-  }, [selectedAccount]);
-
-  // ── Sync selectedAccount with global context ──────────────────────────
-  useEffect(() => {
-    if (forcedAccountId) setSelectedAccount(forcedAccountId);
-  }, [forcedAccountId]);
+  const { data: uploadPage, error: pageError, retry: retryPage, updateData } = useAsyncResource(loadUploadPage, { accounts: [], uploads: [] });
+  const { accounts, uploads } = uploadPage;
+  const setUploads = update => updateData(previous => ({ ...previous, uploads: typeof update === 'function' ? update(previous.uploads) : update }));
+  const selectedAccount = forcedAccountId || accountDraft || accounts[0]?.id || '';
+  const [previousAccount, setPreviousAccount] = useState(selectedAccount);
+  if (previousAccount !== selectedAccount) {
+    setPreviousAccount(selectedAccount); setFile(null); setPassword(''); setMessage(null);
+  }
+  const loadFormats = useCallback(async signal => selectedAccount
+    ? (await api.get(`/accounts/${selectedAccount}/supported-formats`, { signal })).data
+    : { formats: [], label: 'TXT, CSV', bankName: '', downloadGuide: null }, [selectedAccount]);
+  const { data: formats, loading: loadingFormats, error: formatsError, retry: retryFormats } = useAsyncResource(loadFormats,
+    { formats: [], label: 'TXT, CSV', bankName: '', downloadGuide: null });
 
   const acceptAttr = formats.formats.join(',');
   const isPdf = !!file && file.name.toLowerCase().endsWith('.pdf');
@@ -93,6 +65,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
+    if (picked.size > 25_000_000) { setMessage({ text: 'Statement exceeds the 25 MB limit.', isError: true }); return; }
     setMessage(null);
     setFile(picked);
   };
@@ -116,13 +89,13 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
 
       const total = res?.data?.totalCount ?? res?.data?.transactionCount ?? 0;
       const added = res?.data?.newCount ?? total;
-      setMessage({ text: `Upload successful — ${added} new of ${total} transactions imported.`, isError: false });
+      setMessage({ text: `Upload successful — ${added} new and ${total - added} duplicate transactions (${total} parsed).`, isError: false, warnings: res.data.warnings || [], uploadId: res.data.id, accountId: selectedAccount });
       setFile(null);
       setPassword("");
       setProgress(100);
       if (fileInputRef.current) fileInputRef.current.value = "";
 
-      setTimeout(() => { setProgress(null); setMessage(null); }, 4000);
+
 
       setUploads((prev) => [{
         id: res?.data?.id ?? null,
@@ -168,6 +141,9 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
 
   return (
     <div>
+      <RequestError error={pageError} onRetry={retryPage} />
+      <RequestError error={formatsError} onRetry={retryFormats} />
+      <ImportWarnings warnings={message?.warnings} uploadId={message?.uploadId} accountId={message?.accountId} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <h1 style={{ marginBottom: 0 }}>Upload Statement</h1>
       </div>
@@ -183,7 +159,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
               <select
                 value={selectedAccount}
                 onChange={(e) => setSelectedAccount(e.target.value)}
-                disabled={!!forcedAccountId}
+                disabled={!!forcedAccountId || loading}
                 className="field-select"
               >
                 <option value="">Select an account...</option>
@@ -223,6 +199,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                   </p>
                   <input
                     type="file"
+                    key={selectedAccount}
                     ref={fileInputRef}
                     accept={acceptAttr}
                     onChange={handleFileChange}
@@ -321,7 +298,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
               <button
                 className="btn primary"
                 type="submit"
-                disabled={loading || !file || loadingFormats || !selectedAccount || !isAdmin}
+                disabled={loading || !file || loadingFormats || !!formatsError || !selectedAccount || !isAdmin}
                 title={isAdmin ? undefined : "Viewers cannot upload statements"}
                 style={{ flex: 1, padding: '12px', fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
               >
@@ -337,7 +314,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
           <div>
             <h2 style={{ fontSize: 'var(--text-lg)', color: 'var(--text-main)', marginBottom: 'var(--space-4)', marginTop: 0 }}>Upload History</h2>
             <div className="table-responsive">
-              <table>
+              <PaginatedTable>
                 <thead>
                   <tr>
                     <th>File</th>
@@ -353,6 +330,8 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                         <div style={{ fontWeight: 500, color: 'var(--gray-700)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           {u.fileName}
                           {u.autoImported && <Badge variant="green">Auto</Badge>}
+                          {u.response?.importStatus === 'Pending' && <Badge variant="blue">Importing</Badge>}
+                          {u.response?.importStatus === 'Deleting' && <Badge variant="red">Revert cleanup pending</Badge>}
                         </div>
                         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: '2px' }}>
                           {accounts.find(a => String(a.id) === String(u.accountId))?.bankName || u.accountId}
@@ -361,11 +340,12 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                       <td style={{ fontSize: 'var(--text-sm)' }}>
                         {new Date(u.time).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </td>
-                      <td><Badge variant="blue">{u.transactionCount}</Badge></td>
+                      <td><Badge variant="blue">{u.transactionCount}</Badge><ImportWarnings warnings={u.response?.warnings} uploadId={u.id} accountId={u.accountId} /></td>
                       <td style={{ textAlign: 'right' }}>
                         {isAdmin && (
                           <button
                             className="btn danger small"
+                            disabled={u.response?.importStatus === 'Pending'}
                             onClick={() => { if (window.confirm('Are you sure you want to revert this upload?')) handleRevert(u); }}
                           >
                             <FiRotateCcw size={12} /> Revert
@@ -375,7 +355,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </PaginatedTable>
             </div>
           </div>
         )}

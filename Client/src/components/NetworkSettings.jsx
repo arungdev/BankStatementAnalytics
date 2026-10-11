@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import useAsyncResource from '../hooks/useAsyncResource';
+import { useState, useCallback } from 'react';
 import { FiWifi, FiCopy, FiCheck, FiRefreshCw, FiExternalLink, FiShield, FiAlertCircle } from 'react-icons/fi';
 import { Badge, Switch, useAuth } from '@common/client';
 import { getNetworkAccessStatus, updateNetworkAccessStatus } from '../api/network';
@@ -6,37 +7,14 @@ import './NetworkSettings.css';
 
 export default function NetworkSettings() {
   const { isAdmin } = useAuth();
-  const [loading, setLoading] = useState(true);
+
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [saveError, setError] = useState(null);
   const [copiedUrl, setCopiedUrl] = useState(null);
-  const [networkInfo, setNetworkInfo] = useState({
-    enabled: false,
-    localIpAddresses: [],
-    port: 5080,
-    primaryUrl: '',
-    urls: [],
-    clientIp: null,
-    isLoopback: true,
-  });
-
-  const fetchStatus = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await getNetworkAccessStatus();
-      setNetworkInfo(data);
-    } catch (err) {
-      console.error('Failed to load network access status:', err);
-      setError('Could not load network settings. Make sure the server is running.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStatus();
-  }, []);
+  const loadNetwork = useCallback(() => getNetworkAccessStatus(), []);
+  const { data: networkInfo, loading, error: loadError, retry: fetchStatus, updateData: setNetworkInfo } = useAsyncResource(loadNetwork,
+    { enabled: false, localIpAddresses: [], port: 5080, primaryUrl: '', urls: [], clientIp: null, isLoopback: true });
+  const error = saveError || (loadError ? 'Could not load network settings. Use Refresh to try again.' : null);
 
   const handleToggle = async (nextChecked) => {
     if (!isAdmin) return;

@@ -137,8 +137,8 @@ namespace BankStatementAnalytics.Services
         /// tile that was clicked. <paramref name="kind"/> is "income", "spend", or anything else
         /// for both sides.
         /// </summary>
-        public async Task<List<ReportTransaction>> GetTransactionsAsync(
-            List<long> accountIds, bool yearly, int year, int month, string? kind)
+        public async Task<object> GetTransactionsAsync(
+            List<long> accountIds, bool yearly, int year, int month, string? kind, int page = 1, int pageSize = 20)
         {
             var (start, end) = PeriodBounds(yearly, year, month);
 
@@ -157,8 +157,15 @@ namespace BankStatementAnalytics.Services
                 _ => query,
             };
 
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            var totalCount = await query.CountAsync();
+            page = Math.Clamp(page, 1, Math.Max(1, (totalCount + pageSize - 1) / pageSize));
+            var credits = await query.Select(t => (decimal?)t.Credit).SumAsync() ?? 0;
+            var debits = await query.Select(t => (decimal?)t.Debit).SumAsync() ?? 0;
             var rawList = await query
                 .OrderByDescending(t => t.EffectiveDate ?? t.TransactionDate)
+                .ThenBy(t => t.AccountId).ThenBy(t => t.BankType).ThenBy(t => t.BankReference)
+                .Skip((page - 1) * pageSize).Take(pageSize)
                 .Select(t => new
                 {
                     Id = t.BankReference,
@@ -173,9 +180,10 @@ namespace BankStatementAnalytics.Services
                 })
                 .ToListAsync();
 
-            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, accountIds);
+            var splitsLookup = await TransactionSplitHelper.GetPageSplitsAsync(session,
+                rawList.Select(t => new TransactionSplitHelper.SplitParentKey(t.AccountId, t.Id, t.BankType ?? "")));
 
-            return rawList.Select(t =>
+            var items = rawList.Select(t =>
             {
                 var splits = splitsLookup[new TransactionSplitHelper.SplitParentKey(t.AccountId, t.Id, t.BankType ?? string.Empty)].ToList();
                 return new ReportTransaction
@@ -194,6 +202,7 @@ namespace BankStatementAnalytics.Services
                     SplitsCount = splits.Count
                 };
             }).ToList();
+            return new { items, totalCount, page, pageSize, credits, debits };
         }
 
         /// <summary>

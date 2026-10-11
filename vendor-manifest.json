@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "CommonFramework": {
+      "buildCommand": null,
+      "sourceRevision": null
+    },
+    "CommonClient": {
+      "buildCommand": "npm run release",
+      "sourceRevision": null
+    }
+  },
+  "artifacts": [
+    {
+      "sha256": "f1be70bbf9d24644181dc6098372bca34bc7f4e90b5afac0aa71949f887e87e0",
+      "path": "BankStatementAnalytics/lib/Common.Framework.dll"
+    },
+    {
+      "sha256": "b82d20dbe61c5d3b694d2722f50379c6b3e819d577eeef448ef56b1dd826aa77",
+      "path": "Client/vendor/common-client/dist/common-client.js"
+    },
+    {
+      "sha256": "9d4fb01f7940dbdaa8865d551854763f62939d2b87224b342738142b16a0dccc",
+      "path": "Client/vendor/common-client/dist/common-client.css"
+    },
+    {
+      "sha256": "9acf427963af740b0507838dbc0df7932cb184e4c07a449168b2d25eeb6a94be",
+      "path": "Client/vendor/common-client/package.json"
+    }
+  ]
+}

@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node --test tests/*.test.js",
     "preview": "vite preview",
     "start:server": "node server/index.js",
     "install:server": "cd server && npm install"

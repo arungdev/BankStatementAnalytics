@@ -1,14 +1,20 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import PaginatedTable from '../components/PaginatedTable';
+import { useState, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
 import api from '../api/client';
+import usePagedRows from '../hooks/usePagedRows';
+import PagedRowsControls from '../components/PagedRowsControls';
+import TablePageTransition from '../components/TablePageTransition';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import DateRangePicker from '../components/Daterangepicker';
-import { FilterGroup, FilterPill } from '../components/PageHeader';
+
+
 import StatCard from '../components/StatCard';
 import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
 import { FiDownload } from "react-icons/fi";
@@ -79,34 +85,7 @@ const ChartTooltip = ({ active, payload, nameFormatter }) => {
 };
 
 /* ─── InsightsFilters — rendered in PageHeader's filter row ────────────── */
-export function InsightsFilters({
-  range, setRange,
-  groupBy, setGroupBy,
-}) {
-  return (
-    <>
-      {/* Period */}
-      <FilterGroup style={{ position: 'relative', zIndex: 'var(--z-dropdown)' }}>
-        <DateRangePicker
-          value={range}
-          onChange={setRange}
-          showTime={false}
-          align="left"
-          placeholder="All Time"
-        />
-      </FilterGroup>
 
-      {/* Group by */}
-      <FilterGroup label="Group by">
-        {GROUP_TABS.map(g => (
-          <FilterPill key={g.key} active={groupBy === g.key} onClick={() => setGroupBy(g.key)}>
-            {g.label}
-          </FilterPill>
-        ))}
-      </FilterGroup>
-    </>
-  );
-}
 
 /* Module scope, not inside Insights: a component declared during render gets a fresh
    identity every render, so React unmounts and remounts the whole skeleton subtree
@@ -129,15 +108,12 @@ export default function Insights() {
   } = useOutletContext() ?? {};
   const { selectedAccountId } = useAccount();
   const { theme } = useTheme();
-  const [insightsData, setInsightsData]      = useState(null);
-  const [loading, setLoading]                = useState(false);
 
-  const [trayOpen, setTrayOpen]         = useState(false);
+  const [trayRequested, setTrayOpen]         = useState(false);
   const [drawerWidth, setDrawerWidth]   = useState(400);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [txList, setTxList]             = useState([]);
-  const [txLoading, setTxLoading]       = useState(false);
-  const [txError, setTxError]           = useState(null);
+  const [txUrl, setTxUrl] = useState(null);
+  const [trayScope, setTrayScope] = useState(null);
 
   // Resolved chart colors (recharts SVG can't read CSS var()). Recomputed on
   // theme flip; `palette` is the categorical series color set.
@@ -163,20 +139,14 @@ export default function Insights() {
     return selectedAccountId ? String(selectedAccountId) : '';
   }, [selectedAccountId, accounts]);
 
-  const fetchInsights = useCallback(() => {
-    if (!accountIdsParam) return;
-    const p = new URLSearchParams();
-    p.append('accountIds', accountIdsParam);
-    if (range.start) p.append('startDate', toISODate(range.start));
-    if (range.end)   p.append('endDate',   toISODate(range.end));
-    setLoading(true);
-    api.get(`/dashboard/insights?${p.toString()}`)
-      .then(res => setInsightsData(res.data))
-      .catch(err => console.error('Failed to fetch insights', err))
-      .finally(() => setLoading(false));
+  const loadInsights = useCallback(async signal => {
+    if (!accountIdsParam) return null;
+    const p = new URLSearchParams({ accountIds: accountIdsParam });
+    if (range.start) p.set('startDate', toISODate(range.start));
+    if (range.end) p.set('endDate', toISODate(range.end));
+    return (await api.get(`/dashboard/insights?${p}`, { signal })).data;
   }, [accountIdsParam, range]);
-
-  useEffect(() => { fetchInsights(); }, [fetchInsights]);
+  const { data: insightsData, loading, error: loadError, retry } = useAsyncResource(loadInsights, null);
 
   const chartData     = insightsData?.[groupBy] || [];
   const grandTotal    = chartData.reduce((s, x) => s + x.total, 0);
@@ -189,6 +159,11 @@ export default function Insights() {
     () => ({ name: 'Total spent', total: grandTotal, count: null, isAll: true }),
     [grandTotal]
   );
+
+  const currentScope = JSON.stringify([accountIdsParam, range.start, range.end, groupBy]);
+  const trayOpen = trayRequested && trayScope === currentScope;
+  const txPage = usePagedRows(trayOpen ? txUrl : null);
+  const { items: txList, loading: txLoading, error: txError } = txPage;
 
   const activeTab     = GROUP_TABS.find(g => g.key === groupBy);
   const groupLabel    = activeTab?.label    ?? '';
@@ -204,9 +179,8 @@ export default function Insights() {
     if (!item) return;
     setSelectedItem(item);
     setTrayOpen(true);
-    setTxLoading(true);
-    setTxError(null);
-    setTxList([]);
+    setTrayScope(currentScope);
+    setTxUrl(null);
 
     const p = new URLSearchParams();
     p.append('accountIds', accountIdsParam);
@@ -215,33 +189,17 @@ export default function Insights() {
     p.append('groupBy',    groupOverride ?? groupBy);
     p.append('groupValue', item.name);
 
-    api.get(`/dashboard/insights/transactions?${p.toString()}`)
-      .then(res => {
-        const d = res.data;
-        const list = Array.isArray(d)               ? d
-          : Array.isArray(d?.transactions)           ? d.transactions
-          : Array.isArray(d?.data)                   ? d.data
-          : Array.isArray(d?.results)                ? d.results
-          : Array.isArray(d?.items)                  ? d.items
-          : [];
-        setTxList(list);
-      })
-      .catch(err => {
-        console.error('Failed to fetch transactions', err);
-        setTxError('Could not load transactions. Please try again.');
-      })
-      .finally(() => setTxLoading(false));
-  }, [accountIdsParam, range, groupBy]);
+    setTxUrl(`/dashboard/insights/transactions?${p.toString()}`);
+  }, [accountIdsParam, range, groupBy, currentScope]);
 
   const closeTray = () => {
     setTrayOpen(false);
     setSelectedItem(null);
-    setTxList([]);
-    setTxError(null);
+    setTxUrl(null);
   };
 
   const accountMap = (accounts || []).reduce((m, a) => { m[a.id] = a.bankName; return m; }, {});
-  const trayTotal = selectedItem?.total ?? txList.reduce((sum, t) => sum + t.amount, 0);
+  const trayTotal = selectedItem?.total ?? txPage.totalAmount;
 
   const s = {
     page: {
@@ -302,7 +260,10 @@ export default function Insights() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100%', overflow: 'visible' }}>
+    <>
+      <RequestError error={loadError} onRetry={retry} />
+      <div style={{ display: 'flex', minHeight: '100%', overflow: 'visible' }}>
+      <RequestError error={loadError} onRetry={retry} />
       <div style={{ ...s.page, flex: 1, marginRight: trayOpen && (typeof window !== 'undefined' && window.innerWidth > 1024) ? drawerWidth : 0 }}>
         <style>{`
           @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
@@ -485,7 +446,7 @@ export default function Insights() {
                 </button>
               </div>
               <div className="table-responsive" style={s.tableScroll}>
-              <table style={s.table}>
+              <PaginatedTable style={s.table}>
                 <thead>
                   <tr>
                     <th style={s.th(false)}>#</th>
@@ -549,7 +510,7 @@ export default function Insights() {
                     <td colSpan={2} style={{ background: T.surface2, boxShadow: `inset 0 2px 0 ${T.border}`, position: 'sticky', bottom: 0, zIndex: 2 }} />
                   </tr>
                 </tfoot>
-              </table>
+              </PaginatedTable>
               </div>
             </div>
           </div>
@@ -586,7 +547,7 @@ export default function Insights() {
             <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
               {[
                 { label: 'Total',        value: fmt.format(trayTotal) },
-                { label: 'Transactions', value: (selectedItem.count ?? txList.length).toLocaleString('en-IN') },
+                { label: 'Transactions', value: (txPage.totalCount).toLocaleString('en-IN') },
               ].map(stat => (
                 <div key={stat.label} style={{ flex: 1, background: T.surface2, borderRadius: '8px', padding: '10px 12px', border: `1px solid ${T.border}` }}>
                   <p style={{ margin: 0, fontSize: '10px', fontWeight: 700, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{stat.label}</p>
@@ -596,7 +557,8 @@ export default function Insights() {
             </div>
 
             {/* Transaction list */}
-            {txLoading ? (
+        <TablePageTransition loading={txLoading} pageKey={txPage.pageKey}>
+        {txLoading && txList.length === 0 ? (
               <div style={{ padding: '48px 20px', textAlign: 'center' }}>
                 <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: `3px solid ${T.indigoDim}`, borderTopColor: 'var(--primary)', animation: 'spin 0.7s linear infinite', margin: '0 auto 12px' }} />
                 <p style={{ margin: 0, fontSize: '13px', color: T.muted }}>Loading transactions…</p>
@@ -608,7 +570,7 @@ export default function Insights() {
             ) : txList.length === 0 ? (
               <EmptyState icon="📭" title="No transactions" subtitle="Nothing found for this period." compact />
             ) : (
-              <div style={{ margin: '0 -8px' }}>
+              <div className="table-page-content" key={txPage.pageKey} style={{ margin: '0 -8px' }}>
                 {txList.map((tx, i) => (
                   <div
                     key={tx.id ?? i}
@@ -635,9 +597,12 @@ export default function Insights() {
                 ))}
               </div>
             )}
+        </TablePageTransition>
+        <PagedRowsControls data={txPage} />
           </>
         )}
       </Drawer>
     </div>
+    </>
   );
 }

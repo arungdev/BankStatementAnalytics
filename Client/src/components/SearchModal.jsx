@@ -1,47 +1,60 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from 'react-router-dom';
 import { FiSearch, FiArrowRight, FiTag, FiCalendar, FiX } from 'react-icons/fi';
 import api from '../api/client';
+import RequestError from './RequestError';
 import { currencyFormatter as fmt, maskName, isAmountMasked, MASKED_AMOUNT } from '../utils/format';
 
 export default function SearchModal({ isOpen, onClose }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState({ transactions: [], merchants: [], navigation: [] });
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
   const navigate = useNavigate();
+  const [previousOpen, setPreviousOpen] = useState(isOpen);
+  if (previousOpen !== isOpen) {
+    setPreviousOpen(isOpen);
+    if (isOpen) { setQuery(''); setResults({ transactions: [], merchants: [], navigation: [] }); setSelectedIndex(0); }
+  }
+  const [previousQuery, setPreviousQuery] = useState(query);
+  if (previousQuery !== query) {
+    setPreviousQuery(query); setSelectedIndex(0); setSearchError(null);
+    if (query.trim().length < 2) { setResults({ transactions: [], merchants: [], navigation: [] }); setLoading(false); }
+  }
 
   useEffect(() => {
     if (isOpen) {
-      setQuery('');
-      setResults({ transactions: [], merchants: [], navigation: [] });
-      setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      const timer = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
   // Debounced search
   useEffect(() => {
-    if (!query || query.trim().length < 2) {
-      setResults({ transactions: [], merchants: [], navigation: [] });
-      setLoading(false);
+    if (!isOpen || !query || query.trim().length < 2) {
       return;
     }
 
+    const controller = new AbortController();
+    let active = true;
     const timer = setTimeout(() => {
       setLoading(true);
-      api.get(`/search?q=${encodeURIComponent(query.trim())}`)
+      setSearchError(null);
+      api.get(`/search?q=${encodeURIComponent(query.trim())}`, { signal: controller.signal })
         .then(res => {
+          if (!active) return;
           setResults(res.data || { transactions: [], merchants: [], navigation: [] });
           setSelectedIndex(0);
         })
-        .catch(err => console.error('Search error', err))
-        .finally(() => setLoading(false));
+        .catch(err => { if (active) setSearchError(err); })
+        .finally(() => { if (active) setLoading(false); });
     }, 200);
 
-    return () => clearTimeout(timer);
-  }, [query]);
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [query, isOpen, searchAttempt]);
 
   // Flatten items for keyboard navigation
   const flatItems = [
@@ -116,6 +129,7 @@ export default function SearchModal({ isOpen, onClose }) {
         onClick={e => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
+        <RequestError error={searchError} onRetry={() => setSearchAttempt(value => value + 1)} />
         {/* Search Header */}
         <div style={{
           display: 'flex',
@@ -216,7 +230,7 @@ export default function SearchModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {!loading && query && flatItems.length === 0 && (
+          {!loading && !searchError && query && flatItems.length === 0 && (
             <div style={{ padding: '36px 20px', textAlign: 'center' }}>
               <p style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text-main)' }}>No results found</p>
               <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>

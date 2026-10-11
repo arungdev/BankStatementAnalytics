@@ -36,6 +36,9 @@ Client/node_modules/
 /.analysis-*.json
 /.analysis-*.sql
 /Client/.analysis-*
+/.build/
+**/bin/
+**/obj/
 /.claude/settings.local.json
 /splits_all.txt
 /splits_eval.csv

@@ -16,6 +16,11 @@ namespace BankStatementAnalytics.Services
             if (transactions == null || transactions.Count == 0) return;
 
             using var session = DbHelper.GetSession();
+            ApplyRules(session, userId, transactions);
+        }
+
+        public void ApplyRules(NHibernate.ISession session, long userId, IList<BankTransaction> transactions)
+        {
 
             var rules = session.Query<CategorizationRule>()
                 .Where(r => r.OwnerUserId == userId && r.Enabled)

@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from "react";
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
 import api from '../api/client';
 import { currencyFormatter, isAmountMasked, MASKED_AMOUNT } from '../utils/format';
-import { FiChevronLeft, FiChevronRight, FiCalendar, FiTrendingUp, FiCheckCircle } from 'react-icons/fi';
+import { FiChevronLeft, FiChevronRight, FiCalendar } from "react-icons/fi";
 import './SpendingHeatmap.css';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -18,30 +20,16 @@ const formatDateKey = (d) => {
 export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [hoveredCell, setHoveredCell] = useState(null);
 
-  const fetchData = useCallback(() => {
-    if (!accountId && !accountIds) return;
-    setLoading(true);
-
+  const loadHeatmap = useCallback(async signal => {
+    if (!accountId && !accountIds) return [];
     const params = new URLSearchParams({ year: String(year) });
-    if (accountIds) params.append('accountIds', accountIds);
-    else if (accountId) params.append('accountId', accountId);
-
-    api.get(`/trends/daily-spend?${params.toString()}`)
-      .then(res => setData(Array.isArray(res.data) ? res.data : []))
-      .catch(err => {
-        console.error('Failed to fetch daily spend', err);
-        setData([]);
-      })
-      .finally(() => setLoading(false));
+    if (accountIds) params.set('accountIds', accountIds);
+    else params.set('accountId', accountId);
+    return (await api.get(`/trends/daily-spend?${params}`, { signal })).data;
   }, [accountId, accountIds, year]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const { data, error: loadError, retry } = useAsyncResource(loadHeatmap, []);
 
   // Map "YYYY-MM-DD" -> { totalDebit, count }
   const spendMap = useMemo(() => {
@@ -151,6 +139,7 @@ export default function SpendingHeatmap({ accountId, accountIds, onSelectDay }) 
 
   return (
     <div className="spending-heatmap-card">
+      <RequestError error={loadError} onRetry={retry} />
       {/* ── Header ── */}
       <div className="spending-heatmap-header">
         <div className="spending-heatmap-title-group">

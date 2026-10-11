@@ -185,7 +185,9 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string? accountIds = null,
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null,
-            [FromQuery] string? kind = null)
+            [FromQuery] string? kind = null,
+            [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+            [FromQuery] bool includeTransfers = false)
         {
             using var session = DbHelper.GetSession();
 
@@ -197,8 +199,8 @@ namespace BankStatementAnalytics.Controllers.Api
                 return Ok(new List<object>());
 
             var query = session.Query<BankTransaction>()
-                .ExcludeOwnMoneyMoves()
                 .Where(t => ids.Contains(t.AccountId));
+            if (!includeTransfers) query = query.ExcludeOwnMoneyMoves();
 
             if (startDate.HasValue)
             {
@@ -218,8 +220,15 @@ namespace BankStatementAnalytics.Controllers.Api
                 _ => query,
             };
 
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            var totalCount = await query.CountAsync();
+            page = Math.Clamp(page, 1, Math.Max(1, (totalCount + pageSize - 1) / pageSize));
+            var credits = await query.Select(t => (decimal?)t.Credit).SumAsync() ?? 0;
+            var debits = await query.Select(t => (decimal?)t.Debit).SumAsync() ?? 0;
             var rows = await query
                 .OrderByDescending(t => t.EffectiveDate ?? t.TransactionDate)
+                .ThenBy(t => t.AccountId).ThenBy(t => t.BankType).ThenBy(t => t.BankReference)
+                .Skip((page - 1) * pageSize).Take(pageSize)
                 .Select(t => new
                 {
                     id = t.BankReference,
@@ -233,7 +242,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 })
                 .ToListAsync();
 
-            return Ok(rows);
+            return Ok(new { items = rows, totalCount, page, pageSize, credits, debits });
         }
 
         // GET: api/trends/daily-spend?year=2026 — daily spending aggregation for spending heatmap calendar

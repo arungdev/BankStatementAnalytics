@@ -17,6 +17,9 @@ namespace BankStatementAnalytics.Controllers.Api
     [Route("api/accounts")]
     public class AccountApiController : TenantControllerBase
     {
+        private readonly StatementPasswordProtector _passwords;
+        public AccountApiController(StatementPasswordProtector passwords) => _passwords = passwords;
+
         // GET: api/accounts/{id}/supported-formats
         [HttpGet("{id}/supported-formats")]
         public IActionResult GetSupportedFormats(int id)
@@ -265,9 +268,12 @@ namespace BankStatementAnalytics.Controllers.Api
             var passwordChanged = false;
             if (request?.StatementPassword != null)
             {
+                if (request.StatementPassword.Length > 200)
+                    return BadRequest(new { message = "Statement password must be 200 characters or fewer." });
                 var newPassword = request.StatementPassword.Length == 0 ? null : request.StatementPassword;
-                passwordChanged = newPassword != account.StatementPassword;
-                account.StatementPassword = newPassword;
+                // A key-ring failure can be repaired by replacing the saved password.
+                passwordChanged = true;
+                account.StatementPassword = _passwords.Protect(newPassword);
             }
 
             // null = unchanged; the pause switch keeps the folder configured.

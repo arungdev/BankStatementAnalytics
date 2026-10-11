@@ -5,6 +5,8 @@ import {
 } from 'recharts';
 import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
 import api from '../api/client';
 import StatCard from '../components/StatCard';
 import CreditCardPanel from '../components/CreditCardPanel';
@@ -119,13 +121,8 @@ export default function Overview() {
   const { accounts = [], openSettings } = useOutletContext() ?? {};
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const [data, setData] = useState(null);
-  const [trend, setTrend] = useState([]);
-  const [loading, setLoading] = useState(false);
   // Activity feed pages in 10 at a time as the user scrolls; the first page
   // rides along with the dashboard payload.
-  const [recent, setRecent] = useState([]);
-  const [recentHasMore, setRecentHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
   // Resolved chart colors (recharts SVG can't read CSS var()). `theme` is the
@@ -154,31 +151,23 @@ export default function Overview() {
   const scopeRef = useRef(scopeQuery);
   useEffect(() => { scopeRef.current = scopeQuery; }, [scopeQuery]);
 
-  const fetchOverview = useCallback(() => {
-    if (!scopeQuery) { setData(null); setTrend([]); setRecent([]); setRecentHasMore(false); return; }
-    // Cash-flow curve covers the last 6 calendar months, inclusive of this one.
+  const loadOverview = useCallback(async signal => {
+    if (!scopeQuery) return { data: null, trend: [], recent: [], recentHasMore: false };
     const now = new Date();
-    const trendStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-    const startParam = `${trendStart.getFullYear()}-${String(trendStart.getMonth() + 1).padStart(2, '0')}-01`;
-    setLoading(true);
-    Promise.all([
-      api.get(`/dashboard?${scopeQuery}`),
-      api.get(`/trends?${scopeQuery}&period=month&startDate=${startParam}`),
-    ])
-      .then(([dash, tr]) => {
-        setData(dash.data);
-        setTrend(Array.isArray(tr.data) ? tr.data : []);
-        setRecent(dash.data?.recentTransactions ?? []);
-        setRecentHasMore(!!dash.data?.recentHasMore);
-      })
-      .catch(err => {
-        console.error('Failed to fetch overview', err);
-        setData(null); setTrend([]); setRecent([]); setRecentHasMore(false);
-      })
-      .finally(() => setLoading(false));
+    const start = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const startParam = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`;
+    const [dash, tr] = await Promise.all([
+      api.get(`/dashboard?${scopeQuery}`, { signal }),
+      api.get(`/trends?${scopeQuery}&period=month&startDate=${startParam}`, { signal }),
+    ]);
+    return { data: dash.data, trend: Array.isArray(tr.data) ? tr.data : [],
+      recent: dash.data?.recentTransactions ?? [], recentHasMore: !!dash.data?.recentHasMore };
   }, [scopeQuery]);
-
-  useEffect(() => { fetchOverview(); }, [fetchOverview]);
+  const { data: overview, loading, error: loadError, retry, updateData } = useAsyncResource(loadOverview,
+    { data: null, trend: [], recent: [], recentHasMore: false });
+  const { data, trend, recent, recentHasMore } = overview;
+  const setRecent = useCallback(update => updateData(previous => ({ ...previous, recent: typeof update === 'function' ? update(previous.recent) : update })), [updateData]);
+  const setRecentHasMore = useCallback(value => updateData(previous => ({ ...previous, recentHasMore: value })), [updateData]);
 
   const totalIncome = data?.totalIncome ?? 0;
   const totalSpends = data?.totalSpends ?? 0;
@@ -243,7 +232,7 @@ export default function Overview() {
       })
       .catch(err => { console.error('Failed to load more activity', err); setRecentHasMore(false); })
       .finally(() => setLoadingMore(false));
-  }, [scopeQuery, recentHasMore, loadingMore, recent.length]);
+  }, [scopeQuery, recentHasMore, loadingMore, recent.length, setRecent, setRecentHasMore]);
 
   // Infinite scroll: fire when the sentinel below the last row nears the
   // bottom of the feed's own viewport (not the page's).
@@ -363,6 +352,7 @@ export default function Overview() {
       marginRight: (trayOpen && typeof window !== 'undefined' && window.innerWidth > 1024) ? drawerWidth : 0,
       transition: 'margin-right 0.2s ease',
     }}>
+      <RequestError error={loadError} onRetry={retry} />
       <style>{`
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         .ov-row { transition: background .15s ease; }

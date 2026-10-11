@@ -97,6 +97,7 @@ builder.Services.AddHostedService<DatabaseStartupInitializer>();
 builder.Services.AddSingleton<PdfStatementReader>(); // stateless
 builder.Services.AddScoped<TextService>();
 builder.Services.AddScoped<StatementImportService>();
+builder.Services.AddSingleton<StatementPasswordProtector>();
 // Watch-folder auto-import sweeps. Registered as a singleton first so controllers
 // can resolve the same instance and call TriggerSweep ("Import now").
 builder.Services.AddSingleton<WatchFolderImportService>();

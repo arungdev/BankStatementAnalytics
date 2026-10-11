@@ -14,6 +14,7 @@ export default function Pagination({
   itemLabel = 'transactions',
   onPageChange,
   onItemsPerPageChange,
+  loading = false,
 }) {
   if (totalCount === 0) return null;
 
@@ -34,11 +35,12 @@ export default function Pagination({
       }}
     >
       <div className="pagination-info" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-        {totalPages > 1 && (
+        {onItemsPerPageChange && totalCount > 5 && (
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>Items per page:</span>
             <select
               value={itemsPerPage}
+              disabled={loading}
               onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
               style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '13px', outline: 'none', background: 'var(--surface-2)', color: 'var(--text-main)' }}
             >
@@ -57,13 +59,13 @@ export default function Pagination({
       </div>
       {totalPages > 1 && (
         <div className="pagination-nav" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <button className="btn small" disabled={currentPage === 1} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>
+          <button className="btn small" disabled={loading || currentPage === 1} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>
             Previous
           </button>
           <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', padding: '0 8px', whiteSpace: 'nowrap' }}>
             Page {currentPage} of {totalPages}
           </span>
-          <button className="btn small" disabled={currentPage >= totalPages || totalPages === 0} onClick={() => onPageChange(Math.min(totalPages || 1, currentPage + 1))}>
+          <button className="btn small" disabled={loading || currentPage >= totalPages || totalPages === 0} onClick={() => onPageChange(Math.min(totalPages || 1, currentPage + 1))}>
             Next
           </button>
         </div>

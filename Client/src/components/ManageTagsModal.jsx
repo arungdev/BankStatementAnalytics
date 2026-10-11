@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiCheck, FiX, FiTag } from "react-icons/fi";
+import { FiPlus, FiEdit2, FiTrash2, FiSearch, FiCheck, FiX } from "react-icons/fi";
 import { Modal, Button } from "@common/client";
 import api from "../api/client";
 

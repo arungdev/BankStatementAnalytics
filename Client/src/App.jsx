@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import api from "./api/client";
 import { useAccount } from "./context/useAccount";
 import { Modal, useAuth, usePersistedState } from "@common/client";
@@ -8,7 +8,7 @@ import { FiHelpCircle, FiSearch } from "react-icons/fi";
 import CreateAccount from "./components/CreateAccount";
 import OnboardingGuide from "./components/OnboardingGuide";
 import SearchModal from "./components/SearchModal";
-import Settings from "./pages/Settings";
+const Settings = lazy(() => import("./pages/Settings"));
 import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
 import AccountFilter, { ALL_ACCOUNTS } from "./components/AccountFilter";
@@ -16,24 +16,24 @@ import NotificationBell from "./components/NotificationBell";
 import PrivacyToggle from "./components/PrivacyToggle";
 import Login from "./pages/Login";
 import Setup from "./pages/Setup";
-import { InsightsFilters } from "./pages/Insights";
-import { ReportsFilters } from "./pages/Reports";
-import { TrendsFilters } from "./pages/Trends";
-import { TransactionsFilters } from "./pages/Transactions";
+import InsightsFilters from "./components/filters/InsightsFilters";
+import ReportsFilters from "./components/filters/ReportsFilters";
+import TrendsFilters from "./components/filters/TrendsFilters";
+import TransactionsFilters from "./components/filters/TransactionsFilters";
 
-import Overview from "./pages/Overview";
-import Transactions from "./pages/Transactions";
-import Merchants from "./pages/Merchants";
-import UploadStatement from "./pages/UploadStatement";
-import Trends from "./pages/Trends";
-import Insights from "./pages/Insights";
-import Bills from "./pages/Bills";
-import Transfers from "./pages/Transfers";
-import Splits from "./pages/Splits";
-import Budgets from "./pages/Budgets";
-import Goals from "./pages/Goals";
-import Investments from "./pages/Investments";
-import Reports from "./pages/Reports";
+const Overview = lazy(() => import("./pages/Overview"));
+const Transactions = lazy(() => import("./pages/Transactions"));
+const Merchants = lazy(() => import("./pages/Merchants"));
+const UploadStatement = lazy(() => import("./pages/UploadStatement"));
+const Trends = lazy(() => import("./pages/Trends"));
+const Insights = lazy(() => import("./pages/Insights"));
+const Bills = lazy(() => import("./pages/Bills"));
+const Transfers = lazy(() => import("./pages/Transfers"));
+const Splits = lazy(() => import("./pages/Splits"));
+const Budgets = lazy(() => import("./pages/Budgets"));
+const Goals = lazy(() => import("./pages/Goals"));
+const Investments = lazy(() => import("./pages/Investments"));
+const Reports = lazy(() => import("./pages/Reports"));
 import useBillReminders, { useImportFailureNotifications } from "./hooks/useBillReminders";
 import usePersistedRange from "./hooks/usePersistedRange";
 
@@ -122,10 +122,12 @@ function Layout() {
   // Auto-opens once per user (flag kept in localStorage, keyed by username);
   // the header ? button reopens it anytime.
   const guideSeenKey = username ? `guideSeen:${username}` : null;
-  const [guideOpen, setGuideOpen] = useState(false);
-  useEffect(() => {
-    if (guideSeenKey && !localStorage.getItem(guideSeenKey)) setGuideOpen(true);
-  }, [guideSeenKey]);
+  const [guideOpen, setGuideOpen] = useState(() => !!guideSeenKey && !localStorage.getItem(guideSeenKey));
+  const [previousGuideKey, setPreviousGuideKey] = useState(guideSeenKey);
+  if (previousGuideKey !== guideSeenKey) {
+    setPreviousGuideKey(guideSeenKey);
+    setGuideOpen(!!guideSeenKey && !localStorage.getItem(guideSeenKey));
+  }
   const closeGuide = () => {
     setGuideOpen(false);
     if (guideSeenKey) localStorage.setItem(guideSeenKey, "1");
@@ -145,10 +147,8 @@ function Layout() {
   const [remindersDock, setRemindersDock] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Auto-close mobile navigation on route changes
-  useEffect(() => {
-    setMobileNavOpen(false);
-  }, [location.pathname]);
+  const [previousPath, setPreviousPath] = useState(location.pathname);
+  if (previousPath !== location.pathname) { setPreviousPath(location.pathname); setMobileNavOpen(false); }
 
   const fetchAccounts = () => {
     api.get('/statements/accounts')
@@ -357,7 +357,7 @@ function Layout() {
             transition: "margin-right 0.2s ease"
           }}
         >
-          <Outlet context={{
+          <Suspense fallback={<div role="status" style={{ padding: '24px' }}>Loading page…</div>}><Outlet context={{
             accounts,
             setAccounts,
             openAddAccount: () => setShowCreate(true),
@@ -370,7 +370,7 @@ function Layout() {
             transactionsRange,
             reportType,
             reportPeriod,
-          }} />
+          }} /></Suspense>
         </section>
       </main>
     </div>

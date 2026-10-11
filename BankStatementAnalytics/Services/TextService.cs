@@ -25,12 +25,14 @@ namespace BankStatementAnalytics.Services
             new() { Bank = Bank.IOB,             FileExt = ".txt", ParserType = typeof(OpTransactionParser)     },
             new() { Bank = Bank.HDFCCreditCard,  FileExt = ".csv", ParserType = typeof(HdfcCreditCardParser)   },
             // PDF parsers consume normalized text produced by PdfStatementReader,
-            // not the raw file bytes (see ExtractAsync).
+            // not the raw file bytes (see PrepareAsync).
             new() { Bank = Bank.HDFC,           FileExt = ".pdf", ParserType = typeof(HdfcPdfParser)           },
             new() { Bank = Bank.IOB,             FileExt = ".pdf", ParserType = typeof(IobPdfParser)            },
             new() { Bank = Bank.HDFCCreditCard,  FileExt = ".pdf", ParserType = typeof(HdfcCreditCardPdfParser) },
         };
     }
+
+    public sealed record PreparedStatement(List<BankTransaction> Transactions, CardStatementSummary? Summary, List<string> Warnings);
 
     public class TextService
     {
@@ -52,10 +54,10 @@ namespace BankStatementAnalytics.Services
         }
 
         /// <summary>
-        /// Parses the statement and upserts its transactions. Returns the total number of
-        /// transactions found in the file and how many of them were new (not already imported).
+        /// Parse and validate without financial writes. Persistence is performed
+        /// separately in the importer's transaction, together with completion status.
         /// </summary>
-        public async Task<(int total, int newCount)> ExtractAsync(
+        public async Task<PreparedStatement> PrepareAsync(
             string filePath, int accountId, Guid uploadId, StatementFileFormat format,
             string? password = null)
         {
@@ -103,118 +105,86 @@ namespace BankStatementAnalytics.Services
                 tx.AccountId = accountId;
             }
 
-            // Resolve all counterparty names to merchants in a single batch (one session /
-            // transaction) instead of a session per parsed row.
-            _counterPartyService.ResolveOrCreateBatch(accountId, transactions);
+            if (transactions.Count == 0)
+                throw new NotSupportedException("No transactions could be parsed. Check the bank and statement format.");
 
-            // Apply custom auto-categorization and annotation rules
-            var account = DbHelper.GetById<Account>((long)accountId);
-            if (account?.OwnerUserId != null)
-            {
-                _ruleEngine.ApplyRules(account.OwnerUserId.Value, transactions);
-            }
-
-            int newCount = 0;
-            using (var session = DbHelper.GetSession())
-            {
-                // Duplicates keep the UploadId of the upload that first imported them,
-                // so `UploadId == x` means "the rows upload x actually added" — that's
-                // what both revert and the "N new" drill-down rely on.
-                var existingUploadIds = new Dictionary<string, Guid?>();
-                var existingRows = session.Query<BankTransaction>()
-                    .Where(t => t.AccountId == accountId)
-                    .Select(t => new { t.BankReference, t.BankType, t.UploadId })
-                    .ToList();
-                foreach (var row in existingRows)
-                    existingUploadIds[$"{row.BankReference}|{row.BankType}"] = row.UploadId;
-
-                foreach (var tx in transactions)
-                {
-                    if (existingUploadIds.TryGetValue($"{tx.BankReference}|{tx.BankType}", out var originalUploadId))
-                        tx.UploadId = originalUploadId;
-                    else
-                        newCount++;
-                }
-            }
-
-            await DbHelper.SaveOrUpdateManyAsync(transactions);
-
-            // Credit card PDFs also carry a statement summary block (dues, due date,
-            // limits) — capture it best-effort; a failure here must never undo the
-            // transaction import that just succeeded.
+            var warnings = bank == Bank.HDFCCreditCard ? new List<string>() : BalanceContinuity.FindGaps(transactions);
+            var unresolved = transactions.Count(t => string.IsNullOrWhiteSpace(t.PendingCounterPartyName));
+            if (unresolved > 0) warnings.Add($"{unresolved} transaction(s) have no recognized merchant.");
+            CardStatementSummary? summary = null;
             if (pdfBytes != null && bank == Bank.HDFCCreditCard)
-                CaptureCardSummary(pdfBytes, accountId, uploadId, password);
-
-            return (transactions.Count, newCount);
+            {
+                try
+                {
+                    summary = HdfcCcSummaryExtractor.Extract(_pdfReader, pdfBytes, password);
+                    if (!summary.HasAnyValue) { warnings.Add("Credit-card summary could not be extracted."); summary = null; }
+                }
+                catch (Exception ex)
+                {
+                    Log.Exception(ex);
+                    warnings.Add("Credit-card summary could not be extracted. Review the statement manually.");
+                }
+            }
+            return new PreparedStatement(transactions, summary, warnings);
         }
 
-        private void CaptureCardSummary(byte[] pdfBytes, int accountId, Guid uploadId, string? password)
+        public async Task<int> PersistAsync(NHibernate.ISession session, Account account,
+            Guid uploadId, PreparedStatement prepared)
         {
-            try
+            // Limit the lookup to references present in this statement. Chunking
+            // keeps SQLite parameter counts and large Postgres IN lists bounded.
+            var existing = new HashSet<(string Reference, string Bank, string Direction)>();
+            foreach (var references in prepared.Transactions.Select(t => t.BankReference).Distinct().Chunk(400))
             {
-                var summary = HdfcCcSummaryExtractor.Extract(_pdfReader, pdfBytes, password);
-                if (!summary.HasAnyValue)
-                {
-                    Log.Info($"CC summary extraction found no fields for account {accountId} (layout change?).");
-                    return;
-                }
-
-                summary.AccountId = accountId;
-                summary.UploadId = uploadId;
-
-                using var session = DbHelper.GetSession();
-                using var tx = session.BeginTransaction();
-
-                // One summary per billed statement: re-uploading replaces the row.
-                var existing = summary.StatementDate != null
-                    ? session.Query<CardStatementSummary>()
-                        .FirstOrDefault(s => s.AccountId == accountId && s.StatementDate == summary.StatementDate)
-                    : session.Query<CardStatementSummary>()
-                        .FirstOrDefault(s => s.AccountId == accountId && s.UploadId == uploadId);
-
-                if (existing != null)
-                {
-                    existing.UploadId = uploadId;
-                    existing.StatementDate = summary.StatementDate;
-                    existing.PeriodStart = summary.PeriodStart;
-                    existing.PeriodEnd = summary.PeriodEnd;
-                    existing.PaymentDueDate = summary.PaymentDueDate;
-                    existing.TotalDue = summary.TotalDue;
-                    existing.MinimumDue = summary.MinimumDue;
-                    existing.CreditLimit = summary.CreditLimit;
-                    existing.AvailableCreditLimit = summary.AvailableCreditLimit;
-                    existing.RewardPointsBalance = summary.RewardPointsBalance;
-                    session.Update(existing);
-                }
-                else
-                {
-                    session.Save(summary);
-                }
-
-                // Auto-fill the account's card metadata, but only from the newest
-                // statement — an older statement uploaded later must not regress it.
-                bool isLatest = summary.StatementDate == null ||
-                    !session.Query<CardStatementSummary>().Any(s =>
-                        s.AccountId == accountId && s.StatementDate > summary.StatementDate);
-                if (isLatest)
-                {
-                    var account = session.Get<Account>((long)accountId);
-                    if (account != null)
-                    {
-                        if (summary.CreditLimit != null) account.CreditLimit = summary.CreditLimit;
-                        if (summary.StatementDate != null) account.StatementDay = summary.StatementDate.Value.Day;
-                        session.Update(account);
-                    }
-                }
-
-                tx.Commit();
+                var referenceList = references.ToList();
+                var rows = session.Query<BankTransaction>()
+                    .Where(t => t.AccountId == account.Id && referenceList.Contains(t.BankReference))
+                    .Select(t => new { t.BankReference, t.BankType, t.TransactionType }).ToList();
+                foreach (var row in rows) existing.Add((row.BankReference, row.BankType, row.TransactionType));
             }
-            catch (Exception ex)
+            var newRows = prepared.Transactions.Where(t =>
+                existing.Add((t.BankReference, t.BankType, t.TransactionType))).ToList();
+            // Existing rows keep user categories, notes, tags and their original
+            // upload. Re-importing overlapping periods never overwrites edits.
+            _counterPartyService.ResolveOrCreateBatch(session, account.Id, newRows);
+            if (account.OwnerUserId.HasValue) _ruleEngine.ApplyRules(session, account.OwnerUserId.Value, newRows);
+            foreach (var row in newRows)
             {
-                Log.Exception(ex);
+                row.UploadId = uploadId;
+                await session.SaveAsync(row);
             }
+            if (prepared.Summary != null) PersistCardSummary(session, account, uploadId, prepared.Summary);
+            return newRows.Count;
         }
 
+        private static void PersistCardSummary(NHibernate.ISession session, Account account,
+            Guid uploadId, CardStatementSummary summary)
+        {
+            summary.AccountId = account.Id;
+            summary.UploadId = uploadId;
+            var existing = summary.StatementDate.HasValue
+                ? session.Query<CardStatementSummary>().FirstOrDefault(s => s.AccountId == account.Id && s.StatementDate == summary.StatementDate)
+                : null;
+            if (existing == null) session.Save(summary);
+            else
+            {
+                existing.UploadId = uploadId;
+                existing.PeriodStart = summary.PeriodStart;
+                existing.PeriodEnd = summary.PeriodEnd;
+                existing.PaymentDueDate = summary.PaymentDueDate;
+                existing.TotalDue = summary.TotalDue;
+                existing.MinimumDue = summary.MinimumDue;
+                existing.CreditLimit = summary.CreditLimit;
+                existing.AvailableCreditLimit = summary.AvailableCreditLimit;
+                existing.RewardPointsBalance = summary.RewardPointsBalance;
+            }
+            if (summary.StatementDate.HasValue && !session.Query<CardStatementSummary>()
+                .Any(s => s.AccountId == account.Id && s.StatementDate > summary.StatementDate))
+            {
+                if (summary.CreditLimit.HasValue) account.CreditLimit = summary.CreditLimit;
+                account.StatementDay = summary.StatementDate.Value.Day;
+            }
+        }
 
         // ── Supported formats for an account (used by the API endpoint) ──
         public static (string[] formats, string label) GetSupportedFormats(Bank bank)

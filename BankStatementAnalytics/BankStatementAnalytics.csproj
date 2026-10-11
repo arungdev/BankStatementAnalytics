@@ -104,7 +104,7 @@
        Vite just deleted match nothing and survive. -->
   <Target Name="BuildReactClient" BeforeTargets="Build;ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release'">
     <Message Importance="high" Text="Installing npm dependencies and building React client..." />
-    <Exec Command="npm install" WorkingDirectory="..\Client" />
+    <Exec Command="npm ci" WorkingDirectory="..\Client" />
     <Exec Command="npm run build" WorkingDirectory="..\Client" />
     <!-- Glob wwwroot only now that Vite has written it (the evaluation-time glob was suppressed
          above). Item operations inside a target run at execution time, so this sees exactly the
@@ -119,7 +119,7 @@
        the build output so local dev (dotnet build/run) can use Database:Embedded=true too, not
        just an installed copy. Skipped once already present, so a clean build pays the ~150MB
        copy cost once, not on every incremental build. -->
-  <Target Name="CopyPgsqlBundle" AfterTargets="Build" Condition="!Exists('$(OutDir)pgsql\bin\postgres.exe') And Exists('$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle')">
+  <Target Name="CopyPgsqlBundle" AfterTargets="Build" Condition="'$(ValidationBuild)' != 'true' And !Exists('$(OutDir)pgsql\bin\postgres.exe') And Exists('$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle')">
     <Message Importance="high" Text="Copying embedded PostgreSQL bundle to output (one-time, ~150MB)..." />
     <Exec Command="robocopy &quot;$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle&quot; &quot;$(OutDir)pgsql&quot; /E /NFL /NDL /NJH /NJS /NC /NS" IgnoreExitCode="true">
       <Output TaskParameter="ExitCode" PropertyName="RobocopyExitCode" />

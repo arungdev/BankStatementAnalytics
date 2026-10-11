@@ -31,7 +31,7 @@ namespace BankStatementAnalytics.Mappping
             Property(x => x.SharedLimitAccountId);
             Property(x => x.WatchFolderPath, m => m.Length(1000));
             Property(x => x.WatchEnabled);
-            Property(x => x.StatementPassword, m => m.Length(200));
+            Property(x => x.StatementPassword, m => m.Length(2000));
         }
     }
 }

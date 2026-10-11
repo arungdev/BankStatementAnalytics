@@ -18,14 +18,6 @@ export default function AmountFilterChip({ minAmount, maxAmount, onChange, curre
   const [draftMax, setDraftMax] = useState("");
   const wrapperRef = useRef(null);
 
-  // Sync drafts when popover opens.
-  useEffect(() => {
-    if (open) {
-      setDraftMin(minAmount != null ? String(minAmount) : "");
-      setDraftMax(maxAmount != null ? String(maxAmount) : "");
-    }
-  }, [open, minAmount, maxAmount]);
-
   // Close on outside click.
   useEffect(() => {
     if (!open) return;
@@ -71,7 +63,10 @@ export default function AmountFilterChip({ minAmount, maxAmount, onChange, curre
     <div ref={wrapperRef} style={{ position: "relative", display: "inline-block" }}>
       <button
         className={`filter-chip${open ? " open" : ""}${hasFilter ? " active" : ""}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (!open) { setDraftMin(minAmount != null ? String(minAmount) : ''); setDraftMax(maxAmount != null ? String(maxAmount) : ''); }
+          setOpen(value => !value);
+        }}
         title="Filter by amount range"
         style={hasFilter ? { borderColor: "var(--primary)", background: "var(--primary-light)" } : undefined}
       >

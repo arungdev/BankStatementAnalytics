@@ -112,7 +112,8 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] int year,
             [FromQuery] int month = 0,
             [FromQuery] string? accountIds = null,
-            [FromQuery] string? kind = null)
+            [FromQuery] string? kind = null,
+            [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
             var yearly = string.Equals(type, "year", StringComparison.OrdinalIgnoreCase);
             if (!yearly && !string.Equals(type, "month", StringComparison.OrdinalIgnoreCase))
@@ -130,7 +131,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!ids.Any())
                 return BadRequest("No valid accountIds provided.");
 
-            var rows = await _reports.GetTransactionsAsync(ids, yearly, year, month, kind?.ToLowerInvariant());
+            var rows = await _reports.GetTransactionsAsync(ids, yearly, year, month, kind?.ToLowerInvariant(), page, pageSize);
             return Ok(rows);
         }
 

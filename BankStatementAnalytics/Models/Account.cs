@@ -42,6 +42,7 @@ namespace BankStatementAnalytics.Models
 
         // Password for protected statement PDFs picked up from the watch folder.
         // Stored plaintext in the local DB — never echoed back through the API.
+        [System.Text.Json.Serialization.JsonIgnore]
         public virtual string? StatementPassword { get; set; }
 
         // Computed property that exposes a masked version of the account number

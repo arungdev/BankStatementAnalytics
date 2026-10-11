@@ -1,34 +1,22 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { FiTrendingUp, FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
+import { FiTrendingUp, FiAlertTriangle } from "react-icons/fi";
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
 import api from '../api/client';
 import { currencyFormatter as fmt, isAmountMasked, MASKED_AMOUNT } from '../utils/format';
 
 export default function CashFlowForecast({ accountId, accountIds }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(60);
 
-  const fetchForecast = useCallback(() => {
-    if (!accountId && !accountIds) return;
-    setLoading(true);
-
+  const loadForecast = useCallback(async signal => {
+    if (!accountId && !accountIds) return null;
     const params = new URLSearchParams({ days });
-    if (accountIds) params.append('accountIds', accountIds);
-    else if (accountId) params.append('accountId', accountId);
-
-    api.get(`/forecast?${params.toString()}`)
-      .then(res => setData(res.data))
-      .catch(err => {
-        console.error('Failed to load forecast', err);
-        setData(null);
-      })
-      .finally(() => setLoading(false));
+    if (accountIds) params.set('accountIds', accountIds);
+    else params.set('accountId', accountId);
+    return (await api.get(`/forecast?${params}`, { signal })).data;
   }, [accountId, accountIds, days]);
-
-  useEffect(() => {
-    fetchForecast();
-  }, [fetchForecast]);
+  const { data, loading, error: loadError, retry } = useAsyncResource(loadForecast, null);
 
   const chartData = useMemo(() => {
     if (!data?.projections) return [];
@@ -52,6 +40,7 @@ export default function CashFlowForecast({ accountId, accountIds }) {
         marginTop: '20px',
       }}
     >
+      <RequestError error={loadError} onRetry={retry} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

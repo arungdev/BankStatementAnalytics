@@ -1,12 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
-import { FiPlus, FiTrash2, FiCheck, FiScissors } from 'react-icons/fi';
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from './RequestError';
+import { useState, useCallback, useMemo } from 'react';
+import { FiPlus, FiTrash2 } from "react-icons/fi";
 import api from '../api/client';
 import { Modal, Button } from '@common/client';
 import { currencyFormatter as fmt } from '../utils/format';
 
 export default function SplitTransactionModal({ open, onClose, transaction, categories = [], onSaved }) {
   const [splits, setSplits] = useState([]);
-  const [loading, setLoading] = useState(false);
+
   const [saving, setSaving] = useState(false);
 
   const parentAmount = useMemo(() => {
@@ -14,34 +16,22 @@ export default function SplitTransactionModal({ open, onClose, transaction, cate
     return transaction.debit > 0 ? transaction.debit : (transaction.credit > 0 ? transaction.credit : 0);
   }, [transaction]);
 
-  useEffect(() => {
-    if (!open || !transaction) return;
-    setLoading(true);
-
-    api.get(`/transactions/splits?bankRef=${encodeURIComponent(transaction.bankReference || transaction.id)}&bankType=${encodeURIComponent(transaction.bankType || '')}&accountId=${transaction.accountId}`)
-      .then(res => {
-        const data = Array.isArray(res.data) ? res.data : [];
-        if (data.length > 0) {
-          setSplits(data.map(d => ({
-            amount: d.amount,
-            category: d.category || '',
-            subCategory: d.subCategory || '',
-            note: d.note || '',
-          })));
-        } else {
-          // Initialize with 2 empty split rows
-          setSplits([
-            { amount: Math.round((parentAmount / 2) * 100) / 100, category: transaction.category || categories[0]?.name || '', subCategory: '', note: '' },
-            { amount: Math.round((parentAmount / 2) * 100) / 100, category: categories[1]?.name || categories[0]?.name || '', subCategory: '', note: '' },
-          ]);
-        }
-      })
-      .catch(err => {
-        console.error('Failed to load splits', err);
-        setSplits([]);
-      })
-      .finally(() => setLoading(false));
+  const loadSplits = useCallback(async signal => {
+    if (!open || !transaction) return [];
+    const params = new URLSearchParams({ bankRef: transaction.bankReference || transaction.id,
+      bankType: transaction.bankType || '', accountId: transaction.accountId });
+    const response = await api.get(`/transactions/splits?${params}`, { signal });
+    if (Array.isArray(response.data) && response.data.length) return response.data.map(d => ({
+      amount: d.amount, category: d.category || '', subCategory: d.subCategory || '', note: d.note || '' }));
+    const first = Math.round(parentAmount * 50) / 100;
+    return [
+      { amount: first, category: transaction.category || categories[0]?.name || '', subCategory: '', note: '' },
+      { amount: Math.round((parentAmount - first) * 100) / 100, category: categories[1]?.name || categories[0]?.name || '', subCategory: '', note: '' },
+    ];
   }, [open, transaction, parentAmount, categories]);
+  const { data: loadedSplits, loading, error: loadError, retry } = useAsyncResource(loadSplits, []);
+  const [previousSplits, setPreviousSplits] = useState(loadedSplits);
+  if (previousSplits !== loadedSplits) { setPreviousSplits(loadedSplits); setSplits(loadedSplits); }
 
   const totalAllocated = useMemo(() => {
     return splits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
@@ -124,6 +114,7 @@ export default function SplitTransactionModal({ open, onClose, transaction, cate
       width={560}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '8px' }}>
+        <RequestError error={loadError} onRetry={retry} />
         {/* Total info banner */}
         <div style={{
           display: 'flex',

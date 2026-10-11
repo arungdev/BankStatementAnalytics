@@ -24,17 +24,19 @@ namespace BankStatementAnalytics.Services
         public Upload? Upload { get; init; }
         public int Total { get; init; }
         public int NewCount { get; init; }
+        public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
     }
 
     /// <summary>
     /// Shared import pipeline behind both the manual upload endpoint and the
-    /// watch-folder auto-importer: validate → dedupe by file hash → store the
-    /// file → create Upload rows → parse via TextService → roll back on failure.
+    /// watch-folder auto-importer: validate → reserve the file hash → store and
+    /// parse the file → commit financial records and completion together.
     /// Unexpected exceptions are rethrown after cleanup so the HTTP caller keeps
     /// its middleware-logged 500 path; callers own ownership/authorization checks.
     /// </summary>
     public class StatementImportService
     {
+        public const long MaxFileBytes = 25_000_000;
         private readonly TextService _textService;
         private readonly PdfStatementReader _pdfReader;
 
@@ -50,11 +52,14 @@ namespace BankStatementAnalytics.Services
             if (bytes == null || bytes.Length == 0)
                 return Invalid("File is empty");
 
+            if (bytes.LongLength > MaxFileBytes) return Invalid("Statement exceeds the 25 MB limit.");
+            fileName = Path.GetFileName(fileName);
             var ext = Path.GetExtension(fileName).ToLowerInvariant();
             if (ext != ".txt" && ext != ".csv" && ext != ".pdf")
                 return Invalid("Only TXT, CSV and PDF files are supported.");
 
             var accountId = (int)account.Id;
+            using var accountGate = await ImportAccountGate.AcquireAsync(account.Id);
             var fileHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
 
             // Reject an exact re-upload of the same file for the same account.
@@ -95,9 +100,7 @@ namespace BankStatementAnalytics.Services
             Directory.CreateDirectory(folder);
 
             var storedName = $"{accountFolder}/{Guid.NewGuid()}{ext}";
-            var path = Path.Combine(UploadStorage.Root, storedName);
-
-            await File.WriteAllBytesAsync(path, bytes);
+            var path = UploadStorage.ResolvePath(storedName);
 
             var uploadId = Guid.NewGuid();
             var upload = new Upload
@@ -109,7 +112,8 @@ namespace BankStatementAnalytics.Services
                 Path = $"/Uploads/{storedName}",
                 UploadedAt = DateTime.UtcNow,
                 FileHash = fileHash,
-                AutoImported = autoImported ? true : null
+                AutoImported = autoImported ? true : null,
+                ImportStatus = "Pending"
             };
 
             var tx = new UploadTransaction
@@ -121,13 +125,26 @@ namespace BankStatementAnalytics.Services
             };
             upload.TransactionId = tx.Id;
 
-            // Persist the upload + its transaction record in one round-trip instead of three.
-            using (var session = DbHelper.GetSession())
-            using (var saveTx = session.BeginTransaction())
+            // Reserve the hash before writing a file. The unique database index
+            // makes manual/watch-folder races safe across processes too.
+            try
             {
+                using var session = DbHelper.GetSession();
+                using var reservation = session.BeginTransaction();
                 await session.SaveAsync(upload);
                 await session.SaveAsync(tx);
-                await saveTx.CommitAsync();
+                await reservation.CommitAsync();
+            }
+            catch
+            {
+                using var check = DbHelper.GetSession();
+                var reserved = check.Query<Upload>().FirstOrDefault(u => u.AccountId == accountId && u.FileHash == fileHash);
+                if (reserved != null && reserved.Id != upload.Id)
+                    return new StatementImportResult { Outcome = ImportOutcome.Duplicate,
+                        Error = "This statement is already imported or an import is in progress." };
+                // A commit can succeed before the connection reports failure.
+                // Continue our own durable reservation instead of stranding it.
+                if (reserved == null) throw;
             }
 
             var format = ext switch
@@ -136,44 +153,46 @@ namespace BankStatementAnalytics.Services
                 ".pdf" => StatementFileFormat.Pdf,
                 _ => StatementFileFormat.Txt,
             };
-
-            int total, newCount;
             try
             {
-                (total, newCount) = await _textService.ExtractAsync(
-                    path, accountId, uploadId, format, password);
+                await File.WriteAllBytesAsync(path, bytes);
+                var prepared = await _textService.PrepareAsync(path, accountId, upload.Id, format, password);
+                using var session = DbHelper.GetSession();
+                using var import = session.BeginTransaction();
+                // Serialize overlapping statements for this account; otherwise
+                // two different files can both discover the same row as new.
+                var lockedAccount = await session.GetAsync<Account>(account.Id, NHibernate.LockMode.Upgrade);
+                var storedUpload = await session.GetAsync<Upload>(upload.Id);
+                var added = await _textService.PersistAsync(session, lockedAccount, upload.Id, prepared);
+                storedUpload.TotalCount = prepared.Transactions.Count;
+                storedUpload.NewCount = added;
+                storedUpload.ImportWarnings = System.Text.Json.JsonSerializer.Serialize(prepared.Warnings);
+                storedUpload.ImportStatus = "Complete";
+                await import.CommitAsync();
+                return new StatementImportResult { Outcome = ImportOutcome.Success, Upload = storedUpload,
+                    Total = storedUpload.TotalCount, NewCount = added, Warnings = prepared.Warnings };
             }
             catch (Exception ex)
             {
-                // Extraction/import failed after the Upload row was written — roll
-                // back the stored file and DB rows so a corrected retry doesn't
-                // trip the duplicate-hash check. Friendly parse errors become an
-                // InvalidFile result; anything else rethrows for the caller.
-                using (var session = DbHelper.GetSession())
-                using (var cleanupTx = session.BeginTransaction())
-                {
-                    await session.DeleteAsync(tx);
-                    await session.DeleteAsync(upload);
-                    await cleanupTx.CommitAsync();
-                }
+                // A lost connection during commit has an uncertain outcome. Never
+                // delete a completed import: its status committed with its rows.
+                using var session = DbHelper.GetSession();
+                var stored = await session.GetAsync<Upload>(upload.Id);
+                if (stored?.ImportStatus == "Complete")
+                    return new StatementImportResult { Outcome = ImportOutcome.Success, Upload = stored,
+                        Total = stored.TotalCount, NewCount = stored.NewCount,
+                        Warnings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(stored.ImportWarnings ?? "[]") ?? [] };
+                // Delete the file first. If cleanup fails, Pending remains for
+                // startup recovery instead of losing the only record of the file.
                 UploadStorage.DeleteFile(storedName);
-
-                if (ex is PdfExtractionException or NotSupportedException)
-                    return Invalid(ex.Message);
+                using var cleanup = session.BeginTransaction();
+                var record = await session.GetAsync<UploadTransaction>(tx.Id);
+                if (record != null) await session.DeleteAsync(record);
+                if (stored != null) await session.DeleteAsync(stored);
+                await cleanup.CommitAsync();
+                if (ex is PdfExtractionException or NotSupportedException) return Invalid(ex.Message);
                 throw;
             }
-
-            upload.TotalCount = total;
-            upload.NewCount = newCount;
-            await DbHelper.UpdateAsync(upload);
-
-            return new StatementImportResult
-            {
-                Outcome = ImportOutcome.Success,
-                Upload = upload,
-                Total = total,
-                NewCount = newCount
-            };
         }
 
         private static StatementImportResult Invalid(string message) =>

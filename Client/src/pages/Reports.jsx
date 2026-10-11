@@ -1,18 +1,24 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import PaginatedTable from '../components/PaginatedTable';
+import { useState, useCallback, useMemo } from "react";
 import { useOutletContext } from 'react-router-dom';
 import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
 import api from '../api/client';
+import usePagedRows from '../hooks/usePagedRows';
+import PagedRowsControls from '../components/PagedRowsControls';
+import TablePageTransition from '../components/TablePageTransition';
 import SharedBillSummary from '../components/SharedBillSummary';
 import { sharedBillReportRange } from '../utils/sharedBills';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { FilterGroup, FilterPill, FilterDropdownChip } from '../components/PageHeader';
+
 import StatCard from '../components/StatCard';
 import { Avatar, Drawer, EmptyState, useTheme } from "@common/client";
 import { getToken } from "../theme/chartTheme";
-import { FiDownload, FiCalendar, FiArrowRight } from 'react-icons/fi';
+import { FiDownload, FiArrowRight } from "react-icons/fi";
 import { currencyFormatter as fmt, maskName } from '../utils/format';
 import AnnualSummaryView from '../components/AnnualSummaryView';
 import './Reports.css';
@@ -49,60 +55,7 @@ const fmtDate = (d) => {
 };
 
 /* ─── ReportsFilters — rendered in PageHeader's filter row ──────────────── */
-export function ReportsFilters({ reportType, setReportType, reportPeriod, setReportPeriod }) {
-  const [periods, setPeriods] = useState({ months: [], years: [] });
 
-  useEffect(() => {
-    api.get('/reports/periods')
-      .then(res => setPeriods(res.data || { months: [], years: [] }))
-      .catch(() => setPeriods({ months: [], years: [] }));
-  }, []);
-
-  // Months render under a per-year header with month-only rows; the trigger
-  // still shows the full "June 2026" label. Years stay a flat list.
-  const options = (reportType === 'year' || reportType === 'annual')
-    ? (periods.years || []).map(y => ({ value: String(y), label: String(y) }))
-    : (periods.months || []).map(m => ({
-        value: `${m.year}-${m.month}`,
-        label: m.label,
-        menuLabel: new Date(m.year, m.month - 1, 1).toLocaleString('en-US', { month: 'long' }),
-        group: String(m.year),
-      }));
-
-  // Keep the selection valid for the active type (e.g. after toggling Month ↔ Year).
-  useEffect(() => {
-    if (options.length === 0) return;
-    if (!options.some(o => o.value === reportPeriod))
-      setReportPeriod(options[0].value);
-  }, [options, reportPeriod, setReportPeriod]);
-
-  return (
-    <>
-      <FilterGroup label="Report">
-        <FilterPill active={reportType === 'month'} onClick={() => setReportType('month')}>
-          Monthly
-        </FilterPill>
-        <FilterPill active={reportType === 'year'} onClick={() => setReportType('year')}>
-          Yearly
-        </FilterPill>
-        <FilterPill active={reportType === 'annual'} onClick={() => setReportType('annual')}>
-          Year-in-Review
-        </FilterPill>
-      </FilterGroup>
-
-      <FilterGroup style={{ position: 'relative', zIndex: 'var(--z-dropdown)' }}>
-        <FilterDropdownChip
-          prefix="Period"
-          icon={<FiCalendar size={13} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />}
-          value={reportPeriod}
-          options={options}
-          onSelect={setReportPeriod}
-          placeholder="No data"
-        />
-      </FilterGroup>
-    </>
-  );
-}
 
 /* ─── Top merchants list ────────────────────────────────────────────────────
    The API returns the full ranked list; we reveal it a page at a time as the
@@ -208,8 +161,6 @@ export default function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [theme]);
 
-  const [report, setReport]   = useState(null);
-  const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   // Summary-tile drill-down: which tile is open, and the rows behind it.
@@ -218,9 +169,7 @@ export default function Reports() {
   const [openTile, setOpenTile]       = useState(null); // key into TILES
   const [openTileKey, setOpenTileKey] = useState('');
   const [drawerWidth, setDrawerWidth] = useState(400);
-  const [txList, setTxList]           = useState([]);
-  const [txLoading, setTxLoading]     = useState(false);
-  const [txError, setTxError]         = useState(null);
+  const [txUrl, setTxUrl] = useState(null);
 
   // "All accounts" → every owned account id; otherwise the single selected id.
   const accountIdsParam = useMemo(() => {
@@ -251,26 +200,22 @@ export default function Reports() {
     return p;
   }, [accountIdsParam, type, period]);
 
-  const fetchReport = useCallback(() => {
+  const loadReport = useCallback(async signal => {
     const p = buildParams();
-    if (!p) return;
-    setLoading(true);
-    const endpoint = type === 'annual' ? `/reports/annual?${p.toString()}` : `/reports?${p.toString()}`;
-    api.get(endpoint)
-      .then(res => setReport(res.data))
-      .catch(err => console.error('Failed to fetch report', err))
-      .finally(() => setLoading(false));
+    if (!p) return null;
+    const endpoint = type === 'annual' ? `/reports/annual?${p}` : `/reports?${p}`;
+    return (await api.get(endpoint, { signal })).data;
   }, [buildParams, type]);
-
-  useEffect(() => { fetchReport(); }, [fetchReport]);
+  const { data: report, loading, error: loadError, retry } = useAsyncResource(loadReport, null);
 
   const paramsKey = `${type}|${period}|${accountIdsParam}`;
   const trayOpen  = openTile != null && openTileKey === paramsKey;
+  const txPage = usePagedRows(trayOpen ? txUrl : null);
+  const { items: txList, loading: txLoading, error: txError } = txPage;
 
   const closeTray = useCallback(() => {
     setOpenTile(null);
-    setTxList([]);
-    setTxError(null);
+    setTxUrl(null);
   }, []);
 
   // Tile click → the rows behind that tile. Same period/account params as the
@@ -285,17 +230,9 @@ export default function Reports() {
 
     setOpenTile(key);
     setOpenTileKey(paramsKey);
-    setTxLoading(true);
-    setTxError(null);
-    setTxList([]);
+    setTxUrl(null);
 
-    api.get(`/reports/transactions?${p.toString()}`)
-      .then(res => setTxList(Array.isArray(res.data) ? res.data : []))
-      .catch(err => {
-        console.error('Failed to fetch report transactions', err);
-        setTxError('Could not load transactions. Please try again.');
-      })
-      .finally(() => setTxLoading(false));
+    setTxUrl(`/reports/transactions?${p.toString()}`);
   }, [buildParams, openTile, openTileKey, paramsKey, closeTray]);
 
   const summary    = report?.summary;
@@ -311,8 +248,8 @@ export default function Reports() {
   // Its change is computed from the balances themselves, not from Net Flow — the two
   // differ because Net Flow drops own-money transfers and uses effective dates.
   // Drawer footer stats + the bank label shown per row.
-  const trayCredits = txList.reduce((sum, t) => sum + t.credit, 0);
-  const trayDebits  = txList.reduce((sum, t) => sum + t.debit, 0);
+  const trayCredits = txPage.credits;
+  const trayDebits  = txPage.debits;
   const accountMap  = useMemo(
     () => accounts.reduce((m, a) => { m[a.id] = a.bankName; return m; }, {}),
     [accounts]
@@ -414,7 +351,10 @@ export default function Reports() {
     {...sharedBillRange} /> : null;
 
   return (
-    <div style={{ display: 'flex', position: 'relative', overflow: 'hidden' }}>
+    <>
+      <RequestError error={loadError} onRetry={retry} />
+      <div style={{ display: 'flex', position: 'relative', overflow: 'hidden' }}>
+      <RequestError error={loadError} onRetry={retry} />
       <div
         className="report-shell"
         style={{ ...s.page, flex: 1, minWidth: 0, marginRight: trayOpen && (typeof window !== 'undefined' && window.innerWidth > 1024) ? drawerWidth : 0 }}
@@ -576,7 +516,7 @@ export default function Reports() {
                   <p style={{ margin: 0, fontSize: '13px', color: T.muted }}>No spending in this period.</p>
                 ) : (
                   <div className="table-responsive">
-                    <table style={s.table}>
+                    <PaginatedTable style={s.table}>
                     <thead>
                       <tr>
                         <th style={s.th(false)}>Category</th>
@@ -615,7 +555,7 @@ export default function Reports() {
                         <td colSpan={2} />
                       </tr>
                     </tfoot>
-                  </table>
+                  </PaginatedTable>
                   </div>
                 )}
               </div>
@@ -650,7 +590,7 @@ export default function Reports() {
                     (all accounts{type === 'year' ? ', limits × months elapsed' : ''})
                   </span>
                 </p>
-                <table style={s.table}>
+                <PaginatedTable style={s.table}>
                   <thead>
                     <tr>
                       <th style={s.th(false)}>Category</th>
@@ -681,7 +621,7 @@ export default function Reports() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </PaginatedTable>
               </div>
             )}
 
@@ -692,7 +632,7 @@ export default function Reports() {
                   Bills Paid
                   <span style={{ fontWeight: 500, color: T.muted, marginLeft: '6px' }}>(all accounts)</span>
                 </p>
-                <table style={s.table}>
+                <PaginatedTable style={s.table}>
                   <thead>
                     <tr>
                       <th style={s.th(false)}>Bill</th>
@@ -713,7 +653,7 @@ export default function Reports() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </PaginatedTable>
               </div>
             )}
 
@@ -738,7 +678,7 @@ export default function Reports() {
                     </div>
                   ))}
                 </div>
-                <table style={s.table}>
+                <PaginatedTable style={s.table}>
                   <thead>
                     <tr>
                       <th style={s.th(false)}>Deposit</th>
@@ -761,7 +701,7 @@ export default function Reports() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </PaginatedTable>
               </div>
             )}
           </>
@@ -781,7 +721,7 @@ export default function Reports() {
       >
         <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
           {[
-            { label: 'Rows', value: txList.length.toLocaleString('en-IN') },
+            { label: 'Rows', value: txPage.totalCount.toLocaleString('en-IN') },
             { label: 'Credits', value: fmt.format(trayCredits), color: T.green },
             { label: 'Debits', value: fmt.format(trayDebits), color: T.red },
           ].map(stat => (
@@ -792,7 +732,8 @@ export default function Reports() {
           ))}
         </div>
 
-        {txLoading ? (
+        <TablePageTransition loading={txLoading} pageKey={txPage.pageKey}>
+        {txLoading && txList.length === 0 ? (
           <div style={{ padding: '48px 20px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: '13px', color: T.muted }}>Loading transactions…</p>
           </div>
@@ -803,7 +744,7 @@ export default function Reports() {
         ) : txList.length === 0 ? (
           <EmptyState icon="📭" title="No transactions" subtitle="Nothing found for this tile." compact />
         ) : (
-          <div style={{ margin: '0 -8px' }}>
+          <div className="table-page-content" key={txPage.pageKey} style={{ margin: '0 -8px' }}>
             {txList.map((tx, i) => {
               const credit = tx.credit > 0;
               const label = tx.merchant || tx.description || '—';
@@ -834,7 +775,10 @@ export default function Reports() {
             })}
           </div>
         )}
+        </TablePageTransition>
+        <PagedRowsControls data={txPage} />
       </Drawer>
     </div>
+    </>
   );
 }

@@ -39,14 +39,19 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public void ResolveOrCreateBatch(long accountId, IReadOnlyCollection<BankTransaction> transactions)
         {
+            using var session = DbHelper.GetSession();
+            using var tx = session.BeginTransaction();
+            ResolveOrCreateBatch(session, accountId, transactions);
+            tx.Commit();
+        }
+
+        public void ResolveOrCreateBatch(ISession session, long accountId, IReadOnlyCollection<BankTransaction> transactions)
+        {
             var pending = transactions
                 .Where(t => !string.IsNullOrWhiteSpace(t.PendingCounterPartyName))
                 .ToList();
             if (pending.Count == 0)
                 return;
-
-            using var session = DbHelper.GetSession();
-            using var tx = session.BeginTransaction();
 
             var ownerUserId = session.Get<Account>(accountId)?.OwnerUserId;
 
@@ -79,7 +84,6 @@ namespace BankStatementAnalytics.Services
                 t.EffectiveDate = EffectiveDateCalculator.Compute(t.TransactionDate, merchant.ShiftToNextMonth == true);
             }
 
-            tx.Commit();
         }
 
         // ── Shared resolution logic (no session/transaction management) ───────────

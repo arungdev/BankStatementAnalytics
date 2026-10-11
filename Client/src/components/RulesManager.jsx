@@ -1,13 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiPlay, FiCheck, FiRefreshCw, FiZap } from 'react-icons/fi';
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
+import { useState, useCallback } from "react";
+import { FiPlus, FiEdit2, FiTrash2, FiPlay, FiCheck, FiRefreshCw } from "react-icons/fi";
 import api from '../api/client';
 import { Button, Modal, EmptyState, Switch, Badge } from '@common/client';
-import { currencyFormatter as fmt } from '../utils/format';
+
 
 export default function RulesManager() {
-  const [rules, setRules] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [applyingAll, setApplyingAll] = useState(false);
   const [applyResult, setApplyResult] = useState(null);
 
@@ -33,26 +32,12 @@ export default function RulesManager() {
   const [testMatches, setTestMatches] = useState(null);
   const [testing, setTesting] = useState(false);
 
-  const loadRules = useCallback(() => {
-    setLoading(true);
-    Promise.all([
-      api.get('/rules').then(r => r.data || []),
-      api.get('/categories').then(r => r.data || []),
-    ])
-      .then(([r, c]) => {
-        setRules(r);
-        setCategories(c);
-      })
-      .catch(err => {
-        console.error('Failed to load rules', err);
-        setRules([]);
-      })
-      .finally(() => setLoading(false));
+  const loadResource = useCallback(async signal => {
+    const responses = await Promise.all([api.get('/rules', { signal }), api.get('/categories', { signal })]);
+    return { rules: responses[0].data || [], categories: responses[1].data || [] };
   }, []);
-
-  useEffect(() => {
-    loadRules();
-  }, [loadRules]);
+  const { data: resource, loading, error: loadError, retry: loadRules } = useAsyncResource(loadResource, { rules: [], categories: [] });
+  const { rules, categories } = resource;
 
   const openCreate = () => {
     setEditingRule(null);
@@ -166,6 +151,7 @@ export default function RulesManager() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <RequestError error={loadError} onRetry={loadRules} />
       {/* Top Header Card */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>

@@ -71,14 +71,15 @@ Frontend (from `Client/`, separate terminal — in Debug the API does not build 
 serve the SPA):
 
 ```
-npm install
+npm ci
 npm run dev       # Vite dev server on http://localhost:5007, proxying /api to :5000
 ```
 
 Open [http://localhost:5007](http://localhost:5007) and complete the first-run
 admin setup, then add an account and upload a statement.
 
-`npm run lint` runs ESLint; `npm run build` outputs the production bundle
+`npm run lint` runs ESLint; `npm test` runs frontend regression checks.
+`npm run build` outputs the production bundle
 straight into the API's `wwwroot/`, which the published app serves (with a
 fallback to `index.html` so client-side routing works).
 
@@ -130,6 +131,37 @@ Notes
 - Uploads are saved to the `Uploads/` folder by default (git-excluded).
 - Real bank statements used for parser tuning live in `samples/` (git-excluded — they contain account numbers).
 - Keep secrets in environment variables or user-secrets; do not commit credentials.
+
+## Import safety and regression checks
+
+Statements have a 25 MB limit. Imports reserve an account-scoped file hash,
+then commit transactions, merchants, card summaries, counts, and completion status
+in one database transaction. Overlapping statements preserve existing notes,
+tags, categories, and the upload that first introduced each transaction. Manual
+and watch-folder imports for an account are serialized. Interrupted pending
+imports and unfinished revert file cleanup are recovered before the next server
+startup accepts requests.
+
+Balance discrepancies and unrecognized merchants appear as review warnings in
+the upload result/history; they do not automatically reject partial statements.
+Use the review link to open the transactions added by the upload.
+
+Saved PDF passwords are protected with ASP.NET Data Protection. Existing plaintext
+values are converted at startup. Their dedicated key ring lives in
+`Uploads/.statement-keys`, so the normal whole-instance backup includes it. Keep
+the database and Uploads tree together when migrating manually; a database-only
+copy cannot decrypt protected passwords without those keys. Backups contain
+sensitive financial records and keys and should be stored privately. Auth-cookie
+keys remain separate under `Data/Keys`.
+
+Use one active application server per database; startup recovery and whole-instance
+restore are designed for that deployment model. SQLite backup/restore remains
+unsupported by the shared framework; use PostgreSQL for the built-in backup flow.
+
+CI checks frontend lint, regression tests, production builds, vendored artifact
+checksums, and backend regressions on SQLite and PostgreSQL. See
+[Tests/README.md](Tests/README.md) for isolated local verification and
+[VENDORED_DEPENDENCIES.md](VENDORED_DEPENDENCIES.md) for dependency provenance.
 
 ## License
 

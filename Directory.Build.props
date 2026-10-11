@@ -1,0 +1,8 @@
+<Project>
+  <!-- Isolate verification output from an installed/running development copy. -->
+  <PropertyGroup Condition="'$(ValidationBuild)' == 'true'">
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory).build/validation/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory).build/validation/bin/$(MSBuildProjectName)/</BaseOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

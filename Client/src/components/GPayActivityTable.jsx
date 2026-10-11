@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import TablePageTransition from './TablePageTransition';
 import { Avatar } from '@common/client';
 import Pagination from './Pagination';
 import { currencyFormatter, maskName } from '../utils/format';
@@ -18,26 +19,24 @@ const dateParts = value => {
   return [date.toLocaleDateString('en-GB', { ...options, day: '2-digit' }), date.toLocaleDateString('en-GB', { ...options, month: 'short', year: '2-digit' })];
 };
 
-export default function GPayActivityTable({ records, kind, onBank, onSelect, selectedId, page, onPageChange }) {
-  const [pageSize, setPageSize] = useState(20);
+export default function GPayActivityTable({ records, kind, onBank, onSelect, selectedId, page, onPageChange, pageSize, onPageSizeChange, sort, onSortChange, totalCount, loading = false, pageKey }) {
+  const scrollRef = useRef(null);
+  useEffect(() => { if (!loading) scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' }); }, [pageKey, loading]);
   const [loadedAt] = useState(() => Date.now());
-  const [sort, setSort] = useState({ field: 'date', direction: 'desc' });
   const vouchers = kind === 'vouchers';
   const rows = records.map(record => {
     const data = unpack(record);
     return { record, data, name: data.CounterPartyName || data.Description || data.Summary || data.Type || 'Unnamed payment', date: data.Timestamp || data.Time || data.Date || data.ExpiryTimestamp };
-  }).sort((a, b) => {
-    const comparison = sort.field === 'name' ? a.name.localeCompare(b.name) : sort.field === 'amount' ? (a.data.Amount || 0) - (b.data.Amount || 0) : timestamp(a.date) - timestamp(b.date);
-    return (sort.direction === 'asc' ? comparison : -comparison) || a.record.id - b.record.id;
   });
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const currentPage = Math.min(page + 1, totalPages);
   const startIndex = (currentPage - 1) * pageSize;
-  const visible = rows.slice(startIndex, startIndex + pageSize);
-  const changeSort = field => { setSort(previous => ({ field, direction: previous.field === field && previous.direction === 'desc' ? 'asc' : 'desc' })); onPageChange(0); };
+  const visible = rows;
+  const changeSort = field => onSortChange({ field, direction: sort.field === field && sort.direction === 'desc' ? 'asc' : 'desc' });
   const header = (field, label) => <th scope="col" aria-sort={sort.field === field ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}><button type="button" onClick={() => changeSort(field)}>{label}<span aria-hidden="true">{sort.field === field ? sort.direction === 'asc' ? '▴' : '▾' : '↕'}</span></button></th>;
   return <div className="gpay-activity-list">
-    <div className="gpay-activity-scroll" tabIndex={0} aria-label="GPay records table, scroll for more rows">
+    <TablePageTransition loading={loading} pageKey={pageKey}>
+    <div ref={scrollRef} className="gpay-activity-scroll" tabIndex={0} aria-label="GPay records table, scroll for more rows">
       <table className="gpay-activity-table">
         <thead><tr>{header('date', vouchers ? 'Expires' : 'Date')}{header('name', 'Description')}<th scope="col">Status / method</th><th scope="col">Bank transaction</th>{vouchers ? <th scope="col">Voucher code</th> : header('amount', 'Amount')}</tr></thead>
         <tbody>{visible.map(row => {
@@ -56,6 +55,7 @@ export default function GPayActivityTable({ records, kind, onBank, onSelect, sel
         })}{rows.length === 0 && <tr><td colSpan={5} className="gpay-activity-empty">No matching records. Try another search or view.</td></tr>}</tbody>
       </table>
     </div>
-    <Pagination currentPage={currentPage} totalPages={totalPages} itemsPerPage={pageSize} currentCount={visible.length} totalCount={rows.length} startIndex={startIndex} itemLabel="records" onPageChange={value => onPageChange(value - 1)} onItemsPerPageChange={value => { setPageSize(value); onPageChange(0); }} />
+    </TablePageTransition>
+    <Pagination loading={loading} currentPage={currentPage} totalPages={totalPages} itemsPerPage={pageSize} currentCount={visible.length} totalCount={totalCount} startIndex={startIndex} itemLabel="records" onPageChange={value => onPageChange(value - 1)} onItemsPerPageChange={onPageSizeChange} />
   </div>;
 }

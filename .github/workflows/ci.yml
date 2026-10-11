@@ -1,0 +1,57 @@
+name: Project checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Client/package-lock.json
+      - run: npm ci
+      - run: node ../scripts/verify-vendor.mjs
+      - run: npm run lint -- --max-warnings 0
+      - run: npm test
+      - run: node ../Tests/SharedBills/report-range.mjs
+      - run: npm run build
+  backend:
+    # SQLite's vendored native runtime and the portable Windows build run here.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet run --project Tests/GPayMatching -p:ValidationBuild=true
+      - run: dotnet run --project Tests/SharedBills -p:ValidationBuild=true
+      - run: dotnet run --project Tests/ImportReliability -p:ValidationBuild=true
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: bsa_regression
+          POSTGRES_USER: regression
+          POSTGRES_PASSWORD: regression
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U regression -d bsa_regression"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      BSA_TEST_POSTGRES: Host=localhost;Port=5432;Database=bsa_regression;Username=regression;Password=regression
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet run --project Tests/ImportReliability -p:ValidationBuild=true

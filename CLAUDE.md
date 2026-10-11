@@ -20,13 +20,13 @@ dotnet restore
 dotnet build
 dotnet run
 ```
-There is no backend test project in this repo currently.
+Backend regression executables live under Tests/GPayMatching, Tests/SharedBills, and Tests/ImportReliability. Run them with dotnet run --project <path> -p:ValidationBuild=true; see Tests/README.md.
 
 Frontend (from `Client/`):
 ```
 npm install
-npm run dev       # Vite dev server (localhost:5173-5175, CORS-allowed by the API — see Program.cs)
-npm run build     # production build into Client/dist
+npm run dev       # Vite dev server (localhost:5007, proxying /api to localhost:5000)
+npm run build     # production build into BankStatementAnalytics/wwwroot
 npm run lint      # eslint .
 ```
 Client also has an optional local Node server (`Client/server/index.js`, `npm run start:server`) — check `server/package.json` before assuming it's part of the main flow.
@@ -35,7 +35,7 @@ Single-file production EXE (from repo root):
 ```
 build.bat
 ```
-This runs `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true` from `BankStatementAnalytics/`, outputting to `Publish/`. The `.csproj` has an MSBuild target (`BuildReactClient`) that only runs `npm install && npm run build` in `Client/` **when Configuration == Release** — in Debug/dev, the API and Vite dev server run as two separate processes and you must start the client yourself.
+This runs `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true` from `BankStatementAnalytics/`, outputting to `Publish/`. The `.csproj` has an MSBuild target (`BuildReactClient`) that only runs `npm ci && npm run build` in `Client/` **when Configuration == Release** — in Debug/dev, the API and Vite dev server run as two separate processes and you must start the client yourself.
 
 Release artifacts (from repo root): `build-installer.bat` publishes once and emits **two** things into `Setup/` — the Inno Setup installer (via the shared `Common.Framework/Installer` engine) and a portable ZIP (`BankStatementAnalytics-Portable-<version>.zip`, built by `BankStatementAnalytics/Installer/build-portable.{bat,ps1}`, also runnable on its own to repackage an existing `Publish/`). The portable ZIP is the same publish output plus the `pgsql` bundle and a generated README, minus the service scripts — no service, no writes outside the extracted folder, because `AppPaths.ResolveWritableAppDataDirectory()` already puts `Data\`/`Uploads\`/`Logs\` next to the exe and `EmbeddedPostgresManager` picks a free port per data directory. Its one collision point with an installed copy is the HTTP port (`Urls` in `appsettings.json`, 5080 for both).
 
@@ -60,7 +60,9 @@ Adding a new bank/format means:
 2. Register it in `BankParserRegistry.Parsers` (`Services/TextService.cs`) with its `Bank` enum value and file extension (`.txt` or `.csv`).
 3. Add the DI registration is automatic — `Program.cs` loops over `BankParserRegistry.Parsers` and registers every `ParserType` as scoped.
 
-`TextService.ExtractAsync` looks up the account's bank, picks the matching parser from the registry by `(Bank, FileExt)`, and falls back to content-sniffing (`FallbackDetect`) if no exact match — e.g. detecting HDFC by `"Narration"`/`"Debit Amount"`/`"Closing Balance"` headers, IOB by `"UPI/"`/`"TRF"`. Parsed transactions are deduped/upserted via `DbHelper.SaveOrUpdateManyAsync`, relying on `BankTransaction.Equals`/`GetHashCode` (keyed on `AccountId` + `BankReference` + `BankType`) for NHibernate's save-or-update identity check.
+`TextService.PrepareAsync` selects the parser by bank/format and returns transactions, a possible card summary, and review warnings without financial writes. `PersistAsync` queries only incoming references and inserts unseen composite identities (account, bank reference, bank type, direction), preserving existing annotations and original upload ownership. `StatementImportService` reserves the account/file hash in a Pending upload, then commits merchants, transactions, card metadata, counts, warnings, and Complete status together. `ImportAccountGate` serializes manual/watch-folder imports per account; database uniqueness enforces the file-hash reservation. Startup recovers Pending imports before serving requests. Use one active application server per database.
+
+Saved statement passwords use `StatementPasswordProtector`. Its dedicated keys are stored under `Uploads/.statement-keys` so whole-instance backups include them; auth-cookie keys remain under `Data/Keys`. Startup protects legacy plaintext passwords. Never serialize stored passwords or migrate the database without its Uploads tree.
 
 Uploads are stored under `Uploads/` on disk (GUID-named) with a corresponding `Upload`/`UploadTransaction` DB record; deleting an upload (`DELETE api/statements/upload/{id}`) removes the DB rows, the parsed `BankTransaction`s tied to that `UploadId`, and the file.
 

@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiTarget, FiCalendar, FiCheckCircle, FiDollarSign } from 'react-icons/fi';
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
+import { useState, useCallback, useMemo } from "react";
+import { FiPlus, FiEdit2, FiTrash2, FiCalendar, FiDollarSign } from "react-icons/fi";
 import api from '../api/client';
 import StatCard from '../components/StatCard';
 import { Modal, EmptyState, Badge, Button } from '@common/client';
@@ -8,9 +10,6 @@ import { usePrivacy } from '../context/usePrivacy';
 
 export default function Goals() {
   usePrivacy();
-  const [goals, setGoals] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
 
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
@@ -26,26 +25,12 @@ export default function Goals() {
     notes: '',
   });
 
-  const loadData = useCallback(() => {
-    setLoading(true);
-    Promise.all([
-      api.get('/goals').then(r => r.data || []),
-      api.get('/goals/summary').then(r => r.data || null),
-    ])
-      .then(([g, s]) => {
-        setGoals(g);
-        setSummary(s);
-      })
-      .catch(err => {
-        console.error('Failed to load goals', err);
-        setGoals([]);
-      })
-      .finally(() => setLoading(false));
+  const loadResource = useCallback(async signal => {
+    const responses = await Promise.all([api.get('/goals', { signal }), api.get('/goals/summary', { signal })]);
+    return { goals: responses[0].data || [], summary: responses[1].data || null };
   }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  const { data: resource, loading, error: loadError, retry: loadData } = useAsyncResource(loadResource, { goals: [], summary: null });
+  const { goals, summary } = resource;
 
   const openCreateModal = () => {
     setEditingGoal(null);
@@ -184,6 +169,7 @@ export default function Goals() {
                   position: 'relative',
                 }}
               >
+      <RequestError error={loadError} onRetry={loadData} />
                 <div>
                   {/* Top line: Name + Category badge + Actions */}
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', marginBottom: '14px' }}>

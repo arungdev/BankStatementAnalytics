@@ -211,6 +211,12 @@ namespace BankStatementAnalytics.Services
                 // writer; leave it for the next sweep instead of importing half a file.
                 using (var probe = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None))
                 {
+                    if (probe.Length > StatementImportService.MaxFileBytes)
+                    {
+                        await RecordHistoryAsync(account, file, "Failed", "Statement exceeds the 25 MB limit.", null);
+                        lock (_handledLock) _handled.Add(key);
+                        return;
+                    }
                     bytes = new byte[probe.Length];
                     await probe.ReadExactlyAsync(bytes);
                 }
@@ -230,7 +236,7 @@ namespace BankStatementAnalytics.Services
                 using var scope = _scopeFactory.CreateScope();
                 var importer = scope.ServiceProvider.GetRequiredService<StatementImportService>();
                 var result = await importer.ImportAsync(
-                    account, bytes, Path.GetFileName(file), account.StatementPassword, autoImported: true);
+                    account, bytes, Path.GetFileName(file), scope.ServiceProvider.GetRequiredService<StatementPasswordProtector>().Unprotect(account.StatementPassword), autoImported: true);
 
                 switch (result.Outcome)
                 {

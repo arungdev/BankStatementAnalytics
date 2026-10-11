@@ -4,18 +4,24 @@ using Common.Framework.Logging;
 namespace BankStatementAnalytics.Services.Pdf
 {
     /// <summary>
-    /// Log-only sanity check for statements that carry a running balance:
+    /// Review warnings for statements that carry a running balance:
     /// previous balance ± amount should equal the current row's balance.
     /// Discontinuities usually mean a misparsed row or column drift in the PDF
-    /// extraction. Deliberately NOT a rejection gate (partial-period statements
-    /// and page-boundary quirks can false-positive) — promote later if samples
-    /// prove row ordering is reliable.
+    /// extraction. Warnings are surfaced in import review rather than rejecting
+    /// partial-period statements or page-boundary quirks automatically.
     /// </summary>
     public static class BalanceContinuity
     {
         public static void WarnOnGaps(IReadOnlyList<BankTransaction> transactions, string context)
         {
-            if (transactions.Count < 2) return;
+            foreach (var warning in FindGaps(transactions))
+                Log.Info($"{context}: balance continuity WARNING: {warning}");
+        }
+
+        public static List<string> FindGaps(IReadOnlyList<BankTransaction> transactions)
+        {
+            var warnings = new List<string>();
+            if (transactions.Count < 2) return warnings;
 
             // Statements can list rows oldest-first (HDFC) or newest-first (IOB);
             // the check needs chronological order. Reversing (rather than sorting)
@@ -31,10 +37,11 @@ namespace BankStatementAnalytics.Services.Pdf
 
                 decimal expected = prev.Balance + cur.Credit - cur.Debit;
                 if (Math.Abs(expected - cur.Balance) > 0.01m)
-                    Log.Info($"{context}: balance continuity WARNING at " +
+                    warnings.Add($"Balance discrepancy at " +
                              $"{cur.TransactionDate:dd/MM/yyyy} '{cur.Description}' — " +
                              $"expected {expected:0.00}, statement says {cur.Balance:0.00}");
             }
+            return warnings;
         }
     }
 }

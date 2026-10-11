@@ -351,7 +351,8 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string groupBy,
             [FromQuery] string groupValue,
             [FromQuery] DateTime? startDate = null,
-            [FromQuery] DateTime? endDate = null)
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
             if (string.IsNullOrWhiteSpace(accountIds))
                 return BadRequest("accountIds is required.");
@@ -398,62 +399,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 }
             }
 
-            var projected = query
-                .OrderByDescending(t => t.TransactionDate)
-                .Select(t => new
-                {
-                    id = t.BankReference,
-                    bankType = t.BankType,
-                    date = t.TransactionDate,
-                    description = t.CounterParty != null ? t.CounterParty.Name : t.BankReference,
-                    accountId = t.AccountId,
-                    amount = t.Debit,
-                    tags = t.Tags,
-                    categoryOverride = t.CategoryOverride,
-                    subCategoryOverride = t.SubCategoryOverride,
-                    merchantCategory = t.CounterParty != null ? t.CounterParty.Category : null
-                });
-
-            var rows = await projected.ToListAsync();
-
-            if (isCategory)
-            {
-                var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, ids);
-                var categoryRows = rows.SelectMany(r =>
-                {
-                    var expanded = TransactionSplitHelper.ExpandSpend(
-                        r.accountId,
-                        r.id,
-                        r.bankType,
-                        r.amount,
-                        r.categoryOverride ?? r.merchantCategory ?? "Uncategorized",
-                        r.subCategoryOverride,
-                        splitsLookup);
-
-                    return expanded
-                        .Where(e => string.Equals(e.Category, groupValue, StringComparison.OrdinalIgnoreCase))
-                        .Select(e => new
-                        {
-                            id = r.id,
-                            date = r.date,
-                            description = e.IsSplit
-                                ? $"{r.description} (Split: {e.Category}{(string.IsNullOrWhiteSpace(e.Note) ? "" : $" - {e.Note}")})"
-                                : r.description,
-                            accountId = r.accountId,
-                            amount = e.Amount
-                        });
-                }).ToList();
-
-                return Ok(categoryRows);
-            }
-
-            IEnumerable<object> result = groupBy == "byTag"
-                ? rows.Where(t => !string.IsNullOrWhiteSpace(t.tags)
-                        && t.tags.Split(',').Select(tag => tag.Trim()).Contains(groupValue))
-                      .Select(t => new { t.id, t.date, t.description, t.accountId, t.amount })
-                : rows.Select(t => new { t.id, t.date, t.description, t.accountId, t.amount });
-
-            return Ok(result.ToList());
+            return Ok(await InsightTransactionPaging.ReadAsync(session, query, groupBy, groupValue, page, pageSize));
         }
     }
 }

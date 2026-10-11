@@ -1,16 +1,21 @@
-import { useEffect, useState, useRef } from "react";
+import useAsyncResource from '../hooks/useAsyncResource';
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useOutletContext, useSearchParams, useNavigate } from "react-router-dom";
 import api from "../api/client";
+import useTransactions from "../hooks/useTransactions";
+import RequestError from "../components/RequestError";
+import { buildTransactionParams } from "../utils/transactionQuery";
 import { Avatar, Badge, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState } from "@common/client";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors, FiTag, FiUsers } from "react-icons/fi";
 import UploadStatement from "./UploadStatement";
-import { getUploads, getAutoImports, revertStatement, retryAutoImport } from "../api/statements";
+import { getUploads, revertStatement, retryAutoImport } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
-import DateRangePicker from "../components/Daterangepicker";
-import { FilterGroup } from "../components/PageHeader";
+
+
 import Pagination from "../components/Pagination";
+import TablePageTransition from "../components/TablePageTransition";
 import CategoryPicker from "../components/CategoryPicker";
 import SplitTransactionModal from "../components/SplitTransactionModal";
 import TransactionGPayContext from "../components/TransactionGPayContext";
@@ -40,19 +45,7 @@ const T = {
 };
 
 /* ─── TransactionsFilters — rendered in Layout's PageHeader filter row ──── */
-export function TransactionsFilters({ dateRange, setDateRange }) {
-  return (
-    <FilterGroup style={{ position: 'relative', zIndex: 500 }}>
-      <DateRangePicker
-        value={dateRange}
-        onChange={setDateRange}
-        showTime={false}
-        align="left"
-        placeholder="All Time"
-      />
-    </FilterGroup>
-  );
-}
+
 
 export default function Transactions() {
   const { isAdmin } = useAuth();
@@ -69,8 +62,11 @@ export default function Transactions() {
   // "All accounts" is a real combined view: accountId 0 plus an accountIds CSV
   // (the same contract Trends/Insights use), with each row carrying its own
   // account. A specific selection stays the single-account path.
-  const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
-  const effectiveAccountId = isAllAccounts ? (accounts.length > 0 ? 0 : null) : selectedAccountId;
+  const linkedUploadId = searchParams.get('uploadId');
+  const linkedAccountId = linkedUploadId && /^[1-9]\d*$/.test(searchParams.get('accountId') || '')
+    ? Number(searchParams.get('accountId')) : null;
+  const isAllAccounts = !linkedAccountId && selectedAccountId === ALL_ACCOUNTS;
+  const effectiveAccountId = linkedAccountId || (isAllAccounts ? (accounts.length > 0 ? 0 : null) : selectedAccountId);
   const accountScope = isAllAccounts ? accounts.map(a => a.id).join(',') : String(effectiveAccountId ?? '');
   const accountById = new Map(accounts.map(a => [a.id, a]));
   const accountLabel = (accountId, fallback = '') => {
@@ -81,13 +77,13 @@ export default function Transactions() {
   // can repeat across accounts once the list spans all of them.
   const txKey = (t) => `${t.accountId}|${t.bankType}|${t.id}`;
 
-  const [tx, setTx] = useState([]);
-  const [loading, setLoading] = useState(effectiveAccountId == null);
+
+
   const [splitModalTx, setSplitModalTx] = useState(null);
   // Full-page loader only before the first load — later refetches (search typing,
   // paging) keep the list mounted so the search input doesn't lose focus.
-  const [hasLoaded, setHasLoaded] = useState(false);
-  const [totalTransactions, setTotalTransactions] = useState(0);
+
+
 
   // Categories from API
   const [categories, setCategories] = useState([]);
@@ -173,7 +169,7 @@ export default function Transactions() {
   const [tags, setTags] = useState([]);
   const [recentTags, setRecentTags] = useState([]);
   const [manageTagsModalOpen, setManageTagsModalOpen] = useState(false);
-  const [tagEditRowId, setTagEditRowId] = useState(null);   // row whose inline "+ tag" input is open
+  const [, setTagEditRowId] = useState(null);   // row whose inline "+ tag" input is open
   const [noteEditRowId, setNoteEditRowId] = useState(null); // row whose inline note input is open
 
   // Upload modal + a bump to force the transaction list to re-fetch after an upload
@@ -181,10 +177,7 @@ export default function Transactions() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Upload-history RHS drawer
-  const [uploads, setUploads] = useState([]);
-  const [importFails, setImportFails] = useState([]);
   const [showUploadHistory, setShowUploadHistory] = useState(false);
-  const [loadingUploads, setLoadingUploads] = useState(false);
   const [uploadTab, setUploadTab] = useState('success'); // 'success' | 'failed'
 
   // The reminders panel deep-links here as /transactions?uploads=1 to surface a
@@ -251,34 +244,24 @@ export default function Transactions() {
     setRefreshKey(k => k + 1);
   };
 
-  // Load the drawer's uploads whenever it's open — and re-load when the account
-  // changes underneath it, so it never keeps showing another account's history.
-  useEffect(() => {
-    if (!uploadHistoryOpen) return;
-    if (effectiveAccountId == null) { setUploads([]); setImportFails([]); return; }
-    setLoadingUploads(true);
-    Promise.all([
-      getUploads().then(res => (res.data || [])
-        .filter(u => isAllAccounts || String(u.accountId) === String(effectiveAccountId))
-        .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
-      ).catch(() => []),
-      // Failed auto-imports leave no upload row — fetched separately so they
-      // still show up in the history alongside successful uploads.
-      getAutoImports().then(res => (res.data || [])
-        .filter(h => h.status === 'Failed' && (isAllAccounts || String(h.accountId) === String(effectiveAccountId)))
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      ).catch(() => []),
-    ])
-      .then(([ups, fails]) => {
-        setUploads(ups);
-        setImportFails(fails);
-        // The ?uploads=1 deep-link exists to surface a failed import's "Try
-        // again" — land on that tab rather than making the user find it.
-        if (deepLinkedToUploads && fails.length > 0) setUploadTab('failed');
-      })
-      .finally(() => setLoadingUploads(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploadHistoryOpen, effectiveAccountId]);
+  const loadUploadHistory = useCallback(async signal => {
+    if (!uploadHistoryOpen || effectiveAccountId == null) return { uploads: [], importFails: [] };
+    const [success, failures] = await Promise.all([
+      api.get('/statements/uploads', { signal }), api.get('/statements/auto-imports', { signal })]);
+    return {
+      uploads: (success.data || []).filter(u => isAllAccounts || String(u.accountId) === String(effectiveAccountId)),
+      importFails: (failures.data || []).filter(h => h.status === 'Failed' && (isAllAccounts || String(h.accountId) === String(effectiveAccountId))),
+    };
+  }, [uploadHistoryOpen, effectiveAccountId, isAllAccounts]);
+  const { data: uploadHistory, loading: loadingUploads, error: historyError, retry: retryHistory, updateData: updateHistory } = useAsyncResource(loadUploadHistory, { uploads: [], importFails: [] });
+  const { uploads, importFails } = uploadHistory;
+  const setUploads = update => updateHistory(previous => ({ ...previous, uploads: typeof update === 'function' ? update(previous.uploads) : update }));
+  const setImportFails = update => updateHistory(previous => ({ ...previous, importFails: typeof update === 'function' ? update(previous.importFails) : update }));
+  const [historyLoaded, setHistoryLoaded] = useState(uploadHistory);
+  if (historyLoaded !== uploadHistory) {
+    setHistoryLoaded(uploadHistory);
+    if (deepLinkedToUploads && importFails.length > 0) setUploadTab('failed');
+  }
 
   const handleRevert = async (upload) => {
     if (!upload?.id) return;
@@ -334,21 +317,14 @@ export default function Transactions() {
   const toLocalDate = (d) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  // ── Date range now changes from the header — reset to page 1 when it does ──
-  useEffect(() => {
-    setCurrentPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange.start, dateRange.end]);
-
-  // The open detail drawer holds a transaction from the previous account — that
-  // row won't exist under the newly selected account, so close it (and any open
-  // inline tag/note editors) instead of leaving stale info showing.
-  useEffect(() => {
-    setSelectedTx(null);
-    setTagEditRowId(null);
-    setNoteEditRowId(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveAccountId]);
+  const rangeKey = String(dateRange.start) + '|' + String(dateRange.end);
+  const [previousRangeKey, setPreviousRangeKey] = useState(rangeKey);
+  if (previousRangeKey !== rangeKey) { setPreviousRangeKey(rangeKey); setCurrentPage(1); }
+  const [previousAccountId, setPreviousAccountId] = useState(effectiveAccountId);
+  if (previousAccountId !== effectiveAccountId) {
+    setPreviousAccountId(effectiveAccountId);
+    setSelectedTx(null); setTagEditRowId(null); setNoteEditRowId(null); setCurrentPage(1);
+  }
 
   // Selection survives paging, but not a change to what's being listed — acting
   // on rows the user can no longer see would be a surprise. Reset during render
@@ -356,125 +332,26 @@ export default function Transactions() {
   const filterKey = [
     accountScope,
     dateRange.start, dateRange.end,
-    uncategorizedOnly, search, uploadFilter?.id ?? '',
+    uncategorizedOnly, search, uploadFilter?.id ?? '', linkedUploadId,
+    minAmount, maxAmount, selectedCategory,
   ].join('|');
   if (selectionFilterKey !== filterKey) {
     setSelectionFilterKey(filterKey);
     if (selectedIds.size > 0) setSelectedIds(new Set());
   }
 
-  useEffect(() => {
-    if (effectiveAccountId == null) {
-      setLoading(false);
-      setTx([]);
-      setTotalTransactions(0);
-      return;
-    }
-    setLoading(true);
-
-    const { start: startDate, end: endDate } = dateRange;
-
-    const params = new URLSearchParams({ page: currentPage, pageSize: itemsPerPage });
-    if (isAllAccounts) params.append('accountIds', accountScope);
-
-    // While drilling into an upload's new transactions, ignore the date range —
-    // the imported rows may fall outside the currently selected period.
-    if (activeUploadFilter) {
-      params.append('uploadId', activeUploadFilter.id);
-    } else {
-      if (startDate) params.append('startDate', toLocalDate(startDate));
-      if (endDate)   params.append('endDate',   toLocalDate(endDate));
-    }
-    if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
-    if (search) params.append('search', search);
-    if (sortBy !== 'date' || sortDir !== 'desc') {
-      params.append('sortBy', sortBy);
-      params.append('sortDir', sortDir);
-    }
-    if (minAmount != null) params.append('minAmount', minAmount);
-    if (maxAmount != null) params.append('maxAmount', maxAmount);
-    if (selectedCategory) params.append('category', selectedCategory);
-
-    api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
-      .then(res => {
-        let allTx = [];
-        let isServerPaginated = false;
-
-        if (Array.isArray(res.data)) {
-          allTx = res.data;
-        } else if (res.data) {
-          allTx = res.data.transactions || [];
-          if (typeof res.data.totalCount === 'number') {
-            isServerPaginated = true;
-          }
-        }
-
-        if (!isServerPaginated) {
-          if (uncategorizedOnly) allTx = allTx.filter(t => !t.category);
-          if (selectedCategory) allTx = allTx.filter(t => t.category === selectedCategory);
-          if (search) {
-            const q = search.toLowerCase();
-            allTx = allTx.filter(t =>
-              (t.merchant || '').toLowerCase().includes(q) ||
-              (t.description || '').toLowerCase().includes(q) ||
-              (t.upiReference || '').toLowerCase().includes(q)
-            );
-          }
-          // Client-side date filtering
-          allTx = allTx.filter(t => {
-            if (!startDate && !endDate) return true;
-            const txDate = new Date(t.transactionDate);
-            if (startDate) {
-              const s = new Date(startDate); s.setHours(0, 0, 0, 0);
-              if (txDate < s) return false;
-            }
-            if (endDate) {
-              const e = new Date(endDate); e.setHours(23, 59, 59, 999);
-              if (txDate > e) return false;
-            }
-            return true;
-          });
-
-          // Client-side amount filtering
-          if (minAmount != null || maxAmount != null) {
-            allTx = allTx.filter(t => {
-              const amt = Math.max(t.credit || 0, t.debit || 0);
-              if (minAmount != null && amt < minAmount) return false;
-              if (maxAmount != null && amt > maxAmount) return false;
-              return true;
-            });
-          }
-
-          // Mirror the server-side column sort for the plain-array response shape.
-          const dir = sortDir === 'asc' ? 1 : -1;
-          const amountOf = (t) => Math.max(t.credit || 0, t.debit || 0);
-          allTx.sort((a, b) => {
-            let cmp;
-            if (sortBy === 'merchant')      cmp = (a.merchant || '').localeCompare(b.merchant || '');
-            else if (sortBy === 'category') cmp = (a.category || '').localeCompare(b.category || '');
-            else if (sortBy === 'amount')   cmp = amountOf(a) - amountOf(b);
-            else                            cmp = new Date(a.transactionDate) - new Date(b.transactionDate);
-            if (cmp !== 0) return cmp * dir;
-            return new Date(b.transactionDate) - new Date(a.transactionDate);
-          });
-
-          setTotalTransactions(allTx.length);
-          const startIdx = (currentPage - 1) * itemsPerPage;
-          setTx(allTx.slice(startIdx, startIdx + itemsPerPage));
-        } else {
-          setTx(allTx);
-          setTotalTransactions(res.data.totalCount);
-        }
-        setLoading(false);
-        setHasLoaded(true);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-        setHasLoaded(true);
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveAccountId, accountScope, currentPage, dateRange, itemsPerPage, refreshKey, uncategorizedOnly, search, uploadFilter, sortBy, sortDir, minAmount, maxAmount, selectedCategory]);
+  const { data: transactionData, loading, hasLoaded, error: transactionError, retry: retryTransactions, setTransactions: setTx } = useTransactions(
+    effectiveAccountId, {
+      page: currentPage, pageSize: itemsPerPage,
+      accountIds: isAllAccounts ? accountScope : undefined,
+      startDate: dateRange.start ? toLocalDate(dateRange.start) : undefined,
+      endDate: dateRange.end ? toLocalDate(dateRange.end) : undefined,
+      uploadId: linkedUploadId || activeUploadFilter?.id, uncategorizedOnly, search,
+      sortBy, sortDir, minAmount, maxAmount, category: selectedCategory,
+    }, refreshKey);
+  const tx = transactionData.transactions || [];
+  const loadedPageKey = tx.map(t => `${t.accountId}|${t.bankType}|${t.id}`).join(';');
+  const totalTransactions = transactionData.totalCount || 0;
 
   if (loading && !hasLoaded) {
     return (
@@ -540,6 +417,8 @@ export default function Transactions() {
     }).then(() => {
       // Keep the "Frequently used" group in step with the change just made.
       loadFrequentCategories();
+      // Reapply the active filters and update the server's count after categorizing.
+      if (uncategorizedOnly || selectedCategory) setRefreshKey(k => k + 1);
     }).catch(err => {
       console.error("Failed to update category", err);
       alert("Failed to update category. Please try again.");
@@ -739,16 +618,13 @@ export default function Transactions() {
 
   const handleExportCSV = () => {
     const { start: startDate, end: endDate } = dateRange;
-    const params = new URLSearchParams({ pageSize: 0 });
-    if (isAllAccounts) params.append('accountIds', accountScope);
-    if (startDate) params.append('startDate', toLocalDate(startDate));
-    if (endDate)   params.append('endDate',   toLocalDate(endDate));
-    if (uncategorizedOnly) params.append('uncategorizedOnly', 'true');
-    if (search) params.append('search', search);
-    if (sortBy !== 'date' || sortDir !== 'desc') {
-      params.append('sortBy', sortBy);
-      params.append('sortDir', sortDir);
-    }
+    const params = buildTransactionParams({ pageSize: 0,
+      accountIds: isAllAccounts ? accountScope : undefined,
+      startDate: startDate ? toLocalDate(startDate) : undefined,
+      endDate: endDate ? toLocalDate(endDate) : undefined,
+      uploadId: linkedUploadId || activeUploadFilter?.id, uncategorizedOnly, search,
+      sortBy, sortDir, minAmount, maxAmount, category: selectedCategory,
+    });
 
     api.get(`/statements/${effectiveAccountId}?${params.toString()}`)
       .then(res => {
@@ -783,6 +659,7 @@ export default function Transactions() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
       })
       .catch(err => {
         console.error("Export failed", err);
@@ -807,6 +684,17 @@ export default function Transactions() {
 
   return (
     <div style={{ marginRight: (selectedTx || uploadHistoryOpen) && (typeof window !== 'undefined' && window.innerWidth > 1024) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
+      <RequestError error={historyError} onRetry={retryHistory} />
+      <RequestError error={transactionError} onRetry={retryTransactions} />
+      {linkedUploadId && <div role="status" style={{ marginBottom: '12px' }}>
+        Showing imported transactions for {accountLabel(effectiveAccountId)}.{' '}
+        <button className="btn small" type="button" onClick={() => {
+          const next = new URLSearchParams(searchParams);
+          next.delete('uploadId'); next.delete('accountId');
+          setSearchParams(next, { replace: true });
+        }}>Clear import filter</button>
+      </div>}
+      {loading && hasLoaded && <div role="status">Refreshing transactions…</div>}
       <style>{`
         .tx-row {
           display: grid;
@@ -1313,6 +1201,7 @@ export default function Transactions() {
           ))}
         </datalist>
 
+        <TablePageTransition loading={loading} pageKey={loadedPageKey}>
         <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
           {tx.length === 0 ? (
             <EmptyState icon="🧾" title="No transactions" message="No transactions found for the selected filters." />
@@ -1512,10 +1401,12 @@ export default function Transactions() {
             })
           )}
         </div>
+        </TablePageTransition>
       </div>
 
       {/* Pagination Controls */}
       <Pagination
+        loading={loading}
         currentPage={currentPage}
         totalPages={totalPages}
         itemsPerPage={itemsPerPage}

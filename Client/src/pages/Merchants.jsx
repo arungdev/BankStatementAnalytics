@@ -1,8 +1,10 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { FiFilter, FiChevronDown } from "react-icons/fi";
+import { FiFilter } from "react-icons/fi";
 import api from "../api/client";
 import { Avatar, avatarColors, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState, useTheme } from "@common/client";
 import { getToken } from "../theme/chartTheme";
@@ -12,7 +14,7 @@ import CategoryPicker from "../components/CategoryPicker";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { usePrivacy } from "../context/usePrivacy";
-import AmountFilterChip from "../components/AmountFilterChip";
+
 import StatCard from "../components/StatCard";
 import "../components/filter-chip.css";
 
@@ -71,8 +73,8 @@ export default function Merchants() {
     // so we must recompute when the theme flips.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [theme]);
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+
   const [searchQuery, setSearchQuery] = useState("");
   // Quick filter, driven by both the "Uncategorized" button and the summary
   // tiles: 'all' | 'uncategorized' | 'categorized'.
@@ -135,7 +137,7 @@ export default function Merchants() {
   // Auto-categorization suggestions (keyword rules + similarity to already-
   // categorized merchants, computed server-side). catExcluded holds unticked
   // rows so the modal defaults to everything selected.
-  const [catSuggestions, setCatSuggestions] = useState([]);
+
   const [showCatModal, setShowCatModal] = useState(false);
   const [catExcluded, setCatExcluded] = useState(() => new Set());
   const [applyingCats, setApplyingCats] = useState(false);
@@ -149,15 +151,17 @@ export default function Merchants() {
   // Suggestions refresh together with the list: merging or categorizing changes
   // what's left to suggest. The endpoint isn't account-scoped (categorization is
   // global); scoping happens at render via visibleCatSuggestions.
-  const fetchMerchants = () =>
-    Promise.all([
-      api.get(`/merchants${accountQuery}`).then(res => setData(res.data || [])),
-      isAdmin
-        ? api.get('/merchants/category-suggestions')
-            .then(res => setCatSuggestions(res.data || []))
-            .catch(() => setCatSuggestions([]))
-        : Promise.resolve(),
+  const loadMerchants = useCallback(async signal => {
+    const [list, suggestions] = await Promise.all([
+      api.get(`/merchants${accountQuery}`, { signal }),
+      isAdmin ? api.get('/merchants/category-suggestions', { signal }) : Promise.resolve({ data: [] }),
     ]);
+    return { data: list.data || [], catSuggestions: suggestions.data || [] };
+  }, [accountQuery, isAdmin]);
+  const { data: resource, loading, error: loadError, retry, updateData } = useAsyncResource(loadMerchants, { data: [], catSuggestions: [] });
+  const { data, catSuggestions } = resource;
+  const setData = update => updateData(previous => ({ ...previous, data: typeof update === 'function' ? update(previous.data) : update }));
+  const fetchMerchants = async () => { const next = await loadMerchants(); updateData(next); };
 
   useEffect(() => {
     api.get("/categories")
@@ -193,19 +197,10 @@ export default function Merchants() {
     setTxFilterName('ALL');
   };
 
-  useEffect(() => {
-    setLoading(true);
-    fetchMerchants()
-      .catch(err => console.error(err))
-      .finally(() => setLoading(false));
-    // Merge selection and any open drawer are scoped to the previous account —
-    // the selected merchant id won't belong to the newly chosen account, so
-    // reset both rather than refetching a merchant from the old scope.
-    setSelectedIds([]);
-    setNoteEditRowId(null);
-    closeSidebar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountQuery]);
+  const [previousAccountQuery, setPreviousAccountQuery] = useState(accountQuery);
+  if (previousAccountQuery !== accountQuery) {
+    setPreviousAccountQuery(accountQuery); setSelectedIds([]); setNoteEditRowId(null); closeSidebar();
+  }
 
   // Close column header dropdown on outside click.
   useEffect(() => {
@@ -798,6 +793,7 @@ export default function Merchants() {
 
   return (
     <div style={{ marginRight: selectedMerchantId && (typeof window !== 'undefined' && window.innerWidth > 1024) ? sidebarWidth : 0, transition: 'margin-right 0.2s ease' }}>
+      <RequestError error={loadError} onRetry={retry} />
       <style>{`
         .mrc-row {
           display: grid;

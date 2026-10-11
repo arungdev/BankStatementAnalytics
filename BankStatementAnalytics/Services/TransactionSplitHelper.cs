@@ -12,6 +12,19 @@ namespace BankStatementAnalytics.Services
     {
         public readonly record struct SplitParentKey(long AccountId, string BankReference, string BankType);
 
+        public static async Task<ILookup<SplitParentKey, TransactionSplit>> GetPageSplitsAsync(
+            NHibernate.ISession session, IEnumerable<SplitParentKey> parents)
+        {
+            var keys = parents.ToHashSet();
+            if (keys.Count == 0) return Array.Empty<TransactionSplit>().ToLookup(s => new SplitParentKey(s.ParentAccountId, s.ParentBankReference, s.ParentBankType ?? ""));
+            var ids = keys.Select(k => k.AccountId).Distinct().ToList();
+            var references = keys.Select(k => k.BankReference).Distinct().ToList();
+            var splits = await session.Query<TransactionSplit>()
+                .Where(s => ids.Contains(s.ParentAccountId) && references.Contains(s.ParentBankReference)).ToListAsync();
+            return splits.Where(s => keys.Contains(new SplitParentKey(s.ParentAccountId, s.ParentBankReference, s.ParentBankType ?? "")))
+                .ToLookup(s => new SplitParentKey(s.ParentAccountId, s.ParentBankReference, s.ParentBankType ?? ""));
+        }
+
         public class SplitSpendItem
         {
             public long AccountId { get; set; }

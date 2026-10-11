@@ -27,7 +27,7 @@ namespace BankStatementAnalytics.Services
             if (string.IsNullOrEmpty(storedName))
                 return;
 
-            var filePath = Path.Combine(Root, storedName);
+            var filePath = ResolvePath(storedName);
             if (File.Exists(filePath))
                 File.Delete(filePath);
 
@@ -40,6 +40,16 @@ namespace BankStatementAnalytics.Services
             {
                 Directory.Delete(dir);
             }
+        }
+
+        public static string ResolvePath(string storedName)
+        {
+            var root = Path.GetFullPath(Root) + Path.DirectorySeparatorChar;
+            var path = Path.GetFullPath(Path.Combine(root, storedName));
+            if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                || Path.IsPathRooted(storedName))
+                throw new ArgumentException("Invalid stored statement path.", nameof(storedName));
+            return path;
         }
     }
 }

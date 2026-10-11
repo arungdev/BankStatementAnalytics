@@ -240,6 +240,24 @@ namespace BankStatementAnalytics.Migrations
                 if (!ctx.ColumnExists("split_groups", "gpayownername")) ctx.Execute("ALTER TABLE split_groups ADD COLUMN gpayownername VARCHAR(250) NULL");
                 if (!ctx.ColumnExists("bill_groups", "gpayprofileid")) ctx.Execute("ALTER TABLE bill_groups ADD COLUMN gpayprofileid VARCHAR(64) NULL");
             });
+            mb.ForVersion(8)
+              .AddStep("Recoverable statement imports", ctx => {
+                  if (!ctx.ColumnExists("uploads", "importstatus"))
+                      ctx.Execute("ALTER TABLE uploads ADD COLUMN importstatus VARCHAR(20) NULL");
+                  if (!ctx.ColumnExists("uploads", "importwarnings"))
+                      ctx.Execute("ALTER TABLE uploads ADD COLUMN importwarnings TEXT NULL");
+                  // Keep every historical upload and its rows. Only the earliest
+                  // identical file retains the deduplication reservation.
+                  ctx.Execute(@"UPDATE uploads SET filehash = NULL WHERE id IN (
+                      SELECT id FROM (SELECT id, ROW_NUMBER() OVER (
+                          PARTITION BY accountid, filehash ORDER BY uploadedat, id) AS ordinal
+                          FROM uploads WHERE filehash IS NOT NULL) ranked WHERE ordinal > 1)");
+                  ctx.Execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_uploads_account_hash ON uploads(accountid, filehash)");
+              })
+              .AddStep("Room for protected statement passwords", ctx => {
+                  if (ctx.Provider == DatabaseProvider.PostgreSQL)
+                      ctx.Execute("ALTER TABLE accounts ALTER COLUMN statementpassword TYPE VARCHAR(2000)");
+              });
         }
     }
 }

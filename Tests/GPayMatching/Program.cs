@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BankStatementAnalytics.Models;
 using BankStatementAnalytics.Services;
+using NHibernate.Linq;
 
 var checks = 0;
 void Check(bool condition, string name) { if (!condition) throw new Exception(name); checks++; Console.WriteLine($"PASS: {name}"); }
@@ -164,4 +165,84 @@ var names = new HashSet<string> { "first owner" };
 Check(!GPayEvidenceService.IsCreator(split, names) && !GPayEvidenceService.IsSelf(member, names), "another profile's owner aliases do not redefine personal shares");
 member.ParticipantName = "Second Owner"; split.CreatorName = "Second Owner";
 Check(GPayEvidenceService.IsCreator(split, names) && GPayEvidenceService.IsSelf(member, names), "profile's own exact identity determines creator and personal share");
-Console.WriteLine($"All {checks} automatic matching and profile-isolation checks passed.");
+var pageRows = Enumerable.Range(1, 45).Select(id => new GPayEvidenceService.ActivityPageRow(
+    id, day, new EvidencePayload($"page-{id}", JsonSerializer.Serialize(new {
+        CounterPartyName = id == 3 ? "Needle merchant" : $"Merchant {id}", Amount = id,
+        Timestamp = day.AddDays(id).ToString("O"), Details = id == 4 ? "quoted \"reference\"" : ""
+    }), "archive", id % 2 == 0 ? "second" : null), "Test profile", null)).ToList();
+GPayEvidenceService.ActivityPageResult Page(int index = 0, int size = 20, string profile = "all", string query = "", string field = "date", string direction = "desc") =>
+    GPayEvidenceService.PageActivities(pageRows, index, size, profile, query, field, direction);
+Check(Page().Records.Count == 20 && Page().TotalCount == 45 && Page().Records[0].Id == 45, "first page is bounded and sorted across the entire section");
+Check(Page(1).Records.First().Id == 25 && !Page().Records.Select(r => r.Id).Intersect(Page(1).Records.Select(r => r.Id)).Any(), "next page has no overlap with the first page");
+Check(Page(2).Records.Count == 5 && Page(99).Page == 2, "last page and out-of-range requests are clamped");
+Check(Page(profile: "second").TotalCount == 22 && Page(profile: "second").Records.All(r => r.Source.ProfileId == "second"), "profile filtering happens before pagination");
+Check(Page(profile: "default").TotalCount == 23, "legacy primary profile is included by the default filter");
+Check(Page(query: "NEEDLE").Records.Single().Id == 3, "case-insensitive search finds records outside the original first page");
+Check(Page(query: "quoted \"reference\"").Records.Single().Id == 4, "search includes decoded source data with quoted references");
+Check(Page(query: "absent").TotalCount == 0 && Page(query: "absent").Records.Count == 0, "empty search results return no records");
+Check(Page(field: "amount", direction: "asc").Records.First().Id == 1, "amount sorting is numeric across all records");
+Check(Page(field: "name", direction: "asc").Records.First().Id == 1 && Page(field: "name", direction: "asc").Records.Last().Id == 27, "description sort is applied before taking the page");
+var configuration = new NHibernate.Cfg.Configuration();
+var postgresConnection = Environment.GetEnvironmentVariable("GPAY_TEST_POSTGRES");
+configuration.DataBaseIntegration(db => {
+    if (postgresConnection != null) {
+        db.Dialect<NHibernate.Dialect.PostgreSQL83Dialect>();
+        db.Driver<NHibernate.Driver.NpgsqlDriver>();
+        db.ConnectionString = postgresConnection;
+    } else {
+        db.Dialect<NHibernate.Dialect.SQLiteDialect>();
+        db.Driver<NHibernate.Driver.SQLite20Driver>();
+        db.ConnectionString = "Data Source=:memory:;Version=3;New=True;";
+    }
+    db.ConnectionReleaseMode = NHibernate.ConnectionReleaseMode.OnClose;
+});
+var mapper = new NHibernate.Mapping.ByCode.ModelMapper();
+mapper.AddMapping<BankStatementAnalytics.Mappping.GPayEvidenceRecordMap>();
+mapper.AddMapping<BankStatementAnalytics.Mappping.BankTransactionMap>();
+mapper.AddMapping<BankStatementAnalytics.Mappping.TransactionSplitMap>();
+mapper.AddMapping<BankStatementAnalytics.Mapping.MerchantMap>();
+mapper.AddMapping<BankStatementAnalytics.Mapping.MerchantUpiMap>();
+configuration.AddMapping(mapper.CompileMappingForAllExplicitlyAddedEntities());
+using var factory = configuration.BuildSessionFactory();
+using var pagingSession = factory.OpenSession();
+new NHibernate.Tool.hbm2ddl.SchemaExport(configuration).Execute(false, true, false, pagingSession.Connection, null);
+foreach (var row in pageRows) await pagingSession.SaveAsync(new GPayEvidenceRecord {
+    OwnerUserId = 123, Kind = "Activity", SourceKey = row.Source.IdentityKey,
+    Payload = JsonSerializer.Serialize(row.Source), CreatedUtc = row.CreatedUtc
+});
+await pagingSession.SaveAsync(new GPayEvidenceRecord { OwnerUserId = 456, Kind = "Activity", SourceKey = "other-owner", Payload = JsonSerializer.Serialize(pageRows[0].Source) });
+await pagingSession.SaveAsync(new GPayEvidenceRecord { OwnerUserId = 123, Kind = "Voucher", SourceKey = "other-section", Payload = JsonSerializer.Serialize(pageRows[0].Source) });
+await pagingSession.FlushAsync();
+pagingSession.Clear();
+async Task<(IList<GPayEvidenceRecord> Records, int TotalCount, int Page)> DbPage(int index = 0, string profile = "all", string query = "", string field = "date", string direction = "desc") =>
+    await GPayEvidenceService.ReadActivityPageAsync(pagingSession, 123, "Activity", index, 20, profile, query, field, direction);
+var dbFirst = await DbPage();
+Check(dbFirst.TotalCount == 45 && dbFirst.Records.Count == 20 && dbFirst.Records[0].SourceKey == "page-45", "database paging bounds payloads and excludes other tenants and sections");
+var dbNext = await DbPage(1);
+Check(dbNext.Records[0].SourceKey == "page-25" && !dbFirst.Records.Select(r => r.Id).Intersect(dbNext.Records.Select(r => r.Id)).Any(), "database pages have stable ordering without repeated records");
+var dbProfile = await DbPage(profile: "second");
+Check(dbProfile.TotalCount == 22 && dbProfile.Records.All(r => JsonSerializer.Deserialize<EvidencePayload>(r.Payload)!.ProfileId == "second"), "database profile filtering precedes paging");
+Check((await DbPage(query: "NEEDLE")).Records.Single().SourceKey == "page-3", "database search finds off-page source names");
+Check((await DbPage(query: "quoted \"reference\"")).Records.Single().SourceKey == "page-4", "database search handles decoded quoted source fields");
+Check((await DbPage(query: "%")).TotalCount == 0 && (await DbPage(query: "_")).TotalCount == 0, "database search treats SQL wildcards as literal input");
+Check((await DbPage(field: "amount", direction: "asc")).Records.First().SourceKey == "page-1", "database amount sorting is numeric");
+Check((await DbPage(99)).Page == 2 && (await DbPage(99)).Records.Count == 5, "database final page clamps oversized page requests");
+for (var index = 1; index <= 45; index++) {
+    var bank = Bank(reference: $"insight-{index}", amount: 100, credit: false, date: day.AddDays(index));
+    bank.CategoryOverride = "Food"; bank.Tags = index % 2 == 0 ? "other, food" : "seafood";
+    await pagingSession.SaveAsync(bank);
+    await pagingSession.SaveAsync(new TransactionSplit { OwnerUserId = 123, ParentAccountId = 1, ParentBankReference = bank.BankReference, ParentBankType = "IOB", Amount = 25, Category = "Travel" });
+}
+await pagingSession.FlushAsync(); pagingSession.Clear();
+var insightQuery = pagingSession.Query<BankTransaction>().Where(t => t.AccountId == 1 && t.Debit > 0);
+async Task<JsonElement> InsightPage(string grouping, string value, int index = 1) =>
+    JsonSerializer.SerializeToElement(await InsightTransactionPaging.ReadAsync(pagingSession, insightQuery, grouping, value, index, 20));
+var foodPage = await InsightPage("byCategory", "Food");
+Check(foodPage.GetProperty("totalCount").GetInt32() == 45 && foodPage.GetProperty("items").GetArrayLength() == 20 && foodPage.GetProperty("totalAmount").GetDecimal() == 3375, "category paging uses database bounds and preserves the total unallocated spend");
+var travelPage = await InsightPage("byCategory", "Travel", 2);
+Check(travelPage.GetProperty("totalAmount").GetDecimal() == 1125 && travelPage.GetProperty("items")[0].GetProperty("amount").GetDecimal() == 25 && travelPage.GetProperty("items")[0].GetProperty("id").GetString() == "insight-25", "split category totals and next-page rows reconcile");
+var taggedPage = await InsightPage("byTag", "food");
+Check(taggedPage.GetProperty("totalCount").GetInt32() == 22 && taggedPage.GetProperty("totalAmount").GetDecimal() == 2200, "tag filtering matches full comma-delimited tags before counting and paging");
+var absentCategory = await InsightPage("byCategory", "Absent");
+Check(absentCategory.GetProperty("totalCount").GetInt32() == 0 && absentCategory.GetProperty("totalAmount").GetDecimal() == 0, "empty category aggregate returns zero without loading ledger rows");
+Console.WriteLine($"All {checks} automatic matching, profile-isolation and pagination checks passed.");

@@ -1,8 +1,13 @@
+import useAsyncResource from '../hooks/useAsyncResource';
+import RequestError from '../components/RequestError';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAccount } from '../context/useAccount';
 import { ALL_ACCOUNTS } from '../components/AccountFilter';
 import api from '../api/client';
+import usePagedRows from '../hooks/usePagedRows';
+import PagedRowsControls from '../components/PagedRowsControls';
+import TablePageTransition from '../components/TablePageTransition';
 import { Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -14,8 +19,8 @@ import {
   Legend,
 } from 'chart.js';
 // ── Same DateRangePicker component used on the Insights page ────────────
-import DateRangePicker from '../components/Daterangepicker';
-import { FilterGroup, FilterPill } from '../components/PageHeader';
+
+
 import StatCard from '../components/StatCard';
 import { Drawer, EmptyState } from "@common/client";
 import { useChartTheme } from "../theme/chartTheme";
@@ -104,31 +109,7 @@ const hoverBandPlugin = {
 };
 
 /* ─── TrendsFilters — rendered in Layout's PageHeader filter row ───────── */
-export function TrendsFilters({ period, setPeriod, dateRange, setDateRange, isCreditCard }) {
-  const periods = ['day', 'week', 'month'];
-  if (isCreditCard) periods.push('billing_month');
-  return (
-    <>
-      <FilterGroup style={{ position: 'relative', zIndex: 500 }}>
-        <DateRangePicker
-          value={dateRange}
-          onChange={setDateRange}
-          showTime={false}
-          align="left"
-          placeholder="All Time"
-        />
-      </FilterGroup>
 
-      <FilterGroup label="View">
-        {periods.map(p => (
-          <FilterPill key={p} active={period === p} onClick={() => setPeriod(p)}>
-            {p === 'billing_month' ? 'Billing Month' : p.charAt(0).toUpperCase() + p.slice(1)}
-          </FilterPill>
-        ))}
-      </FilterGroup>
-    </>
-  );
-}
 
 const Trends = () => {
   const {
@@ -137,8 +118,6 @@ const Trends = () => {
     trendsRange:  dateRange    = { start: null, end: null, preset: 'ALL' },
   } = useOutletContext() ?? {};
 
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
   const { selectedAccountId } = useAccount();
   const isAllAccounts = selectedAccountId === ALL_ACCOUNTS;
 
@@ -155,54 +134,29 @@ const Trends = () => {
 
   // ── Drill-down modal state ─────────────────────────────────────────────
   const [drillDown, setDrillDown]           = useState(null);
-  const [drillTransactions, setDrillTransactions] = useState([]);
-  const [drillLoading, setDrillLoading]     = useState(false);
+  const [drillUrl, setDrillUrl] = useState(null);
+  const drillPage = usePagedRows(drillUrl);
+  const { items: drillTransactions, loading: drillLoading, error: drillError } = drillPage;
   const [drillWidth, setDrillWidth]         = useState(720);
 
   // ── Helper: Date → "yyyy-MM-dd" string in local time ──────────────────
   const toLocalDate = (d) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  // ── Fetch ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedAccountId) { setLoading(false); setData([]); return; }
-
-    // "All accounts" aggregates across every owned account; otherwise a single id.
-    const allIds = accounts.map(a => a.id).join(',');
-    if (isAllAccounts && !allIds) { setLoading(false); setData([]); return; }
-    setLoading(true);
-
-    const { start: startDate, end: endDate } = dateRange;
-
+  const allIds = accounts.map(a => a.id).join(',');
+  const startDate = dateRange.start ? toLocalDate(dateRange.start) : null;
+  const endDate = dateRange.end ? toLocalDate(dateRange.end) : null;
+  const loadTrends = useCallback(async signal => {
+    if (!selectedAccountId || (isAllAccounts && !allIds)) return [];
     const params = new URLSearchParams({ period });
-    if (isAllAccounts) params.append('accountIds', allIds);
-    else               params.append('accountId', selectedAccountId);
-    if (startDate) params.append('startDate', toLocalDate(startDate));
-    if (endDate)   params.append('endDate',   toLocalDate(endDate));
-
-    api.get(`/trends?${params.toString()}`)
-      .then(res => {
-        let rows = Array.isArray(res.data) ? res.data : [];
-
-        // Client-side safety net: drop rows outside the selected range.
-        if (startDate || endDate) {
-          const fromStr = startDate ? toLocalDate(startDate) : null;
-          const toStr   = endDate   ? toLocalDate(endDate)   : null;
-
-          rows = rows.filter(item => {
-            const d = item.date; // "yyyy-MM-dd" from backend
-            if (!d) return true;
-            if (fromStr && d < fromStr) return false;
-            if (toStr   && d > toStr)   return false;
-            return true;
-          });
-        }
-
-        setData(rows);
-      })
-      .catch(() => setData([]))
-      .finally(() => setLoading(false));
-  }, [period, selectedAccountId, dateRange, accounts, isAllAccounts]);
+    if (isAllAccounts) params.set('accountIds', allIds);
+    else params.set('accountId', selectedAccountId);
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    const response = await api.get(`/trends?${params}`, { signal });
+    return Array.isArray(response.data) ? response.data : [];
+  }, [selectedAccountId, isAllAccounts, allIds, period, startDate, endDate]);
+  const { data, loading, error: loadError, retry } = useAsyncResource(loadTrends, []);
 
   const syncEdges = useCallback(() => {
     const el = scrollRef.current;
@@ -213,9 +167,15 @@ const Trends = () => {
     });
   }, []);
 
+  const [rangeData, setRangeData] = useState(data);
+  if (rangeData !== data) {
+    setRangeData(data);
+    setVisibleRange({ start: Math.max(0, data.length - VISIBLE_GROUPS), end: data.length });
+  }
+
   // Land on the most recent buckets — that's what the reader came to check.
   useEffect(() => {
-    setVisibleRange({ start: Math.max(0, data.length - VISIBLE_GROUPS), end: data.length });
+
     if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
     const id = requestAnimationFrame(syncEdges);
     return () => cancelAnimationFrame(id);
@@ -313,30 +273,17 @@ const Trends = () => {
     const { startDate: bStart, endDate: bEnd } = getBucketRange(item);
 
     setDrillDown({ label: fullLabels[index] ?? item.label, date: item.date, start: bStart, end: bEnd });
-    setDrillLoading(true);
-    setDrillTransactions([]);
+    setDrillUrl(null);
 
-    const params = new URLSearchParams({ startDate: bStart, endDate: bEnd, pageSize: 0 });
-
-    // The statements endpoint is single-account, so for "all" we fan out over
-    // every account and merge the bucket's transactions.
-    const idsToFetch = isAllAccounts ? accounts.map(a => a.id) : [selectedAccountId];
-
-    Promise.all(
-      idsToFetch.map(id =>
-        api.get(`/statements/${id}?${params.toString()}`)
-          .then(res => res.data?.transactions || [])
-          .catch(() => [])
-      )
-    )
-      .then(results => setDrillTransactions(results.flat()))
-      .catch(() => setDrillTransactions([]))
-      .finally(() => setDrillLoading(false));
+    const params = new URLSearchParams({ startDate: bStart, endDate: bEnd, includeTransfers: 'true' });
+    if (isAllAccounts) params.append('accountIds', accounts.map(a => a.id).join(','));
+    else params.append('accountId', selectedAccountId);
+    setDrillUrl(`/trends/transactions?${params.toString()}`);
   }, [data, selectedAccountId, isAllAccounts, accounts, getBucketRange, fullLabels]);
 
   const closeDrillDown = useCallback(() => {
     setDrillDown(null);
-    setDrillTransactions([]);
+    setDrillUrl(null);
   }, []);
 
   // ── Summary tile click → every transaction behind that tile ────────────
@@ -358,8 +305,7 @@ const Trends = () => {
       start: startStr ?? 'Earliest',
       end:   endStr   ?? 'Latest',
     });
-    setDrillLoading(true);
-    setDrillTransactions([]);
+    setDrillUrl(null);
 
     const params = new URLSearchParams({ kind });
     if (isAllAccounts) params.append('accountIds', accounts.map(a => a.id).join(','));
@@ -367,13 +313,7 @@ const Trends = () => {
     if (startStr) params.append('startDate', startStr);
     if (endStr)   params.append('endDate',   endStr);
 
-    api.get(`/trends/transactions?${params.toString()}`)
-      .then(res => setDrillTransactions(Array.isArray(res.data) ? res.data : []))
-      .catch(err => {
-        console.error('Failed to fetch trend transactions', err);
-        setDrillTransactions([]);
-      })
-      .finally(() => setDrillLoading(false));
+    setDrillUrl(`/trends/transactions?${params.toString()}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAccountId, isAllAccounts, accounts, dateRange, drillDown, closeDrillDown]);
 
@@ -498,6 +438,7 @@ const Trends = () => {
     if (loading && !data.length) {
       return (
         <div className="chart-loader">
+      <RequestError error={loadError} onRetry={retry} />
           <div className="loader-spinner" />
           <span>Loading data…</span>
         </div>
@@ -539,14 +480,7 @@ const Trends = () => {
   const netPositive = summary.netFlow >= 0;
 
   // ── Drill-down totals ──────────────────────────────────────────────────
-  const drillTotals = useMemo(() => {
-    if (!drillTransactions.length) return { income: 0, spend: 0 };
-    return drillTransactions.reduce((acc, t) => {
-      acc.income += t.Credit ?? t.credit ?? 0;
-      acc.spend  += t.Debit  ?? t.debit  ?? 0;
-      return acc;
-    }, { income: 0, spend: 0 });
-  }, [drillTransactions]);
+  const drillTotals = { income: drillPage.credits, spend: drillPage.debits };
 
   return (
     <div
@@ -608,8 +542,7 @@ const Trends = () => {
             start: dateStr,
             end: dateStr,
           });
-          setDrillLoading(true);
-          setDrillTransactions([]);
+                setDrillUrl(null);
 
           const params = new URLSearchParams({
             kind: 'spend',
@@ -619,13 +552,7 @@ const Trends = () => {
           if (isAllAccounts) params.append('accountIds', accounts.map(a => a.id).join(','));
           else params.append('accountId', selectedAccountId);
 
-          api.get(`/trends/transactions?${params.toString()}`)
-            .then(res => setDrillTransactions(Array.isArray(res.data) ? res.data : []))
-            .catch(err => {
-              console.error('Failed to fetch day transactions', err);
-              setDrillTransactions([]);
-            })
-            .finally(() => setDrillLoading(false));
+          setDrillUrl(`/trends/transactions?${params.toString()}`);
         }}
       />
 
@@ -662,13 +589,14 @@ const Trends = () => {
               </div>
             )}
 
+            <TablePageTransition loading={drillLoading} pageKey={drillPage.pageKey}>
             <div className="drilldown-body">
-              {drillLoading ? (
+              {drillLoading && drillTransactions.length === 0 ? (
                 <div className="chart-loader">
                   <div className="loader-spinner" />
                   <span>Loading transactions…</span>
                 </div>
-              ) : drillTransactions.length === 0 ? (
+              ) : drillError ? (<p role="alert">{drillError}</p>) : drillTransactions.length === 0 ? (
                 <div className="chart-empty">
                   <EmptyState icon="📭" title="No transactions found" subtitle={`for ${drillDown.label}.`} compact />
                 </div>
@@ -713,6 +641,8 @@ const Trends = () => {
                 </div>
               )}
             </div>
+            </TablePageTransition>
+            <PagedRowsControls data={drillPage} />
           </>
         )}
       </Drawer>

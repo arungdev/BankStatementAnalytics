@@ -34,4 +34,8 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
     },
   },
+  {
+    files: ['tests/**/*.js'],
+    languageOptions: { globals: globals.node, sourceType: 'module' },
+  },
 ])

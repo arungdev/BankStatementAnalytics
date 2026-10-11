@@ -20,10 +20,12 @@ namespace BankStatementAnalytics.Controllers.Api
     public class StatementApiController : TenantControllerBase
     {
         private readonly StatementImportService _importer;
+        private readonly StatementPasswordProtector _passwords;
 
-        public StatementApiController(StatementImportService importer)
+        public StatementApiController(StatementImportService importer, StatementPasswordProtector passwords)
         {
             _importer = importer;
+            _passwords = passwords;
         }
 
         // GET: api/statements/accounts
@@ -52,48 +54,14 @@ namespace BankStatementAnalytics.Controllers.Api
                     .GroupBy(s => s.AccountId)
                     .ToDictionary(g => g.Key, g => g.First());
 
+            var latestTransactions = AccountSummaryQueries.Latest(session, accounts.Select(a => a.Id).ToList());
+            var cardBalances = AccountSummaryQueries.CardBalances(session, cardAccountIds, latestSummaryByAccount);
             var result = new List<object>();
             foreach (var a in accounts)
             {
-                var bankType = BankTypeCode.For(a.BankName);
-                var txns = session.Query<BankTransaction>()
-                    .Where(t => t.AccountId == a.Id && t.BankType == bankType);
-
-                // No surrogate Id on BankTransaction; ImportedOn breaks same-date ties.
-                var lastTxn = txns.OrderByDescending(t => t.TransactionDate)
-                    .ThenByDescending(t => t.ImportedOn)
-                    .Select(t => new
-                    {
-                        t.TransactionDate,
-                        t.Description,
-                        Merchant = t.CounterParty != null ? t.CounterParty.Name : null,
-                        t.Debit,
-                        t.Credit,
-                        t.Balance
-                    })
-                    .FirstOrDefault();
-
-                decimal? balance;
-                if (a.BankName == Bank.HDFCCreditCard)
-                {
-                    // Credit card statements carry no running balance, so derive the amount
-                    // owed. Prefer anchoring on the latest parsed statement's billed total
-                    // plus activity since (same rule as CardApiController.GetSummary) — the
-                    // raw Σ(Debit−Credit) goes negative when history before the first
-                    // uploaded statement is missing.
-                    latestSummaryByAccount.TryGetValue(a.Id, out var latest);
-
-                    var raw = latest?.StatementDate != null && latest.TotalDue != null
-                        ? latest.TotalDue.Value + (txns
-                            .Where(t => t.TransactionDate > latest.StatementDate.Value)
-                            .Sum(t => (decimal?)(t.Debit - t.Credit)) ?? 0m)
-                        : txns.Sum(t => (decimal?)(t.Debit - t.Credit));
-                    balance = raw.HasValue ? Math.Max(0m, raw.Value) : (decimal?)null;
-                }
-                else
-                {
-                    balance = lastTxn?.Balance;
-                }
+                latestTransactions.TryGetValue(a.Id, out var lastTxn);
+                decimal? balance = a.BankName == Bank.HDFCCreditCard
+                    ? cardBalances.GetValueOrDefault(a.Id) : lastTxn?.Balance;
 
                 result.Add(new
                 {
@@ -198,10 +166,16 @@ namespace BankStatementAnalytics.Controllers.Api
 
             if (uncategorizedOnly)
             {
-                // Uncategorized = no per-transaction override and no merchant default.
+                // Filter before paging/counting, including categories displayed from splits.
+                var categorizedSplits = session.Query<TransactionSplit>()
+                    .Where(s => s.Category != null && s.Category != "");
                 query = query.Where(t =>
                     (t.CategoryOverride == null || t.CategoryOverride == "") &&
-                    (t.CounterParty == null || t.CounterParty.Category == null || t.CounterParty.Category == ""));
+                    (t.CounterParty == null || t.CounterParty.Category == null || t.CounterParty.Category == "") &&
+                    !categorizedSplits.Any(s =>
+                        s.ParentAccountId == t.AccountId &&
+                        s.ParentBankReference == t.BankReference &&
+                        (s.ParentBankType ?? "") == (t.BankType ?? "")));
             }
 
             if (!string.IsNullOrWhiteSpace(search))
@@ -264,6 +238,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var projectedQuery = ordered
                 .ThenByDescending(t => t.TransactionDate)
+                .ThenBy(t => t.AccountId).ThenBy(t => t.BankType).ThenBy(t => t.BankReference)
                 .Select(t => new
                 {
                     Id = t.BankReference,
@@ -289,8 +264,8 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var paged = await projectedQuery.ToPagedResultAsync(page, pageSize);
 
-            var accountIdsInPage = paged.Items.Select(x => x.AccountId).Distinct().ToList();
-            var splitsLookup = await TransactionSplitHelper.GetSplitsLookupAsync(session, accountIdsInPage);
+            var splitsLookup = await TransactionSplitHelper.GetPageSplitsAsync(session,
+                paged.Items.Select(t => new TransactionSplitHelper.SplitParentKey(t.AccountId, t.Id, t.BankType ?? "")));
 
             var transactions = paged.Items.Select(t =>
             {
@@ -395,6 +370,8 @@ namespace BankStatementAnalytics.Controllers.Api
                     u.AutoImported,
                     TotalCount = total,
                     NewCount = u.NewCount,
+                    ImportStatus = u.ImportStatus ?? "Complete",
+                    Warnings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(u.ImportWarnings ?? "[]") ?? new(),
                     TransactionCount = total   // back-compat alias
                 };
             });
@@ -435,7 +412,9 @@ namespace BankStatementAnalytics.Controllers.Api
 
             // One-time password to open THIS file only — never persisted to the
             // account. Falls back to the account's saved password when none is given.
-            var password = string.IsNullOrEmpty(request?.Password) ? account.StatementPassword : request!.Password;
+            var password = string.IsNullOrEmpty(request?.Password) ? _passwords.Unprotect(account.StatementPassword) : request!.Password;
+            if (new FileInfo(history.SourcePath).Length > StatementImportService.MaxFileBytes)
+                return BadRequest(new { message = "Statement exceeds the 25 MB limit." });
 
             byte[] bytes;
             try { bytes = await System.IO.File.ReadAllBytesAsync(history.SourcePath); }
@@ -537,6 +516,8 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // POST: api/statements/upload
         [HttpPost("upload")]
+        [RequestSizeLimit(26_000_000)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 26_000_000)]
         public async Task<IActionResult> Upload(IFormFile file, [FromForm] int accountId, [FromForm] string? password = null)
         {
             var account = DbHelper.GetById<Account>((long)accountId);
@@ -545,6 +526,8 @@ namespace BankStatementAnalytics.Controllers.Api
 
             if (file == null || file.Length == 0)
                 return BadRequest("File is empty");
+            if (file.Length > StatementImportService.MaxFileBytes)
+                return BadRequest("Statement exceeds the 25 MB limit.");
 
             byte[] bytes;
             using (var ms = new MemoryStream())
@@ -575,6 +558,8 @@ namespace BankStatementAnalytics.Controllers.Api
                 upload.TransactionId,
                 TotalCount = result.Total,
                 NewCount = result.NewCount,
+                DuplicateCount = result.Total - result.NewCount,
+                Warnings = result.Warnings,
                 TransactionCount = result.Total   // back-compat alias
             });
         }
@@ -590,18 +575,20 @@ namespace BankStatementAnalytics.Controllers.Api
             var uploadAccount = upload.AccountId.HasValue ? DbHelper.GetById<Account>((long)upload.AccountId.Value) : null;
             if (!Owns(uploadAccount))
                 return NotFound();
+            if (upload.ImportStatus == "Pending")
+                return Conflict(new { message = "This statement is still importing. Wait for it to finish before reverting." });
 
+            using var accountGate = await ImportAccountGate.AcquireAsync(uploadAccount!.Id);
+            using var session = DbHelper.GetSession();
+            var currentUpload = await session.GetAsync<Models.Upload>(id);
+            if (currentUpload == null) return NotFound();
+            upload = currentUpload;
+            using var sessionTx = session.BeginTransaction();
             if (upload.TransactionId.HasValue)
             {
-                var tx = DbHelper.GetById<Models.UploadTransaction>(upload.TransactionId.Value);
-                if (tx != null)
-                {
-                    await DbHelper.DeleteAsync(tx);
-                }
+                var record = await session.GetAsync<Models.UploadTransaction>(upload.TransactionId.Value);
+                if (record != null) await session.DeleteAsync(record);
             }
-
-            using var session = DbHelper.GetSession();
-            using var sessionTx = session.BeginTransaction();
 
             var transactions = session.Query<BankTransaction>().Where(t => t.UploadId == id).ToList();
             foreach (var t in transactions) { await session.DeleteAsync(t); }
@@ -610,6 +597,9 @@ namespace BankStatementAnalytics.Controllers.Api
             var summaries = session.Query<CardStatementSummary>().Where(s => s.UploadId == id).ToList();
             foreach (var s in summaries) { await session.DeleteAsync(s); }
 
+            // Keep a durable file-cleanup record if deletion fails or the process
+            // stops after the financial records have been reverted.
+            upload.ImportStatus = "Deleting";
             await sessionTx.CommitAsync();
 
             UploadStorage.DeleteFile(upload.StoredName);

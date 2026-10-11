@@ -25,9 +25,14 @@ namespace BankStatementAnalytics.Services
     /// </summary>
     public sealed class DatabaseStartupInitializer : IHostedLifecycleService
     {
+        private readonly StatementPasswordProtector _passwords;
+        public DatabaseStartupInitializer(StatementPasswordProtector passwords) => _passwords = passwords;
+
         public Task StartingAsync(CancellationToken cancellationToken)
         {
             _ = NHibernateHelper.SessionFactory;
+            ImportRecovery.RecoverPending();
+            ImportRecovery.ProtectLegacyPasswords(_passwords);
             return Task.CompletedTask;
         }
 
