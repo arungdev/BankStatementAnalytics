@@ -10,7 +10,7 @@ import { uploadStatement, revertStatement } from "../api/statements";
 import api from "../api/client";
 import { FiUploadCloud, FiFileText, FiTrash2, FiCheckCircle, FiAlertCircle, FiRotateCcw, FiHelpCircle } from "react-icons/fi";
 
-export default function UploadStatement({ onUploaded, showHistory = true } = {}) {
+export default function UploadStatement({ onUploaded, showHistory = true, accountId } = {}) {
   const { isAdmin } = useAuth();
   const [accountDraft, setSelectedAccount] = useState("");
   const [file, setFile]                   = useState(null);
@@ -25,7 +25,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
   const { selectedAccountId } = useAccount();
   // Uploads target a single account; ignore the global "All accounts" selection.
   const forcedAccountId =
-    selectedAccountId && selectedAccountId !== ALL_ACCOUNTS ? selectedAccountId : null;
+    accountId ?? (selectedAccountId && selectedAccountId !== ALL_ACCOUNTS ? selectedAccountId : null);
 
   const loadUploadPage = useCallback(async signal => {
     const [accounts, uploads] = await Promise.all([
@@ -170,7 +170,7 @@ export default function UploadStatement({ onUploaded, showHistory = true } = {})
                 ))}
               </select>
               {forcedAccountId && (
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>Using the currently active account.</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>{accountId ? 'This statement will be imported into the account selected in Settings.' : 'Using the currently active account.'}</div>
               )}
             </div>
 

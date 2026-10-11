@@ -63,6 +63,7 @@ const SECTIONS = [
    which case we just open the section). */
 const SETTINGS_INDEX = [
   { section: 'accounts', anchor: 'accounts-list', title: 'Bank accounts', desc: 'Rename, check the balance, or remove an account', keywords: 'account bank rename delete remove balance holder name number linked add' },
+  { section: 'accounts', anchor: 'accounts-list', title: 'Manual import & upload history', desc: 'Upload a statement and review imported or failed files for an account', keywords: 'manual import upload statement history file pdf csv txt revert retry failed' },
   { section: 'accounts', anchor: 'auto-import', title: 'Auto-import folder', desc: 'Watch a folder and import new statements automatically', keywords: 'auto import automatic watch folder statement pdf password protected browse import now history retry failed' },
   { section: 'accounts', anchor: 'card-details', title: 'Credit limit & statement day', desc: 'Card details used for utilization and billing cycles', keywords: 'credit card limit utilization statement day billing cycle shared limit add-on' },
   { section: 'categories', anchor: 'categories-list', title: 'Categories & sub-categories', desc: 'Add, rename, or delete spending categories', keywords: 'category categories sub-category subcategory spending group tag rename delete add' },

@@ -5,11 +5,10 @@ import api from "../api/client";
 import useTransactions from "../hooks/useTransactions";
 import RequestError from "../components/RequestError";
 import { buildTransactionParams } from "../utils/transactionQuery";
-import { Avatar, Badge, Button, Drawer, EmptyState, Modal, Tabs, useAuth, usePersistedState } from "@common/client";
+import { Avatar, Badge, Button, Drawer, EmptyState, Tabs, useAuth, usePersistedState } from "@common/client";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
-import { FiDownload, FiUploadCloud, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors, FiTag, FiUsers } from "react-icons/fi";
-import UploadStatement from "./UploadStatement";
+import { FiDownload, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors, FiTag, FiUsers } from "react-icons/fi";
 import { getUploads, revertStatement, retryAutoImport } from "../api/statements";
 // ── Same DateRangePicker component used on Insights/Trends ──────────────
 
@@ -173,7 +172,6 @@ export default function Transactions() {
   const [noteEditRowId, setNoteEditRowId] = useState(null); // row whose inline note input is open
 
   // Upload modal + a bump to force the transaction list to re-fetch after an upload
-  const [showUpload, setShowUpload] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Upload-history RHS drawer
@@ -232,16 +230,6 @@ export default function Transactions() {
     setSelectedTx(null);
     setUploadFilter({ id: upload.id, fileName: upload.fileName, accountId: effectiveAccountId });
     setCurrentPage(1);
-  };
-
-  const openUploadHistory = () => {
-    setSelectedTx(null);            // only one RHS panel at a time
-    setShowUploadHistory(true);
-    setUploadTab('success');
-
-    // Background auto-imports don't announce themselves to this page — refetch
-    // the list alongside the drawer so both reflect the same state.
-    setRefreshKey(k => k + 1);
   };
 
   const loadUploadHistory = useCallback(async signal => {
@@ -898,14 +886,6 @@ export default function Transactions() {
             className="tx-search"
           />
         </div>
-        {isAdmin && (
-          <Button onClick={() => setShowUpload(true)} style={{ fontSize: 'var(--text-sm)' }}>
-            <FiUploadCloud size={14} /> Upload Statement
-          </Button>
-        )}
-        <Button onClick={openUploadHistory} style={{ fontSize: 'var(--text-sm)' }}>
-          <FiFileText size={14} /> Upload History
-        </Button>
         <Button onClick={handleExportCSV} style={{ fontSize: 'var(--text-sm)' }}>
           <FiDownload size={14} /> Export CSV
         </Button>
@@ -1760,11 +1740,6 @@ export default function Transactions() {
           </>
         )}
       </Drawer>
-
-      {/* Upload statement modal — scoped to the selected account; closes itself and refreshes the list on success */}
-      <Modal open={showUpload} onClose={() => setShowUpload(false)} width={760}>
-        <UploadStatement onUploaded={() => { setShowUpload(false); setRefreshKey(k => k + 1); }} showHistory={false} />
-      </Modal>
 
       <SplitTransactionModal
         open={!!splitModalTx}

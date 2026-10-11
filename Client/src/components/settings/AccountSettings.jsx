@@ -1,9 +1,10 @@
-import { FiCreditCard, FiEdit2, FiChevronUp, FiChevronDown, FiFolder, FiEyeOff, FiEye, FiDownloadCloud, FiClock, FiRefreshCw, FiCheckCircle, FiUserCheck } from "react-icons/fi";
+import AccountStatementActions from "./AccountStatementActions";
+import { FiCreditCard, FiEdit2, FiChevronUp, FiChevronDown, FiFolder, FiEyeOff, FiEye, FiDownloadCloud, FiRefreshCw, FiCheckCircle, FiUserCheck } from "react-icons/fi";
 import { formatDate, currencyFormatterFull } from "../../utils/format";
 import { Badge, Switch } from "@common/client";
 import GPayProfileSettings from "../../components/GPayProfileSettings";
 
-export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoOpen, browse, cardAccounts, cardDraft, cardDrafts, editAccountName, editingAccountId, gpayAutoOpen, gpayConfig, gpayDraftPath, gpayMessage, gpaySweeping, gpayUserName, handleDeleteAccount, handleImportNow, handleOpenNamePicker, handleSaveAutoImport, handleSaveCardSettings, handleSaveGPayAutoImport, handleSaveGPayUserName, handleSweepGPay, handleToggleAutoImport, handleToggleGPayAutoImport, handleUpdateAccount, isAdmin, loadBrowse, onlyLinkCreatedByMe, openBrowse, openBrowseGPay, openHistory, setAutoDraft, setAutoOpen, setBrowse, setCardDraft, setCardDrafts, setEditAccountName, setEditingAccountId, setGpayAutoOpen, setGpayConfig, setGpayDraftPath, setGpayMessage, setGpayUserName, setOnlyLinkCreatedByMe, setParticipantList, setShowPw, setSplitDisplayFilter, showPw, splitDisplayFilter, sweeping }) {
+export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoOpen, browse, cardAccounts, cardDraft, cardDrafts, editAccountName, editingAccountId, gpayAutoOpen, gpayConfig, gpayDraftPath, gpayMessage, gpaySweeping, gpayUserName, handleDeleteAccount, handleImportNow, handleOpenNamePicker, handleSaveAutoImport, handleSaveCardSettings, handleSaveGPayAutoImport, handleSaveGPayUserName, handleSweepGPay, handleToggleAutoImport, handleToggleGPayAutoImport, handleUpdateAccount, isAdmin, loadBrowse, onlyLinkCreatedByMe, openBrowse, openBrowseGPay, setAutoDraft, setAutoOpen, setBrowse, setCardDraft, setCardDrafts, setEditAccountName, setEditingAccountId, setGpayAutoOpen, setGpayConfig, setGpayDraftPath, setGpayMessage, setGpayUserName, setOnlyLinkCreatedByMe, setParticipantList, setShowPw, setSplitDisplayFilter, showPw, splitDisplayFilter, sweeping }) {
   return (accounts.length === 0 ? (
       <div className="settings-empty">
         <FiCreditCard size={36} />
@@ -177,6 +178,8 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
               );
             })()}
 
+            <AccountStatementActions account={acc} />
+
             {/* Auto-import: a folder the backend sweeps ~once a minute,
                 importing new statement files like a manual upload. The switch
                 stays visible when collapsed so its state is always readable. */}
@@ -272,11 +275,6 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                           {sweeping[acc.id] ? 'Checking folder…' : 'Import now'}
                         </button>
                       )}
-                      {acc.watchFolderPath && (
-                        <button type="button" className="btn small" onClick={() => openHistory(acc)}>
-                          <FiClock size={13} /> History
-                        </button>
-                      )}
                       {acc.hasStatementPassword && (
                         <button className="btn small ghost" onClick={() => handleSaveAutoImport(acc, { clearPassword: true })}>
                           Clear saved password
@@ -338,32 +336,28 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
         ))}
 
         {/* ── Google Pay (GPay) Account & Auto-Import Card ── */}
-        <section className="setting-card account-card" style={{ borderLeft: '4px solid #4285f4' }}>
+        <section className="setting-card account-card gpay-account-card">
           <div className="setting-card-head">
             <div className="account-identity">
-              <div className="settings-avatar" style={{ background: '#4285f4', color: '#fff', fontWeight: 800 }}>
+              <div className="settings-avatar gpay-avatar">
                 G
               </div>
               <div style={{ minWidth: 0 }}>
-                <h3 className="setting-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 className="setting-card-title gpay-title">
                   <span>Google Pay (GPay)</span>
                   <span style={{ fontSize: '11px', background: 'rgba(66, 133, 244, 0.12)', color: '#1a73e8', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>
                     Auto-Sync
                   </span>
                 </h3>
-                <p className="setting-card-desc">
-                  Google Takeout &bull; {gpayConfig?.totalGroups || 0} Groups &bull; {gpayConfig?.totalSplits || 0} Splits &bull; {gpayConfig?.bankMatches || 0} Bank Matches
-                  {gpayConfig?.upiActivitiesEnriched > 0 && <> &bull; {gpayConfig.upiActivitiesEnriched} UPI Enriched</>}
-                  {gpayConfig?.cashbackTotalEarned > 0 && <> &bull; {currencyFormatterFull.format(gpayConfig.cashbackTotalEarned)} Cashback</>}
-                  {gpayConfig?.activeVouchersCount > 0 && <> &bull; {gpayConfig.activeVouchersCount} Unexpired Coupons</>}
-                  {gpayConfig?.lastSyncUtc && <> &bull; last synced {formatDate(gpayConfig.lastSyncUtc)}</>}
+                <p className="setting-card-desc">Google Takeout imports
+                  {gpayConfig?.lastSyncUtc && <> · Last synced {formatDate(gpayConfig.lastSyncUtc)}</>}
                 </p>
               </div>
             </div>
 
             {gpayConfig?.totalVolume > 0 && (
               <div className="account-balance">
-                <span className="account-balance-label">Total Expense Volume</span>
+                <span className="account-balance-label">Total expenses</span>
                 <span className="account-balance-value">{currencyFormatterFull.format(gpayConfig.totalVolume)}</span>
               </div>
             )}
@@ -381,6 +375,15 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                 </button>
               </div>
             )}
+          </div>
+
+          <div className="gpay-summary" aria-label="Google Pay import summary">
+            <div><strong>{gpayConfig?.totalGroups || 0}</strong><span>Groups</span></div>
+            <div><strong>{gpayConfig?.totalSplits || 0}</strong><span>Splits</span></div>
+            <div><strong>{gpayConfig?.bankMatches || 0}</strong><span>Bank matches</span></div>
+            {gpayConfig?.upiActivitiesEnriched > 0 && <div><strong>{gpayConfig.upiActivitiesEnriched}</strong><span>UPI enriched</span></div>}
+            {gpayConfig?.cashbackTotalEarned > 0 && <div><strong>{currencyFormatterFull.format(gpayConfig.cashbackTotalEarned)}</strong><span>Cashback</span></div>}
+            {gpayConfig?.activeVouchersCount > 0 && <div><strong>{gpayConfig.activeVouchersCount}</strong><span>Active coupons</span></div>}
           </div>
 
           <GPayProfileSettings config={gpayConfig} accounts={accounts} canEdit={isAdmin} busy={gpaySweeping} onConfig={config => { setGpayConfig(config); setGpayDraftPath(config.watchFolderPath || ''); setGpayUserName(config.userName || ''); setGpayMessage(null); setBrowse(null); setParticipantList([]); }} />
@@ -517,7 +520,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
 
           {/* Split & Repayment Preferences */}
           {isAdmin && (
-            <div className="account-panel" style={{ marginTop: 'var(--space-3)' }}>
+            <div className="account-panel gpay-preferences">
               <div className="account-panel-head" style={{ marginBottom: '10px' }}>
                 <div style={{ minWidth: 0 }}>
                   <h4 className="account-panel-title" style={{ fontSize: '14px' }}>Splits &amp; Repayment Preferences</h4>
@@ -525,13 +528,14 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+              <div className="gpay-preferences-grid">
                 {/* Name setting */}
                 <div className="settings-field">
-                  <span className="settings-field-label" style={{ fontSize: '12px', fontWeight: 600 }}>Your Name in Splits / Google Pay</span>
+                  <span className="settings-field-label" style={{ fontSize: '12px', fontWeight: 600 }}>Your name in Google Pay</span>
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                     <input
                       type="text"
+                      aria-label="Your name in Google Pay"
                       value={gpayUserName}
                       onChange={(e) => setGpayUserName(e.target.value)}
                       onBlur={(e) => handleSaveGPayUserName(e.target.value)}
@@ -546,7 +550,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', padding: '6px 10px', fontSize: '12px', cursor: 'pointer' }}
                       title="Pick name from detected bank accounts or contacts"
                     >
-                      <FiUserCheck size={13} style={{ color: 'var(--primary, #3b82f6)' }} /> Pick...
+                      <FiUserCheck size={13} style={{ color: 'var(--primary, #3b82f6)' }} /> Choose name
                     </button>
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
@@ -577,8 +581,9 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
 
                 {/* Default display setting */}
                 <div className="settings-field">
-                  <span className="settings-field-label" style={{ fontSize: '12px', fontWeight: 600 }}>Default Splits Display</span>
+                  <span className="settings-field-label" style={{ fontSize: '12px', fontWeight: 600 }}>Default splits view</span>
                   <select
+                    aria-label="Default splits view"
                     value={splitDisplayFilter}
                     onChange={(e) => {
                       setSplitDisplayFilter(e.target.value);
@@ -586,11 +591,11 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                     }}
                     className="field-input"
                   >
-                    <option value="all">All Confirmed Splits</option>
-                    <option value="owed_by_me">Owed by Me (Pending shares to pay)</option>
-                    <option value="to_collect">To Collect (Pending debts owed to you)</option>
-                    <option value="created_by_me">Only splits created by me (I paid the bill)</option>
-                    <option value="included">Only splits involving me (I paid or have a share)</option>
+                    <option value="all">All confirmed splits</option>
+                    <option value="owed_by_me">I need to pay</option>
+                    <option value="to_collect">Others owe me</option>
+                    <option value="created_by_me">Splits I created</option>
+                    <option value="included">Splits involving me</option>
                   </select>
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
                     Initial filter tab shown on the Splits page.
@@ -603,10 +608,10 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                      Only allow transaction linking for splits created by me
+                      Link transactions only for splits I created
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px', lineHeight: 1.3 }}>
-                      Hides incoming credit matching on friend-paid bills to avoid matching repayments when you were not the bill payer.
+                      Only match bank transactions when you paid the original bill.
                     </div>
                   </div>
                   <Switch
