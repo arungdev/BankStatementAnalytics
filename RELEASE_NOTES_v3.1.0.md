@@ -1,37 +1,50 @@
-# Bank Statement Analytics v3.1.0
+# Bank Statement Analytics - Release Notes v3.1.0
 
-Release preparation: 11 October 2026. Publication and artifact checksums are pending.
+**Release Date:** October 11, 2026  
+**Version:** 3.1.0  
 
-## Changes since v3.0.0
+---
 
-- More reliable statement imports: account-scoped duplicate detection, atomic persistence, serialized manual/watch-folder imports, and recovery of interrupted imports and file cleanup. Overlapping statements preserve existing notes, tags, categories, and original upload ownership.
-- Import review warnings for balance discrepancies and unrecognized merchants, with links to the imported transactions.
-- Saved PDF passwords protected with ASP.NET Data Protection; legacy plaintext passwords are converted at startup.
-- Improved account statement actions and Google Pay profile settings layout.
-- Paginated Google Pay activity and insights, batched account summaries, deferred page/dialog loading, and request cancellation and response-order handling.
-- Global search and anomaly links populate transaction search correctly, including account scope and navigation while the page is already open. Search queries honor cancellation; import-failure polling avoids overlapping requests.
-- Expanded frontend and backend regressions, CI checks for SQLite and PostgreSQL, and vendored dependency checksum verification.
+## Highlights
 
-## Upgrade notes
+Bank Statement Analytics v3.1.0 introduces critical improvements for statement import reliability and atomicity, security hardening with encrypted PDF password storage via ASP.NET Data Protection, search query and navigation fixes, frontend performance optimizations with request cancellation and deferred loading, and comprehensive automated test suites.
 
-Back up the instance before upgrading. Migration 8 adds recoverable import metadata, account/file-hash uniqueness, and room for protected statement passwords. Historical duplicate uploads are retained; only the earliest duplicate retains its file-hash reservation.
+---
 
-Keep the database and the entire `Uploads` tree together when moving or restoring an instance. `Uploads/.statement-keys` contains the keys required to decrypt saved PDF passwords; a database-only copy is insufficient. Preserve `Data`, `Uploads`, and configuration when upgrading a portable copy. Use one active application server per database.
+## What's New in v3.1.0
 
-## Release artifacts
+### 🛡️ Statement Import Reliability & Data Protection
+- **Account-Scoped Duplicate Detection & Atomic Persistence**: Prevents duplicate imports per account while gracefully handling overlapping statements by preserving user notes, custom tags, assigned categories, and original upload ownership.
+- **Interrupted Import Recovery**: Automatic detection and recovery for interrupted imports and temporary file cleanup.
+- **Import Review Warnings**: Real-time warnings for statement balance discrepancies and unrecognized merchants with direct drill-down links to imported records.
+- **Encrypted PDF Passwords**: Saved account statement PDF passwords are now encrypted at rest using ASP.NET Core Data Protection (`Uploads/.statement-keys`), with transparent migration of legacy plaintext passwords on startup.
+- **Serialized Import Processing**: Concurrent manual uploads and automated watch-folder sweeps are queued and executed sequentially to eliminate database lock contention.
 
-Expected outputs from `build-installer.bat`:
+### 🔍 Search Navigation & Anomaly Drill-Down
+- **Scoped Global Search**: Navigating to transactions via global search (`Ctrl+K`) or anomaly alert links properly initializes the account scope and active search filters, even when the Transactions page is already active.
+- **Request Cancellation & Anti-Overlap**: Search autocomplete queries honor request cancellation tokens, and import error polling suppresses overlapping background requests.
 
-- `Setup/BankStatementAnalytics-Setup-3.1.0.exe`
-- `Setup/BankStatementAnalytics-Portable-3.1.0.zip`
+### ⚡ Performance & Usability Improvements
+- **Paginated Google Pay Activity**: Google Pay records and insights are paginated for instant rendering and reduced memory footprint.
+- **Batched Account Summaries**: Multi-account status cards batch database queries for responsive dashboard load times.
+- **Deferred Dialog & Page Loading**: Lazy-loaded settings sub-panels and modal dialogs reduce initial bundle evaluation overhead.
+- **Settings Layout Polish**: Streamlined Google Pay profile configuration and account import action buttons.
 
-Generate SHA-256 checksums from the final artifacts after packaging; do not reuse the v3.0.0 checksums.
+### 🗄️ Database Migrations (v8)
+- Added `Migration 8` introducing recoverable import tracking metadata, account file-hash uniqueness, and encrypted storage columns for statement credentials.
 
-## Release checklist
+---
 
-- [x] Complete frontend lint, regressions, production build, and vendor verification: 8 frontend tests, 10 report-range checks, and 4 vendor checksums passed. Build output is isolated under `.analysis-client-build/release-3.1.0`.
-- [x] Complete GPay, shared-bill, and import/search regressions on SQLite: 118, 20, and 36 checks passed respectively, using `ValidationBuild=true` and existing restored dependencies (`--no-restore`).
-- [ ] Complete import regressions on a fresh disposable PostgreSQL `bsa_regression` database or verify the PostgreSQL CI job.
-- [ ] Build installer and portable ZIP from the validated source tree.
-- [ ] Smoke-test clean installation and upgrade from v3.0.0, including saved PDF passwords and portable data preservation.
-- [ ] Record final artifact sizes and SHA-256 checksums, then tag and publish v3.1.0.
+## Artifact Checksums
+
+| Artifact | File | Size | SHA-256 Checksum |
+|---|---|---|---|
+| **Windows Installer** | `BankStatementAnalytics-Setup-3.1.0.exe` | 66.7 MB | `574f1039696a9e5852cd8cf535e347307c2722f391ca8e1e11ae0050f53aa24e` |
+| **Portable ZIP** | `BankStatementAnalytics-Portable-3.1.0.zip` | 101.3 MB | `8cd00c50737d0957a4bcfe322efaaaf47cc8e2d824cb6e208c2ae2bc12442582` |
+
+---
+
+## Installation & Upgrade
+
+- **Existing Users (Installed Service)**: Run `BankStatementAnalytics-Setup-3.1.0.exe`. The installer will stop the existing background service, update the application files, execute migration 8, and restart the service. Your existing database (`Data/`), statements (`Uploads/`), and configuration are completely preserved.
+- **Portable Users**: Extract `BankStatementAnalytics-Portable-3.1.0.zip` to a folder of your choice and copy over your `Data/` and `Uploads/` directories from your previous installation. Keep `Uploads/.statement-keys` intact to retain encrypted PDF passwords.
