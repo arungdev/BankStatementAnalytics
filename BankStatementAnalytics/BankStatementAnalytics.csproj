@@ -31,7 +31,7 @@
        So: keep wwwroot out of the evaluation-time item list entirely in Release, and let
        BuildReactClient add the real files after it has written them. (Debug leaves the default
        glob alone - nothing rewrites wwwroot there.) -->
-  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+  <ItemGroup Condition="'$(Configuration)' == 'Release' And '$(SkipClientBuild)' != 'true'">
     <Content Remove="wwwroot\**" />
   </ItemGroup>
 
@@ -40,6 +40,8 @@
     <PackageReference Include="PDFsharp-MigraDoc" Version="6.2.4" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
+    <!-- Override the vulnerable transitive PDF dependency (October 2026 advisories). -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
     <!-- PDF statement text extraction (pure managed - safe for single-file publish). -->
     <PackageReference Include="PdfPig" Version="0.1.11" />
     <!-- Lets the published exe run as a Windows service (no-op when launched interactively). -->
@@ -102,7 +104,7 @@
        Note a plain `<Content Remove="wwwroot\**"/>` INSIDE this target does not work as a reset:
        inside a target a wildcard Remove is expanded against the file system, so entries whose files
        Vite just deleted match nothing and survive. -->
-  <Target Name="BuildReactClient" BeforeTargets="Build;ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release'">
+  <Target Name="BuildReactClient" BeforeTargets="Build;ResolveProjectStaticWebAssets" Condition="'$(Configuration)' == 'Release' And '$(SkipClientBuild)' != 'true'">
     <Message Importance="high" Text="Installing npm dependencies and building React client..." />
     <Exec Command="npm ci" WorkingDirectory="..\Client" />
     <Exec Command="npm run build" WorkingDirectory="..\Client" />
@@ -119,7 +121,7 @@
        the build output so local dev (dotnet build/run) can use Database:Embedded=true too, not
        just an installed copy. Skipped once already present, so a clean build pays the ~150MB
        copy cost once, not on every incremental build. -->
-  <Target Name="CopyPgsqlBundle" AfterTargets="Build" Condition="'$(ValidationBuild)' != 'true' And !Exists('$(OutDir)pgsql\bin\postgres.exe') And Exists('$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle')">
+  <Target Name="CopyPgsqlBundle" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT' And '$(ValidationBuild)' != 'true' And !Exists('$(OutDir)pgsql\bin\postgres.exe') And Exists('$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle')">
     <Message Importance="high" Text="Copying embedded PostgreSQL bundle to output (one-time, ~150MB)..." />
     <Exec Command="robocopy &quot;$(MSBuildProjectDirectory)\..\Common.Framework\Installer\PgBundle&quot; &quot;$(OutDir)pgsql&quot; /E /NFL /NDL /NJH /NJS /NC /NS" IgnoreExitCode="true">
       <Output TaskParameter="ExitCode" PropertyName="RobocopyExitCode" />

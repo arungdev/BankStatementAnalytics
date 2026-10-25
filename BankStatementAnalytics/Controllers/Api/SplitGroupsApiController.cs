@@ -268,7 +268,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("import-takeout/status")]
         public IActionResult GetLocalTakeoutStatus()
         {
-            const string defaultPath = @"D:\BankStatements\Gpay\takeout-20261003T045601Z-1-001.zip";
+            var defaultPath = ImportPaths.TakeoutFile;
             var exists = System.IO.File.Exists(defaultPath);
             long size = 0;
             if (exists)
@@ -296,7 +296,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 return Ok(result);
             }
 
-            var path = !string.IsNullOrWhiteSpace(filePath) ? filePath : @"D:\BankStatements\Gpay\takeout-20261003T045601Z-1-001.zip";
+            var path = !string.IsNullOrWhiteSpace(filePath) ? filePath : ImportPaths.TakeoutFile;
             if (System.IO.File.Exists(path))
             {
                 var result = await _takeoutService.ImportFromPathAsync(CurrentUserId, path, expectedArchiveHash, profileId);
@@ -312,7 +312,7 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             var path = !string.IsNullOrWhiteSpace(request?.FilePath)
                 ? request.FilePath
-                : @"D:\BankStatements\Gpay\takeout-20261003T045601Z-1-001.zip";
+                : ImportPaths.TakeoutFile;
 
             var result = await _takeoutService.ImportFromPathAsync(CurrentUserId, path, request?.ExpectedArchiveHash, request?.ProfileId);
             return Ok(result);

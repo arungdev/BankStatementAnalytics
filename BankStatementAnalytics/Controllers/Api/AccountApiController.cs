@@ -174,7 +174,9 @@ namespace BankStatementAnalytics.Controllers.Api
                 var roots = new List<(string Name, string Path)>();
                 try
                 {
-                    foreach (var profile in Directory.EnumerateDirectories(@"C:\Users"))
+                    foreach (var profile in OperatingSystem.IsWindows()
+                        ? Directory.EnumerateDirectories(@"C:\Users")
+                        : new[] { Common.Framework.AppPaths.ResolveWritableAppDataDirectory() })
                     {
                         var user = Path.GetFileName(profile);
                         if (user is "Public" or "Default" or "Default User" or "All Users")

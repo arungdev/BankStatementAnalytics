@@ -53,7 +53,7 @@ namespace BankStatementAnalytics.Services
             }
             else
             {
-                const string defaultDir = @"D:\BankStatements\Gpay";
+                var defaultDir = ImportPaths.GPayDirectory;
                 config = new GPayAutoImportConfigDto
                 {
                     WatchFolderPath = defaultDir,

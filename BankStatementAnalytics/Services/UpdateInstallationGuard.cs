@@ -30,7 +30,9 @@ public sealed class UpdateInstallationGuard : IAsyncActionFilter
             context.Result = new ConflictObjectResult(new
             {
                 code = "manual_install_required",
-                message = "Download setup and run it as administrator on the computer hosting Bank Statement Analytics. Windows services cannot display the administrator approval prompt."
+                message = OperatingSystem.IsWindows()
+                    ? "Download setup and run it as administrator on the computer hosting Bank Statement Analytics. Windows services cannot display the administrator approval prompt."
+                    : "Update this Linux deployment by rebuilding and recreating the Docker container. See deploy/README.md."
             });
             return;
         }

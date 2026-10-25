@@ -21,18 +21,18 @@ namespace BankStatementAnalytics.Services
     {
         static ReportPdfService()
         {
-            // PDFsharp's "Core" build has no OS font access, and its optional Windows
-            // resolver (UseWindowsFontsUnderWindows) fails to find "Segoe UI" — so load
-            // the Segoe UI files from C:\Windows\Fonts directly. The resolver is a
-            // set-once process-wide global, hence the static ctor.
+            // PDFsharp Core needs an explicit resolver: Segoe UI on Windows and
+            // the image's DejaVu Sans fonts on Linux, both including the rupee glyph.
+            // The resolver is a set-once process-wide global.
             GlobalFontSettings.FontResolver = new SegoeFontResolver();
         }
 
-        // Every family funnels to Segoe UI: it ships with Windows and covers ₹ (U+20B9).
+        // Keep Windows report typography; use freely packaged fonts on Linux.
         private sealed class SegoeFontResolver : IFontResolver
         {
-            private static readonly string FontDir =
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
+            private static readonly string FontDir = OperatingSystem.IsWindows()
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts")
+                : "/usr/share/fonts/truetype/dejavu";
 
             public byte[]? GetFont(string faceName) => File.ReadAllBytes(Path.Combine(FontDir, faceName));
 
@@ -45,6 +45,14 @@ namespace BankStatementAnalytics.Services
                     (false, true) => "segoeuii.ttf",
                     _ => "segoeui.ttf",
                 };
+                if (!OperatingSystem.IsWindows())
+                    file = (bold, italic) switch
+                    {
+                        (true, true) => "DejaVuSans-BoldOblique.ttf",
+                        (true, false) => "DejaVuSans-Bold.ttf",
+                        (false, true) => "DejaVuSans-Oblique.ttf",
+                        _ => "DejaVuSans.ttf"
+                    };
                 return new FontResolverInfo(file);
             }
         }

@@ -61,7 +61,7 @@ public partial class GPayTakeoutService
             var legacy = JsonSerializer.Deserialize<GPayAutoImportConfigDto>(await File.ReadAllTextAsync(GetConfigFilePath()), GPayEvidenceService.Json);
             if (legacy != null) others.Add(legacy);
         }
-        else if (config.ProfileId != null) others.Add(new GPayAutoImportConfigDto { WatchFolderPath = @"D:\BankStatements\Gpay" });
+        else if (config.ProfileId != null) others.Add(new GPayAutoImportConfigDto { WatchFolderPath = ImportPaths.GPayDirectory });
         if (others.Any(profile => !string.IsNullOrWhiteSpace(profile.WatchFolderPath) && string.Equals(Path.GetFullPath(profile.WatchFolderPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), path, StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException("Each GPay profile needs a separate export folder to prevent cross-profile imports.");
     }

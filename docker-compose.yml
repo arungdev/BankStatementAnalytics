@@ -1,41 +1,99 @@
+name: bankstatementanalytics
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: bankstatements
       POSTGRES_USER: bankstatements
-      # Local-development default. Override for anything reachable beyond this host,
-      # e.g. `POSTGRES_PASSWORD=... docker compose up`.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bankstatements}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
     volumes:
       - bsa-db:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bankstatements -d bankstatements"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 10
+    mem_limit: 384m
+    cpus: 0.5
+    shm_size: 128m
+    logging: *logging
+    networks: [backend]
 
   bankstatementanalytics:
     build: .
-    image: bankstatementanalytics:latest
+    image: ${APP_IMAGE:-bankstatementanalytics}:${APP_VERSION:-local}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 60s
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
-      # The image already sets Database__Embedded=false (the bundled embedded PostgreSQL
-      # is Windows-only); point it at the db service above. NHibernateHelper reads this
-      # via AddEnvironmentVariables, so it overrides appsettings.json.
-      Database__Provider: Postgres
-      Database__PostgresConnectionString: >-
-        Host=db;Port=5432;Database=bankstatements;Username=bankstatements;Password=${POSTGRES_PASSWORD:-bankstatements}
+      Database__PostgresConnectionString: Host=db;Port=5432;Database=bankstatements;Username=bankstatements;Maximum Pool Size=20;Timeout=15
+      Database__PasswordFile: /run/secrets/db_password
+      Deployment__PublicHosting: "true"
+      Deployment__KnownProxy: 172.30.58.254
+    secrets: [db_password]
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      # Data Protection keys (so auth cookies survive a restart) and uploaded statements.
       - bsa-data:/app/Data
       - bsa-uploads:/app/Uploads
+      - bsa-logs:/app/Logs
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *logging
+    networks: [backend, proxy]
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: [https]
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      bankstatementanalytics:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.25
+    logging: *logging
+    networks:
+      proxy:
+        ipv4_address: 172.30.58.254
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+
+networks:
+  backend:
+  proxy:
+    ipam:
+      config:
+        - subnet: 172.30.58.0/24
 
 volumes:
   bsa-db:
   bsa-data:
   bsa-uploads:
+  bsa-logs:
+  caddy-data:
+  caddy-config:

@@ -3,6 +3,9 @@ BankStatementAnalytics/wwwroot/
 Client/node_modules/
 # Local env overrides - never commit; ship Client/.env.example as the template instead
 /Client/.env
+/.env
+/secrets/
+/backups/
 /.vs/BankStatementAnalytics
 /BankStatementAnalytics/bin/Debug/net10.0
 /BankStatementAnalytics/obj

@@ -135,13 +135,12 @@ for changes, upgrade requirements, and remaining publication checks.
 - **Windows installer** — `build-installer.bat` compiles an installer into
   `Setup\` that installs the app as a Windows service. Requires the private
   `Common.Framework` repo (author only).
-- **Docker** — `docker compose up --build` serves the app on
-  [http://localhost:8080](http://localhost:8080), alongside a `postgres:16-alpine`
-  service, with named volumes for the database, Data Protection keys, and uploads.
-  The embedded PostgreSQL bundle is Windows-only, so the image sets
-  `Database__Embedded=false` and compose supplies the connection string; override
-  `POSTGRES_PASSWORD` for anything beyond local use. `docker-release.bat` builds
-  the release image.
+- **Linux / Docker** — follow [the Ubuntu deployment guide](deploy/README.md)
+  to create the database secret, build and start the .NET 10/PostgreSQL services,
+  and optionally enable Caddy HTTPS. The app listens at host loopback
+  [http://localhost:8080](http://localhost:8080). Database, uploads, keys and logs
+  use persistent volumes. The guide includes backup/restore scripts, resource
+  limits, firewall configuration, verification, and safe update/rollback procedures.
 
 > Updating the vendored artifacts (author only):
 > - **Backend** — rebuild `Common.Framework` and copy its

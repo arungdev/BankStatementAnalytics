@@ -5,6 +5,43 @@ on:
 permissions:
   contents: read
 jobs:
+  linux-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
+      - run: dotnet run --project Tests/LinuxDeployment -p:ValidationBuild=true
+      - name: Configure disposable database secret
+        run: |
+          mkdir -p secrets
+          openssl rand -hex 32 > secrets/db_password.txt
+          chmod 700 secrets
+          chmod 444 secrets/db_password.txt
+      - run: docker compose build
+      - run: BSA_DISPOSABLE_TEST=yes bash deploy/smoke-test.sh
+      - name: Verify HTTPS proxy and secure cookie
+        env:
+          APP_DOMAIN: localhost
+          ACME_EMAIL: smoke@example.test
+        run: |
+          docker compose --profile https up -d --wait --wait-timeout 180 caddy
+          curl --retry 10 --retry-connrefused --retry-delay 2 -fk https://localhost/api/auth/status
+          curl -fk -D .build/tls-headers -c .build/tls-cookie -o /dev/null \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"deployment-smoke","password":"Synthetic-test-only-42!"}' \
+            https://localhost/api/auth/login
+          grep -qi '^set-cookie:.*; secure' .build/tls-headers
+          curl -fk -b .build/tls-cookie -H 'Origin: https://localhost' \
+            -H 'Content-Type: application/json' \
+            -d '{"accountHolderName":"HTTPS synthetic","accountNumber":"0000000000","bankName":"HDFC"}' \
+            https://localhost/api/accounts
+      - if: failure()
+        run: docker compose --profile https logs --tail=150
+      - if: always()
+        run: docker compose --profile https down -v
   frontend:
     runs-on: ubuntu-latest
     defaults:

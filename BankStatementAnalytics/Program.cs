@@ -16,6 +16,18 @@ using Common.Framework.Web;
 using System;
 using System.IO;
 using System.Threading;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Net;
+
+// Compose mounts the password separately; never bake credentials into the image.
+var passwordFile = Environment.GetEnvironmentVariable("Database__PasswordFile");
+if (!string.IsNullOrWhiteSpace(passwordFile))
+{
+    var connection = new Npgsql.NpgsqlConnectionStringBuilder(
+        Environment.GetEnvironmentVariable("Database__PostgresConnectionString"));
+    connection.Password = File.ReadAllText(passwordFile).TrimEnd('\r', '\n');
+    Environment.SetEnvironmentVariable("Database__PostgresConnectionString", connection.ConnectionString);
+}
 
 // Resolve the true executable directory up front. For a single-file, self-extracting exe -
 // especially when run as a Windows service - the host's content root and AppContext.BaseDirectory
@@ -79,7 +91,8 @@ Log.Info($"Host startup: bind URLs='{configuredUrls ?? "(default)"}', webRoot='{
 // only a convenience for the installer, not required to run).
 try
 {
-    AppMutexHolder.Handle = new Mutex(false, "Global\\BankStatementAnalytics.exe");
+    if (OperatingSystem.IsWindows())
+        AppMutexHolder.Handle = new Mutex(false, "Global\\BankStatementAnalytics.exe");
 }
 catch (UnauthorizedAccessException ex)
 {
@@ -194,13 +207,49 @@ builder.Services.AddAuthRateLimiting();
 
 var app = builder.Build();
 
+// Trust only the explicitly configured reverse proxy, before cookies and origin checks.
+var proxyAddress = app.Configuration["Deployment:KnownProxy"];
+if (!string.IsNullOrWhiteSpace(proxyAddress))
+{
+    var forwarded = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+        ForwardLimit = 1
+    };
+    forwarded.KnownProxies.Add(IPAddress.Parse(proxyAddress));
+    app.UseForwardedHeaders(forwarded);
+}
+
+// Available only to local container probes; tests actual database connectivity.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/health" && context.Connection.RemoteIpAddress is { } remote && IPAddress.IsLoopback(remote))
+    {
+        try
+        {
+            using var session = NHibernateHelper.SessionFactory.OpenStatelessSession();
+            await session.CreateSQLQuery("select 1").SetTimeout(3).UniqueResultAsync<int>(context.RequestAborted);
+            await context.Response.WriteAsync("healthy");
+        }
+        catch
+        {
+            context.Response.StatusCode = 503;
+        }
+        return;
+    }
+    await next(context);
+});
+
 app.UseCors("React");
 app.UseSecurityHeaders();
 
 // Reusable network access gate from Common.Framework.
 // When disabled, only loopback connections (from the host computer) are accepted;
 // remote requests from LAN devices are blocked with 403 Forbidden.
-app.UseNetworkAccess();
+// Public hosting uses cookie authentication, authorization and the reverse proxy.
+// Preserve the desktop application's loopback/LAN gate by default.
+if (!app.Configuration.GetValue<bool>("Deployment:PublicHosting"))
+    app.UseNetworkAccess();
 
 // ── Defensive cookie policy override ──────────────────────────────────────
 // AddCookieSessionAuth already sets Cookie.SecurePolicy = SameAsRequest, but something
