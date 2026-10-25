@@ -136,6 +136,8 @@ for changes, upgrade requirements, and remaining publication checks.
   `Setup\` that installs the app as a Windows service. Requires the private
   `Common.Framework` repo (author only).
 - **Linux / Docker** — follow [the Ubuntu deployment guide](deploy/README.md)
+  or launch `deploy-ssh.bat` on Windows to deploy the published image over SSH.
+  The guide explains how
   to create the database secret, build and start the .NET 10/PostgreSQL services,
   and optionally enable Caddy HTTPS. The app listens at host loopback
   [http://localhost:8080](http://localhost:8080). Database, uploads, keys and logs

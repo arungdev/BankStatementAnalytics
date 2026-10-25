@@ -62,3 +62,6 @@ through GitHub during this session.
   PostgreSQL CI suite; that GitHub job was not executed during this session.
 - Resource limits are initial VPS settings, not load-test results. Reboot/crash
   recovery is configured by restart policies but was not simulated on a VPS.
+- The Windows SSH launcher has passed PowerShell parsing and the Ubuntu helper
+  has passed Bash syntax validation. No remote server was used to test automatic
+  Docker installation or the full SSH/SCP/sudo workflow.

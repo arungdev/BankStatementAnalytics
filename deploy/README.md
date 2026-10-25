@@ -22,6 +22,35 @@ SQLite's native Windows dependency is not used in this deployment.
 
 ## Fresh server
 
+### Windows SSH launcher
+
+End users can double-click `deploy-ssh.bat` on Windows, enter `user@server`, the
+domain, and certificate email. Keep the BAT file, `docker-compose.yml`, and the
+`deploy/` directory together. Windows OpenSSH Client must be installed; the Ubuntu
+account needs sudo access. SSH handles passwords or keys normally; the launcher
+does not store them or disable host-key verification.
+
+The launcher installs Docker on Ubuntu when absent, pulls
+`arungs125/bankstatementanalytics:3.1.0-linux-1da6c7b`, generates a database secret
+on the server, and starts the private application. It then shows the SSH tunnel
+command for first-admin setup. Type ENABLE only after creating the administrator
+to start Caddy HTTPS. DNS must already point to the server, and the provider
+firewall must allow TCP 80/443. The launcher does not change firewall rules.
+
+For a custom SSH port or release tag, run from PowerShell:
+
+```powershell
+.\deploy-ssh.bat -Server ubuntu@203.0.113.10 -Port 2222 -Domain billing.example.com -Email admin@example.com -Version 3.1.0-linux-1da6c7b
+```
+
+The remote folder is `~/bankstatementanalytics`. Rerunning the launcher on a running
+installation takes a full application backup before updating and preserves
+`.env.previous` and `docker-compose.previous.yml`. See rollback instructions below;
+the launcher does not automatically restore a database after a failed update.
+Only AMD64 Ubuntu servers are supported by this published image. Installing a new
+Ubuntu server remotely was not tested during development; syntax validation was
+performed, and the underlying Compose stack was tested separately.
+
 Use Ubuntu 24.04 LTS with a suggested starting size of 2 GB RAM, 2 vCPUs and
 20 GB free disk (allow additional storage for uploads and backups). Building
 Node/.NET needs more memory than running; build elsewhere if the VPS runs out.
