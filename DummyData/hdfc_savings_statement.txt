@@ -1,0 +1,128 @@
+
+HDFC BANK Ltd.                                     Page No .:   1                                        Statement of accounts
+
+                                                                         Account Branch : INDIRANAGAR
+                                                                         Address        : 100 FT ROAD, INDIRANAGAR,
+MR      ARUN G                                                          BANGALORE 560038
+TECH INNOVATIONS PRIVATE LIMITED                                         City           : BANGALORE
+BAGMANE TECH PARK, CV RAMAN NAGAR                                        State          : KARNATAKA
+BANGALORE 560093                                                         Phone no.      : 18002600/18001600
+KARNATAKA                                                                Email          : demo.user@example.com
+.                                                                        OD Limit       : 0  Currency : INR
+                                                                         Cust ID        : 984512034
+JOINT HOLDERS :                                                          Account No     : 50100736644871   OTHER
+Nomination : Registered                                                  Account Status : Regular  
+Statement From      : 01/07/2026  To: 24/10/2026                         RTGS/NEFT IFSC : HDFC0000140    MICR : 560240004   
+                                                                         Branch Code    : 0140     
+                                                                         Account Type   : SAVINGS - RESIDENTS (113)
+--------  ----------------------------------------  ----------------  --------  ------------------  ------------------  ------------------
+Date      Narration				    Chq./Ref.No.      Value Dt  Withdrawal Amt.        Deposit Amt.     Closing Balance
+--------  ----------------------------------------  ----------------  --------  ------------------  ------------------  ------------------
+01/07/26  NEFT CR-NEXUS TECH-SALARY-JUL 2026-CMS98  0000618001000137  01/07/26                            1,45,000.00         2,23,500.50
+          7654
+02/07/26  UPI-ARAVIND REALTY-ARAVIND@OKHDFCBANK-IO  0000618001000274  02/07/26           26,000.00                            1,97,500.50
+          BA000-RENT-JUL
+03/07/26  UPI-BLINKIT-BLINKIT@ICICI-ICIC000-GROCER  0000618001000411  03/07/26            2,450.00                            1,95,050.50
+          IES-JUL
+04/07/26  UPI-SWIGGY-SWIGGY@HDFCBANK-HDFC000-FOOD   0000618001000548  04/07/26              680.00                            1,94,370.50
+          DELIVERY
+06/07/26  IB BILLPAY DR-BESCOM-ELECTRICITY-JUL      0000618001000685  06/07/26            2,150.00                            1,92,220.50
+07/07/26  IB BILLPAY DR-AIRTEL FIBER-9876543210     0000618001000822  07/07/26            1,179.00                            1,91,041.50
+08/07/26  IB BILLPAY DR-653029XXXXXX1252-HDFC CC P  0000618001000959  08/07/26           24,500.00                            1,66,541.50
+          AYMENT
+10/07/26  UPI-ZEPTO-ZEPTO@AXISBANK-UTIB000-QUICK C  0000618001001096  10/07/26              890.00                            1,65,651.50
+          OMMERCE
+12/07/26  FT- SELF TRANSFER - 065001000027720 -     0000618001001233  12/07/26           20,000.00                            1,45,651.50
+14/07/26  NEFT DR-ZERODHA BROKING-GROWTH SIP 500-C  0000618001001370  14/07/26           25,000.00                            1,20,651.50
+          MS112233
+16/07/26  UPI-ZOMATO-ZOMATO@HDFCBANK-DINING OUT     0000618001001507  16/07/26              940.00                            1,19,711.50
+18/07/26  12345- RD INSTALLMENT-EMERGENCY RD-HDFC   0000618001001644  18/07/26           10,000.00                            1,09,711.50
+20/07/26  UPI-AMAZON-AMAZONPAY@APL-SHOPPING ELECTR  0000618001001781  20/07/26            3,499.00                            1,06,212.50
+          ONICS
+22/07/26  UPI-UBER INDIA-UBER@AXISBANK-RIDE COMMUT  0000618001001918  22/07/26              480.00                            1,05,732.50
+          E
+24/07/26  UPI-PRIYA SHARMA-PRIYA@OKAXIS-SPLIT SHAR  0000618001002055  24/07/26                               4,500.00         1,10,232.50
+          E REPAYMENT
+01/08/26  NEFT CR-NEXUS TECH-SALARY-AUG 2026-CMS98  0000618001002192  01/08/26                            1,45,000.00         2,55,232.50
+          7654
+02/08/26  UPI-ARAVIND REALTY-ARAVIND@OKHDFCBANK-IO  0000618001002329  02/08/26           26,000.00                            2,29,232.50
+          BA000-RENT-AUG
+03/08/26  UPI-BLINKIT-BLINKIT@ICICI-ICIC000-GROCER  0000618001002466  03/08/26            2,450.00                            2,26,782.50
+          IES-AUG
+04/08/26  UPI-SWIGGY-SWIGGY@HDFCBANK-HDFC000-FOOD   0000618001002603  04/08/26              680.00                            2,26,102.50
+          DELIVERY
+06/08/26  IB BILLPAY DR-BESCOM-ELECTRICITY-AUG      0000618001002740  06/08/26            2,150.00                            2,23,952.50
+07/08/26  IB BILLPAY DR-AIRTEL FIBER-9876543210     0000618001002877  07/08/26            1,179.00                            2,22,773.50
+08/08/26  IB BILLPAY DR-653029XXXXXX1252-HDFC CC P  0000618001003014  08/08/26           24,500.00                            1,98,273.50
+          AYMENT
+10/08/26  UPI-ZEPTO-ZEPTO@AXISBANK-UTIB000-QUICK C  0000618001003151  10/08/26              890.00                            1,97,383.50
+          OMMERCE
+12/08/26  FT- SELF TRANSFER - 065001000027720 -     0000618001003288  12/08/26           20,000.00                            1,77,383.50
+14/08/26  NEFT DR-ZERODHA BROKING-GROWTH SIP 500-C  0000618001003425  14/08/26           25,000.00                            1,52,383.50
+          MS112233
+16/08/26  UPI-ZOMATO-ZOMATO@HDFCBANK-DINING OUT     0000618001003562  16/08/26              940.00                            1,51,443.50
+18/08/26  12345- RD INSTALLMENT-EMERGENCY RD-HDFC   0000618001003699  18/08/26           10,000.00                            1,41,443.50
+20/08/26  UPI-AMAZON-AMAZONPAY@APL-SHOPPING ELECTR  0000618001003836  20/08/26            3,499.00                            1,37,944.50
+          ONICS
+22/08/26  UPI-UBER INDIA-UBER@AXISBANK-RIDE COMMUT  0000618001003973  22/08/26              480.00                            1,37,464.50
+          E
+24/08/26  UPI-PRIYA SHARMA-PRIYA@OKAXIS-SPLIT SHAR  0000618001004110  24/08/26                               4,500.00         1,41,964.50
+          E REPAYMENT
+15/08/26  IB FD CREATION - 987654321 - 1 YEAR 7.1   0000618001004247  15/08/26         1,00,000.00                              41,964.50
+          PERCENT
+01/09/26  NEFT CR-NEXUS TECH-SALARY-SEP 2026-CMS98  0000618001004384  01/09/26                            1,45,000.00         1,86,964.50
+          7654
+02/09/26  UPI-ARAVIND REALTY-ARAVIND@OKHDFCBANK-IO  0000618001004521  02/09/26           26,000.00                            1,60,964.50
+          BA000-RENT-SEP
+03/09/26  UPI-BLINKIT-BLINKIT@ICICI-ICIC000-GROCER  0000618001004658  03/09/26            2,450.00                            1,58,514.50
+          IES-SEP
+04/09/26  UPI-SWIGGY-SWIGGY@HDFCBANK-HDFC000-FOOD   0000618001004795  04/09/26              680.00                            1,57,834.50
+          DELIVERY
+06/09/26  IB BILLPAY DR-BESCOM-ELECTRICITY-SEP      0000618001004932  06/09/26            2,150.00                            1,55,684.50
+07/09/26  IB BILLPAY DR-AIRTEL FIBER-9876543210     0000618001005069  07/09/26            1,179.00                            1,54,505.50
+08/09/26  IB BILLPAY DR-653029XXXXXX1252-HDFC CC P  0000618001005206  08/09/26           24,500.00                            1,30,005.50
+          AYMENT
+10/09/26  UPI-ZEPTO-ZEPTO@AXISBANK-UTIB000-QUICK C  0000618001005343  10/09/26              890.00                            1,29,115.50
+          OMMERCE
+12/09/26  FT- SELF TRANSFER - 065001000027720 -     0000618001005480  12/09/26           20,000.00                            1,09,115.50
+14/09/26  NEFT DR-ZERODHA BROKING-GROWTH SIP 500-C  0000618001005617  14/09/26           25,000.00                              84,115.50
+          MS112233
+16/09/26  UPI-ZOMATO-ZOMATO@HDFCBANK-DINING OUT     0000618001005754  16/09/26              940.00                              83,175.50
+18/09/26  12345- RD INSTALLMENT-EMERGENCY RD-HDFC   0000618001005891  18/09/26           10,000.00                              73,175.50
+20/09/26  UPI-AMAZON-AMAZONPAY@APL-SHOPPING ELECTR  0000618001006028  20/09/26            3,499.00                              69,676.50
+          ONICS
+22/09/26  UPI-UBER INDIA-UBER@AXISBANK-RIDE COMMUT  0000618001006165  22/09/26              480.00                              69,196.50
+          E
+24/09/26  UPI-PRIYA SHARMA-PRIYA@OKAXIS-SPLIT SHAR  0000618001006302  24/09/26                               4,500.00           73,696.50
+          E REPAYMENT
+19/09/26  UPI-GOA RESORT-GOARESORT@HDFCBANK-VILLA   0000618001006439  19/09/26           18,000.00                              55,696.50
+          BOOKING
+21/09/26  UPI-RAHUL VERMA-RAHUL@OKSBI-GOA TRIP SHA  0000618001006576  21/09/26                               4,500.00           60,196.50
+          RE
+22/09/26  UPI-AMIT PATEL-AMIT@OKICICI-GOA TRIP SHA  0000618001006713  22/09/26                               4,500.00           64,696.50
+          RE
+01/10/26  NEFT CR-NEXUS TECH-SALARY-OCT 2026-CMS98  0000618001006850  01/10/26                            1,45,000.00         2,09,696.50
+          7654
+02/10/26  UPI-ARAVIND REALTY-ARAVIND@OKHDFCBANK-IO  0000618001006987  02/10/26           26,000.00                            1,83,696.50
+          BA000-RENT-OCT
+03/10/26  UPI-BLINKIT-BLINKIT@ICICI-ICIC000-GROCER  0000618001007124  03/10/26            2,450.00                            1,81,246.50
+          IES-OCT
+04/10/26  UPI-SWIGGY-SWIGGY@HDFCBANK-HDFC000-FOOD   0000618001007261  04/10/26              680.00                            1,80,566.50
+          DELIVERY
+06/10/26  IB BILLPAY DR-BESCOM-ELECTRICITY-OCT      0000618001007398  06/10/26            2,150.00                            1,78,416.50
+07/10/26  IB BILLPAY DR-AIRTEL FIBER-9876543210     0000618001007535  07/10/26            1,179.00                            1,77,237.50
+08/10/26  IB BILLPAY DR-653029XXXXXX1252-HDFC CC P  0000618001007672  08/10/26           24,500.00                            1,52,737.50
+          AYMENT
+10/10/26  UPI-ZEPTO-ZEPTO@AXISBANK-UTIB000-QUICK C  0000618001007809  10/10/26              890.00                            1,51,847.50
+          OMMERCE
+12/10/26  FT- SELF TRANSFER - 065001000027720 -     0000618001007946  12/10/26           20,000.00                            1,31,847.50
+14/10/26  NEFT DR-ZERODHA BROKING-GROWTH SIP 500-C  0000618001008083  14/10/26           25,000.00                            1,06,847.50
+          MS112233
+16/10/26  UPI-ZOMATO-ZOMATO@HDFCBANK-DINING OUT     0000618001008220  16/10/26              940.00                            1,05,907.50
+18/10/26  12345- RD INSTALLMENT-EMERGENCY RD-HDFC   0000618001008357  18/10/26           10,000.00                              95,907.50
+20/10/26  UPI-AMAZON-AMAZONPAY@APL-SHOPPING ELECTR  0000618001008494  20/10/26            3,499.00                              92,408.50
+          ONICS
+22/10/26  UPI-UBER INDIA-UBER@AXISBANK-RIDE COMMUT  0000618001008631  22/10/26              480.00                              91,928.50
+          E
+24/10/26  UPI-PRIYA SHARMA-PRIYA@OKAXIS-SPLIT SHAR  0000618001008768  24/10/26                               4,500.00           96,428.50
+          E REPAYMENT

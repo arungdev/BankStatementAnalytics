@@ -1,0 +1,57 @@
+                                                                                                                                                                                                   
+   Account Number                             : 065001000027720                                                 Branch Name                      : INDIRANAGAR (0650)                            
+                                                                                                                                                                                                   
+   Customer Name                              : ARUN G                                                         Branch Address                   : 100 FT ROAD, INDIRANAGAR,                      
+                                                                                                                                                 BANGALORE, KARNATAKA, 560038                     
+                                                                                                                                                                                                   
+   Customer ID                                : 59962753                                                        Email                            : iob0650@iob.in                                  
+                                                                                                                                                                                                   
+   A/C Open Date                              : 15/06/2021                                                      IFSC Code                        : IOBA0000650                                     
+                                                                                                                                                                                                   
+   Currency                                   : INR                                                             MICR Code                        : 560020016                                       
+                                                                                                                                                                                                   
+   A/C Type                                   : SAVINGS ACCOUNT - PUBLIC                                                                                                                           
+                                                                                                                                                                                                   
+   A/C Status                                 : Active                                                                                                                                             
+                                                                                                                                                                                                   
+   Statement for the period from 01-07-2026 00:00:00 to 24-10-2026 23:59:59                                                                                                                        
+                                                                                                                                                                                                   
+                                                                                                                                                                                Balance            
+            Date              Value Date           CHQ                           Remarks                             COD            Debit               Credit                                     
+                                                                                                                                                                                                   
+                                                            TRF FROM HDFC 4871 SELF
+        12/07/2026           12/07/2026                                              TRF                                                                   20,000.00                     65,210.00
+                                                                                                                                                                                                   
+                                                            NEFT/GROWW INVESTMENTS/MUTUAL FUND SIP
+        15/07/2026           15/07/2026                                              TRF                               15,000.00                                                         50,210.00
+                                                                                                                                                                                                   
+                                                            UPI/126321072993/DR/LOCAL SUPERMART/IOB/GROCERY
+        28/07/2026           28/07/2026                                              TRF                                1,200.00                                                         49,010.00
+                                                                                                                                                                                                   
+                                                            TRF FROM HDFC 4871 SELF
+        12/08/2026           12/08/2026                                              TRF                                                                   20,000.00                     69,010.00
+                                                                                                                                                                                                   
+                                                            NEFT/GROWW INVESTMENTS/MUTUAL FUND SIP
+        15/08/2026           15/08/2026                                              TRF                               15,000.00                                                         54,010.00
+                                                                                                                                                                                                   
+                                                            UPI/210814641932/DR/CITY CLINIC MEDICAL/IOB/HEALTH
+        25/08/2026           25/08/2026                                              TRF                                3,500.00                                                         50,510.00
+                                                                                                                                                                                                   
+                                                            TRF FROM HDFC 4871 SELF
+        12/09/2026           12/09/2026                                              TRF                                                                   20,000.00                     70,510.00
+                                                                                                                                                                                                   
+                                                            NEFT/GROWW INVESTMENTS/MUTUAL FUND SIP
+        15/09/2026           15/09/2026                                              TRF                               15,000.00                                                         55,510.00
+                                                                                                                                                                                                   
+                                                            Int.Pd: 01-07-2026 to 30-09-2026
+        30/09/2026           30/09/2026                                              TRF                                                                    1,145.00                     56,655.00
+                                                                                                                                                                                                   
+                                                            TRF FROM HDFC 4871 SELF
+        12/10/2026           12/10/2026                                              TRF                                                                   20,000.00                     76,655.00
+                                                                                                                                                                                                   
+                                                            NEFT/GROWW INVESTMENTS/MUTUAL FUND SIP
+        15/10/2026           15/10/2026                                              TRF                               15,000.00                                                         61,655.00
+                                                                                                                                                                                                   
+                                                            -ATM-CASH WITHDRAWAL INDIRANAGAR ATM
+        20/10/2026           20/10/2026                                              TRF                                2,500.00                                                         59,155.00
+                                                                                                                                                                                                   
