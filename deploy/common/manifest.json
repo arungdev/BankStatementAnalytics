@@ -1,6 +1,7 @@
 {
-  "source": "Common.Framework/Deployment",
-  "sourceRevision": "3ed2f9e906d507f07a679f847f76bdf19cd294b7",
+  "sourceRevision": "86bd6861b0eea33a53fbd9588f2a760875164f77",
+  "sourceTreeDirty": false,
+  "schemaVersion": 1,
   "artifacts": [
     {
       "path": "backup.sh",
@@ -67,6 +68,5 @@
       "sha256": "757827045cfdc01ec0a0934171740caf4b85e222706ff64f39d94e34e596894f"
     }
   ],
-  "schemaVersion": 1,
-  "sourceTreeDirty": false
+  "source": "Common.Framework/Deployment"
 }
