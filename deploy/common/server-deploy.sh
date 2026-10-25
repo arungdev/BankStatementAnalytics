@@ -42,11 +42,15 @@ fi
 # Acquire the image before touching the running installation.
 image_archive="images/application-$version.tar"
 if [[ -s "$image_archive" ]]; then
-    docker load -i "$image_archive"
+    [[ -s "$image_archive.sha256" ]] || { echo 'Bundled image has no transfer checksum. Rerun the updated deployment launcher.' >&2; exit 1; }
+    (cd images && sha256sum -c "application-$version.tar.sha256") || {
+        echo 'Bundled image is incomplete or damaged. Rerun the updated launcher with a fresh package; application data has not been changed.' >&2; exit 1;
+    }
+    docker load -i "$image_archive" || { echo 'Docker could not read the bundled image. Recreate the offline package from a fresh docker save export.' >&2; exit 1; }
     docker image inspect "$DEPLOY_IMAGE:$version" >/dev/null || {
         echo "The bundled archive does not contain $DEPLOY_IMAGE:$version." >&2; exit 1;
     }
-    rm -- "$image_archive"
+    rm -- "$image_archive" "$image_archive.sha256"
 elif ! docker pull "$DEPLOY_IMAGE:$version"; then
     echo "Cannot download $DEPLOY_IMAGE:$version. Installation has not changed application data." >&2
     echo 'The publisher must upload this exact tag. For a private repository, run sudo docker login on this server and retry.' >&2

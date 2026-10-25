@@ -47,6 +47,10 @@ try {
     if ($ImageArchive) {
         [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $ImageArchive,
             'application-image.tar', [IO.Compression.CompressionLevel]::Optimal) > $null
+        $hashEntry = $archive.CreateEntry('application-image.tar.sha256')
+        $hashWriter = [IO.StreamWriter]::new($hashEntry.Open(), [Text.UTF8Encoding]::new($false))
+        try { $hashWriter.WriteLine(('{0}  application-image.tar' -f (Get-FileHash -LiteralPath $ImageArchive -Algorithm SHA256).Hash.ToLowerInvariant())) }
+        finally { $hashWriter.Dispose() }
     }
 } finally {
     if ($archive) { $archive.Dispose() } else { $stream.Dispose() }

@@ -24,6 +24,9 @@ $offlineDestination = Join-Path (Split-Path $destination -Parent) 'offline-deplo
 $archive = [IO.Compression.ZipFile]::OpenRead($offlineDestination)
 try {
     if (@($archive.Entries.FullName) -notcontains 'application-image.tar') { throw 'Offline image archive missing.' }
+    $hashReader = [IO.StreamReader]::new($archive.GetEntry('application-image.tar.sha256').Open())
+    try { $hashText = $hashReader.ReadToEnd() } finally { $hashReader.Dispose() }
+    if (-not $hashText.StartsWith((Get-FileHash $syntheticImage).Hash.ToLowerInvariant())) { throw 'Offline image checksum is missing or wrong.' }
     if ($archive.Entries.FullName | Where-Object { $_ -match $forbidden }) { throw 'Offline package contains development files.' }
     Write-Host 'PASS: optional offline image is included without adding source or private files.'
 } finally { $archive.Dispose() }

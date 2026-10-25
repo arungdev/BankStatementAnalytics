@@ -95,8 +95,19 @@ try {
     }
     $imageArchive = Join-Path $projectRoot 'application-image.tar'
     if (Test-Path -LiteralPath $imageArchive -PathType Leaf) {
+        $imageHash = (Get-FileHash -LiteralPath $imageArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hashPath = "$imageArchive.sha256"
+        if (Test-Path -LiteralPath $hashPath) {
+            $expectedHash = ((Get-Content -LiteralPath $hashPath -Raw).Trim() -split '\s+')[0]
+            if ($expectedHash -ne $imageHash) { throw 'The bundled image checksum does not match. Extract a fresh offline ZIP before deploying.' }
+        }
         Write-Host 'Uploading the bundled Docker image. This can take a few minutes.'
-        Invoke-Checked -Command 'scp' -Arguments ($sshArguments + @('-P', "$Port", $imageArchive, "${Server}:$remoteDirectory/images/application-$Version.tar"))
+        Invoke-Checked -Command 'scp' -Arguments ($sshArguments + @('-P', "$Port", $imageArchive, "${Server}:$remoteDirectory/images/application-$Version.tar.partial"))
+        $verifyImage = "cd ~/$remoteDirectory && echo '$imageHash  images/application-$Version.tar.partial' | sha256sum -c - && mv -f images/application-$Version.tar.partial images/application-$Version.tar && echo '$imageHash  application-$Version.tar' > images/application-$Version.tar.sha256"
+        Invoke-Checked -Command 'ssh' -Arguments ($sshArguments + @('-p', "$Port", $Server, $verifyImage))
+    } else {
+        # An online run must not consume a stale archive from a failed offline run.
+        Invoke-Checked -Command 'ssh' -Arguments ($sshArguments + @('-p', "$Port", $Server, "cd ~/$remoteDirectory && rm -f -- images/application-$Version.tar images/application-$Version.tar.partial images/application-$Version.tar.sha256"))
     }
     $LocalPort = Get-DeploymentLocalPort -PreferredPort $LocalPort
     Write-Host "Setup tunnel: http://localhost:$LocalPort (kept open automatically)"

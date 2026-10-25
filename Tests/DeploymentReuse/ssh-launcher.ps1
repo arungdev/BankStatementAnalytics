@@ -40,6 +40,9 @@ try {
         if ($needsPassword) {
             $imageCopies = @($calls | Where-Object { $_.Tool -eq 'scp' -and ($_.Arguments -join ' ') -match 'images/application-' })
             if ($imageCopies.Count -ne 1) { throw 'Bundled image must be uploaded using the authenticated connection.' }
+            if ($imageCopies[0].Arguments[-1] -notmatch '\.tar\.partial$') { throw 'Image must be uploaded to a temporary path.' }
+            $integrityChecks = @($calls | Where-Object { $_.Tool -eq 'ssh' -and ($_.Arguments -join ' ') -match 'sha256sum -c' })
+            if ($integrityChecks.Count -ne 1) { throw 'Transferred image must be verified before use.' }
             $cleanup = @($calls | Where-Object { $_.Tool -eq 'ssh' -and ($_.Arguments -join ' ') -match 'sed -i' })
             if ($cleanup.Count -ne 1) { throw 'Temporary server key cleanup was not attempted.' }
             $identityIndex = [Array]::IndexOf($cleanup[0].Arguments, '-i')
