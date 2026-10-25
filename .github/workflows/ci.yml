@@ -10,36 +10,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pwsh -NoProfile -File scripts/verify-common-deployment.ps1
+      - run: pwsh -NoProfile -File Tests/DeploymentReuse/package.ps1
       - run: bash Tests/DeploymentReuse/test.sh
+      - run: bash Tests/DeploymentReuse/https-session.sh
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
+      - run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core age
       - run: dotnet run --project Tests/LinuxDeployment -p:ValidationBuild=true
       - name: Configure disposable database secret
         run: |
-          mkdir -p secrets
+          mkdir -p secrets .build
           openssl rand -hex 32 > secrets/db_password.txt
+          openssl rand -hex 32 > secrets/db_operator_password.txt
           chmod 700 secrets
           chmod 444 secrets/db_password.txt
+          chmod 444 secrets/db_operator_password.txt
+          age-keygen -o .build/backup-test-identity.txt
+          age-keygen -y .build/backup-test-identity.txt > secrets/backup-recipients.txt
       - run: docker compose build
-      - run: BSA_DISPOSABLE_TEST=yes bash deploy/smoke-test.sh
-      - name: Verify HTTPS proxy and secure cookie
+      - run: BSA_DISPOSABLE_TEST=yes BACKUP_IDENTITY_FILE="$(pwd)/.build/backup-test-identity.txt" bash deploy/smoke-test.sh
+      - name: Verify HTTPS proxy and Google-only cloud policy
         env:
           APP_DOMAIN: localhost
           ACME_EMAIL: smoke@example.test
         run: |
           docker compose --profile https up -d --wait --wait-timeout 180 caddy
           curl --retry 10 --retry-connrefused --retry-delay 2 -fk https://localhost/api/auth/status
-          curl -fk -D .build/tls-headers -c .build/tls-cookie -o /dev/null \
+          test "$(curl -sk -o /dev/null -w '%{http_code}' \
             -H 'Content-Type: application/json' \
             -d '{"username":"deployment-smoke","password":"Synthetic-test-only-42!"}' \
-            https://localhost/api/auth/login
-          grep -qi '^set-cookie:.*; secure' .build/tls-headers
-          curl -fk -b .build/tls-cookie -H 'Origin: https://localhost' \
-            -H 'Content-Type: application/json' \
-            -d '{"accountHolderName":"HTTPS synthetic","accountNumber":"0000000000","bankName":"HDFC"}' \
-            https://localhost/api/accounts
+            https://localhost/api/auth/login)" = 403
+          curl -fk https://localhost/api/auth/options | grep -q '"googleOnly":true'
       - if: failure()
         run: docker compose --profile https logs --tail=150
       - if: always()
@@ -70,9 +72,15 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - run: powershell -NoProfile -File Tests/DeploymentReuse/ssh-auth.ps1
+      - run: powershell -NoProfile -File Tests/DeploymentReuse/backup-key.ps1
+      - run: powershell -NoProfile -File Tests/DeploymentReuse/release-version.ps1
+      - run: powershell -NoProfile -File Tests/DeploymentReuse/ssh-launcher.ps1
+      - run: powershell -NoProfile -File Tests/DeploymentReuse/google-ssh.ps1
       - run: dotnet run --project Tests/GPayMatching -p:ValidationBuild=true
       - run: dotnet run --project Tests/SharedBills -p:ValidationBuild=true
       - run: dotnet run --project Tests/ImportReliability -p:ValidationBuild=true
+      - run: dotnet run --project Tests/SecurityAudit -p:ValidationBuild=true
   postgres:
     runs-on: ubuntu-latest
     services:

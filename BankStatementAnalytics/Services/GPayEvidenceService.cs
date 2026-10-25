@@ -1,3 +1,4 @@
+using Common.Framework.Deployment;
 using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -14,6 +15,8 @@ namespace BankStatementAnalytics.Services;
 
 public sealed partial class GPayEvidenceService
 {
+    public const long MaxArchiveBytes = 50_000_000;
+    public const long MaxExpandedBytes = 100_000_000;
     public static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     public static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     public static string Normalize(string? value) => Regex.Replace(value?.Trim() ?? "", @"\s+", " ").ToLowerInvariant();
@@ -36,18 +39,26 @@ public sealed partial class GPayEvidenceService
 
     public static GPayBundle Scan(byte[] bytes, string fileName)
     {
+        if (bytes.LongLength > MaxArchiveBytes) throw new ArgumentException("Takeout file exceeds 50 MB.");
         var bundle = new GPayBundle { FileName = Path.GetFileName(fileName), ArchiveHash = Convert.ToHexString(SHA256.HashData(bytes)) };
         if (bytes.Length > 250_000_000) throw new ArgumentException("Takeout file exceeds 250 MB.");
         if (fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) bundle.Files.Add(new("Group expenses/Group expenses.json", bytes.Length, Encoding.UTF8.GetString(bytes)));
         else if (fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) {
             using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+            if (archive.Entries.Count > 2000) throw new ArgumentException("Archive contains too many entries.");
             long total = 0;
             foreach (var entry in archive.Entries) {
+                var entryPath = entry.FullName.Replace('\\', '/');
+                if (entryPath.StartsWith('/') || entryPath.Contains(':') || entryPath.Split('/').Any(part => part == ".."))
+                    throw new ArgumentException("Archive contains an unsafe entry name.");
                 if (entry.FullName.EndsWith('/')) continue;
                 total += entry.Length;
-                if (total > 250_000_000 || entry.Length > 30_000_000) throw new ArgumentException("Expanded archive exceeds supported size limits.");
-                using var reader = new StreamReader(entry.Open(), Encoding.UTF8, true);
-                bundle.Files.Add(new(entry.FullName.Replace('\\', '/'), entry.Length, reader.ReadToEnd()));
+                if (total > MaxExpandedBytes || entry.Length > 10_000_000) throw new ArgumentException("Expanded archive exceeds supported size limits.");
+                if (!new[] { ".json", ".html", ".csv" }.Contains(Path.GetExtension(entryPath).ToLowerInvariant())) continue;
+                using var input = entry.Open();
+                var content = BoundedUpload.ReadAsync(input, 10_000_000).GetAwaiter().GetResult();
+                if (content.LongLength != entry.Length) throw new ArgumentException("Archive entry size is invalid.");
+                bundle.Files.Add(new(entryPath, content.LongLength, Encoding.UTF8.GetString(content)));
             }
         } else throw new ArgumentException("Select a Takeout ZIP or Group expenses JSON.");
         foreach (var file in bundle.Files) {

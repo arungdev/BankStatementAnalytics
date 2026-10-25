@@ -74,12 +74,16 @@ namespace BankStatementAnalytics.Services
                 }
 
                 // Entity deletes so the mapped cascades fire (UpiIds/Aliases, SubCategories).
+                session.CreateQuery("delete from RecurringBill where OwnerUserId = :id").SetParameter("id", userId).ExecuteUpdate();
                 foreach (var merchant in session.Query<Merchant>().Where(m => m.OwnerUserId == userId))
                     session.Delete(merchant);
                 foreach (var category in session.Query<Category>().Where(c => c.OwnerUserId == userId))
                     session.Delete(category);
 
-                foreach (var entity in new[] { nameof(Budget), nameof(Deposit), nameof(RecurringBill), nameof(Tag), nameof(Account) })
+                session.CreateQuery("delete from ExternalLogin where UserId = :id").SetParameter("id", userId).ExecuteUpdate();
+                foreach (var entity in new[] { nameof(GPaySettlementAllocation), nameof(SplitGroupMember), nameof(SplitGroup),
+                    nameof(BillGroupMember), nameof(BillGroup), nameof(GPayEvidenceRecord), nameof(TransactionSplit),
+                    nameof(CategorizationRule), nameof(SavingsGoal), nameof(Budget), nameof(Deposit), nameof(RecurringBill), nameof(Tag), nameof(Account) })
                     session.CreateQuery($"delete from {entity} where OwnerUserId = :id")
                         .SetParameter("id", userId).ExecuteUpdate();
 

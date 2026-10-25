@@ -1,3 +1,5 @@
+import { canEditWorkspace } from '../utils/workspacePermissions';
+import useAuthenticationOptions from '../hooks/useAuthenticationOptions';
 import AppearanceSettings from "../components/settings/AppearanceSettings";
 import ReminderSettings from "../components/settings/ReminderSettings";
 import PrivacySettings from "../components/settings/PrivacySettings";
@@ -187,7 +189,10 @@ export default function Settings() {
   } = useOutletContext() ?? {};
   const [searchParams, setSearchParams] = useSearchParams();
   const { selectedAccountId, setSelectedAccountId } = useAccount();
-  const { isAdmin } = useAuth();
+  const { isAdmin, role } = useAuth();
+  const canEdit = canEditWorkspace(role);
+  const authenticationOptions = useAuthenticationOptions();
+  const canManageServer = isAdmin && !authenticationOptions.cloudGoogleOnly;
   const { preference, setPreference, fontSize, setFontSize } = useTheme();
   const { maskAmounts, setMaskAmounts, maskNamesEnabled, setMaskNamesEnabled } = usePrivacy();
   const activeTab = searchParams.get('tab') || 'accounts';
@@ -306,7 +311,7 @@ export default function Settings() {
     () => localStorage.getItem('bsp_gpay_only_link_created_by_me') !== 'false'
   );
   const [gpayUserName, setGpayUserName] = useState(
-    () => localStorage.getItem('bsp_gpay_user_name') || 'ARUN G'
+    () => localStorage.getItem('bsp_gpay_user_name') || ''
   );
   const [namePickerOpen, setNamePickerOpen] = useState(false);
   const [namePickerSearch, setNamePickerSearch] = useState('');
@@ -327,7 +332,7 @@ export default function Settings() {
   const handleSaveGPayUserName = async (val) => {
     const trimmed = (val || '').trim();
     setGpayUserName(trimmed);
-    if (!gpayConfig?.profileId) localStorage.setItem('bsp_gpay_user_name', trimmed || 'ARUN G');
+    if (!gpayConfig?.profileId) localStorage.setItem('bsp_gpay_user_name', trimmed);
     try {
       const res = await updateGPayAutoImportConfig({ userName: trimmed }, gpayConfig?.profileId);
       setGpayConfig(res.data);
@@ -1156,11 +1161,11 @@ export default function Settings() {
 
   const renderUpdates = () => <UpdateSettings SettingCard={SettingCard} applyingUpdate={applyingUpdate} manualInstallation={manualInstallation} checkingUpdate={checkingUpdate} formatBytes={formatBytes} handleApplyUpdate={handleApplyUpdate} handleCancelDownload={handleCancelDownload} handleCheckUpdate={handleCheckUpdate} handleDownloadUpdate={handleDownloadUpdate} handleSaveFileDirectly={handleSaveFileDirectly} updateError={updateError} updateMessage={updateMessage} updateStatus={updateStatus} />;
 
-  const renderAccounts = () => <AccountSettings accounts={accounts} autoDraft={autoDraft} autoDrafts={autoDrafts} autoOpen={autoOpen} browse={browse} cardAccounts={cardAccounts} cardDraft={cardDraft} cardDrafts={cardDrafts} editAccountName={editAccountName} editingAccountId={editingAccountId} gpayAutoOpen={gpayAutoOpen} gpayConfig={gpayConfig} gpayDraftPath={gpayDraftPath} gpayMessage={gpayMessage} gpaySweeping={gpaySweeping} gpayUserName={gpayUserName} handleDeleteAccount={handleDeleteAccount} handleImportNow={handleImportNow} handleOpenNamePicker={handleOpenNamePicker} handleSaveAutoImport={handleSaveAutoImport} handleSaveCardSettings={handleSaveCardSettings} handleSaveGPayAutoImport={handleSaveGPayAutoImport} handleSaveGPayUserName={handleSaveGPayUserName} handleSweepGPay={handleSweepGPay} handleToggleAutoImport={handleToggleAutoImport} handleToggleGPayAutoImport={handleToggleGPayAutoImport} handleUpdateAccount={handleUpdateAccount} isAdmin={isAdmin} loadBrowse={loadBrowse} onlyLinkCreatedByMe={onlyLinkCreatedByMe} openBrowse={openBrowse} openBrowseGPay={openBrowseGPay} openHistory={openHistory} setAutoDraft={setAutoDraft} setAutoOpen={setAutoOpen} setBrowse={setBrowse} setCardDraft={setCardDraft} setCardDrafts={setCardDrafts} setEditAccountName={setEditAccountName} setEditingAccountId={setEditingAccountId} setGpayAutoOpen={setGpayAutoOpen} setGpayConfig={setGpayConfig} setGpayDraftPath={setGpayDraftPath} setGpayMessage={setGpayMessage} setGpayUserName={setGpayUserName} setOnlyLinkCreatedByMe={setOnlyLinkCreatedByMe} setParticipantList={setParticipantList} setShowPw={setShowPw} setSplitDisplayFilter={setSplitDisplayFilter} showPw={showPw} splitDisplayFilter={splitDisplayFilter} sweeping={sweeping} />;
+  const renderAccounts = () => <AccountSettings accounts={accounts} autoDraft={autoDraft} autoDrafts={autoDrafts} autoOpen={autoOpen} browse={browse} cardAccounts={cardAccounts} cardDraft={cardDraft} cardDrafts={cardDrafts} editAccountName={editAccountName} editingAccountId={editingAccountId} gpayAutoOpen={gpayAutoOpen} gpayConfig={gpayConfig} gpayDraftPath={gpayDraftPath} gpayMessage={gpayMessage} gpaySweeping={gpaySweeping} gpayUserName={gpayUserName} handleDeleteAccount={handleDeleteAccount} handleImportNow={handleImportNow} handleOpenNamePicker={handleOpenNamePicker} handleSaveAutoImport={handleSaveAutoImport} handleSaveCardSettings={handleSaveCardSettings} handleSaveGPayAutoImport={handleSaveGPayAutoImport} handleSaveGPayUserName={handleSaveGPayUserName} handleSweepGPay={handleSweepGPay} handleToggleAutoImport={handleToggleAutoImport} handleToggleGPayAutoImport={handleToggleGPayAutoImport} handleUpdateAccount={handleUpdateAccount} canEdit={canEdit} canManageServer={canManageServer} loadBrowse={loadBrowse} onlyLinkCreatedByMe={onlyLinkCreatedByMe} openBrowse={openBrowse} openBrowseGPay={openBrowseGPay} openHistory={openHistory} setAutoDraft={setAutoDraft} setAutoOpen={setAutoOpen} setBrowse={setBrowse} setCardDraft={setCardDraft} setCardDrafts={setCardDrafts} setEditAccountName={setEditAccountName} setEditingAccountId={setEditingAccountId} setGpayAutoOpen={setGpayAutoOpen} setGpayConfig={setGpayConfig} setGpayDraftPath={setGpayDraftPath} setGpayMessage={setGpayMessage} setGpayUserName={setGpayUserName} setOnlyLinkCreatedByMe={setOnlyLinkCreatedByMe} setParticipantList={setParticipantList} setShowPw={setShowPw} setSplitDisplayFilter={setSplitDisplayFilter} showPw={showPw} splitDisplayFilter={splitDisplayFilter} sweeping={sweeping} />;
 
-  const renderCategories = () => <CategorySettings activeSubCatInputId={activeSubCatInputId} categories={categories} editCatName={editCatName} editCatNameError={editCatNameError} editingCatId={editingCatId} handleAddCategory={handleAddCategory} handleAddSubCategory={handleAddSubCategory} handleDeleteCategory={handleDeleteCategory} handleDeleteSubCategory={handleDeleteSubCategory} handleUpdateCategory={handleUpdateCategory} isAdmin={isAdmin} newCatName={newCatName} newCatNameError={newCatNameError} newSubCatName={newSubCatName} newSubCatNameError={newSubCatNameError} setActiveSubCatInputId={setActiveSubCatInputId} setEditCatName={setEditCatName} setEditCatNameError={setEditCatNameError} setEditingCatId={setEditingCatId} setNewCatName={setNewCatName} setNewCatNameError={setNewCatNameError} setNewSubCatName={setNewSubCatName} setNewSubCatNameError={setNewSubCatNameError} />;
+  const renderCategories = () => <CategorySettings activeSubCatInputId={activeSubCatInputId} categories={categories} editCatName={editCatName} editCatNameError={editCatNameError} editingCatId={editingCatId} handleAddCategory={handleAddCategory} handleAddSubCategory={handleAddSubCategory} handleDeleteCategory={handleDeleteCategory} handleDeleteSubCategory={handleDeleteSubCategory} handleUpdateCategory={handleUpdateCategory} canEdit={canEdit} newCatName={newCatName} newCatNameError={newCatNameError} newSubCatName={newSubCatName} newSubCatNameError={newSubCatNameError} setActiveSubCatInputId={setActiveSubCatInputId} setEditCatName={setEditCatName} setEditCatNameError={setEditCatNameError} setEditingCatId={setEditingCatId} setNewCatName={setNewCatName} setNewCatNameError={setNewCatNameError} setNewSubCatName={setNewSubCatName} setNewSubCatNameError={setNewSubCatNameError} />;
 
-  const renderTags = () => <TagSettings editTagName={editTagName} editTagNameError={editTagNameError} editingTagId={editingTagId} handleAddTag={handleAddTag} handleDeleteTag={handleDeleteTag} handleUpdateTag={handleUpdateTag} isAdmin={isAdmin} newTagError={newTagError} newTagName={newTagName} setEditTagName={setEditTagName} setEditTagNameError={setEditTagNameError} setEditingTagId={setEditingTagId} setNewTagError={setNewTagError} setNewTagName={setNewTagName} tags={tags} />;
+  const renderTags = () => <TagSettings editTagName={editTagName} editTagNameError={editTagNameError} editingTagId={editingTagId} handleAddTag={handleAddTag} handleDeleteTag={handleDeleteTag} handleUpdateTag={handleUpdateTag} canEdit={canEdit} newTagError={newTagError} newTagName={newTagName} setEditTagName={setEditTagName} setEditTagNameError={setEditTagNameError} setEditingTagId={setEditingTagId} setNewTagError={setNewTagError} setNewTagName={setNewTagName} tags={tags} />;
 
   return (
     <div className="settings-page">
@@ -1302,7 +1307,7 @@ export default function Settings() {
                   <h1 className="settings-panel-title">{section.title}</h1>
                   <p className="settings-panel-sub">{section.subtitle}</p>
                 </div>
-                {activeTab === 'accounts' && isAdmin && (
+                {activeTab === 'accounts' && canEdit && (
                   <button className="btn primary small" onClick={() => openAddAccount?.()}>
                     <FiPlus size={15} /> Add account
                   </button>
@@ -1413,7 +1418,7 @@ export default function Settings() {
                     {h.status !== 'Success' && h.error && (
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{h.error}</div>
                     )}
-                    {h.status !== 'Success' && isAdmin && (
+                    {h.status !== 'Success' && canManageServer && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                         <input
                           type="password"

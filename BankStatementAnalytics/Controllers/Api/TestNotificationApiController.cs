@@ -24,7 +24,6 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // GET/POST: api/test/notification — create a sample reminder due today.
         // GET is allowed too so you can trigger it by just visiting the URL in the browser.
-        [HttpGet("notification")]
         [HttpPost("notification")]
         public async Task<IActionResult> SeedNotification()
         {

@@ -1,4 +1,6 @@
+import { canEditWorkspace } from '../utils/workspacePermissions';
 import useAsyncResource from '../hooks/useAsyncResource';
+import useAuthenticationOptions from '../hooks/useAuthenticationOptions';
 import RequestError from '../components/RequestError';
 import ImportWarnings from '../components/ImportWarnings';
 import PaginatedTable from '../components/PaginatedTable';
@@ -11,7 +13,9 @@ import api from "../api/client";
 import { FiUploadCloud, FiFileText, FiTrash2, FiCheckCircle, FiAlertCircle, FiRotateCcw, FiHelpCircle } from "react-icons/fi";
 
 export default function UploadStatement({ onUploaded, showHistory = true, accountId } = {}) {
-  const { isAdmin } = useAuth();
+  const { role } = useAuth();
+  const canEdit = canEditWorkspace(role);
+  const authenticationOptions = useAuthenticationOptions();
   const [accountDraft, setSelectedAccount] = useState("");
   const [file, setFile]                   = useState(null);
   const [password, setPassword]           = useState("");
@@ -147,6 +151,9 @@ export default function UploadStatement({ onUploaded, showHistory = true, accoun
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <h1 style={{ marginBottom: 0 }}>Upload Statement</h1>
       </div>
+      {authenticationOptions.retainOriginalUploads === false && <p className="text-muted">
+        Your statement is processed in memory. Transactions and import history are saved; the original file is not retained.
+      </p>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
         {/* Upload Form Card */}
@@ -298,8 +305,8 @@ export default function UploadStatement({ onUploaded, showHistory = true, accoun
               <button
                 className="btn primary"
                 type="submit"
-                disabled={loading || !file || loadingFormats || !!formatsError || !selectedAccount || !isAdmin}
-                title={isAdmin ? undefined : "Viewers cannot upload statements"}
+                disabled={loading || !file || loadingFormats || !!formatsError || !selectedAccount || !canEdit}
+                title={canEdit ? undefined : "Viewers cannot upload statements"}
                 style={{ flex: 1, padding: '12px', fontSize: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
               >
                 {loading ? <span className="spinner" style={{ width: '16px', height: '16px', borderTopColor: '#fff', borderRightColor: '#fff' }}></span> : <FiUploadCloud size={18} />}
@@ -342,7 +349,7 @@ export default function UploadStatement({ onUploaded, showHistory = true, accoun
                       </td>
                       <td><Badge variant="blue">{u.transactionCount}</Badge><ImportWarnings warnings={u.response?.warnings} uploadId={u.id} accountId={u.accountId} /></td>
                       <td style={{ textAlign: 'right' }}>
-                        {isAdmin && (
+                        {canEdit && (
                           <button
                             className="btn danger small"
                             disabled={u.response?.importStatus === 'Pending'}

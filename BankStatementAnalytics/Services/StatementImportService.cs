@@ -57,6 +57,10 @@ namespace BankStatementAnalytics.Services
             var ext = Path.GetExtension(fileName).ToLowerInvariant();
             if (ext != ".txt" && ext != ".csv" && ext != ".pdf")
                 return Invalid("Only TXT, CSV and PDF files are supported.");
+            if (ext == ".pdf" && bytes.AsSpan(0, Math.Min(bytes.Length, 1024)).IndexOf("%PDF-"u8) < 0)
+                return Invalid("The file content is not a PDF.");
+            if (ext != ".pdf" && bytes.Length >= 2 && (bytes[0] == 'M' && bytes[1] == 'Z' || bytes[0] == 'P' && bytes[1] == 'K'))
+                return Invalid("Binary files are not supported as text statements.");
 
             var accountId = (int)account.Id;
             using var accountGate = await ImportAccountGate.AcquireAsync(account.Id);
@@ -97,10 +101,11 @@ namespace BankStatementAnalytics.Services
 
             var accountFolder = UploadStorage.AccountFolderName(account);
             var folder = Path.Combine(UploadStorage.Root, accountFolder);
-            Directory.CreateDirectory(folder);
+            var retainOriginal = !SecurityRuntime.PublicHosting;
+            if (retainOriginal) Directory.CreateDirectory(folder);
 
-            var storedName = $"{accountFolder}/{Guid.NewGuid()}{ext}";
-            var path = UploadStorage.ResolvePath(storedName);
+            var storedName = retainOriginal ? $"{accountFolder}/{Guid.NewGuid()}{ext}" : "";
+            var path = retainOriginal ? UploadStorage.ResolvePath(storedName) : "";
 
             var uploadId = Guid.NewGuid();
             var upload = new Upload
@@ -109,7 +114,7 @@ namespace BankStatementAnalytics.Services
                 FileName = fileName,
                 StoredName = storedName,
                 AccountId = accountId,
-                Path = $"/Uploads/{storedName}",
+                Path = retainOriginal ? $"/Uploads/{storedName}" : "",
                 UploadedAt = DateTime.UtcNow,
                 FileHash = fileHash,
                 AutoImported = autoImported ? true : null,
@@ -155,8 +160,8 @@ namespace BankStatementAnalytics.Services
             };
             try
             {
-                await File.WriteAllBytesAsync(path, bytes);
-                var prepared = await _textService.PrepareAsync(path, accountId, upload.Id, format, password);
+                if (retainOriginal) await File.WriteAllBytesAsync(path, bytes);
+                var prepared = _textService.Prepare(bytes, fileName, accountId, upload.Id, format, password);
                 using var session = DbHelper.GetSession();
                 using var import = session.BeginTransaction();
                 // Serialize overlapping statements for this account; otherwise

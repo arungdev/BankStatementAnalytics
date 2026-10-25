@@ -17,8 +17,13 @@ using System;
 using System.IO;
 using System.Threading;
 using Common.Framework.Deployment;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 
 ContainerHosting.LoadDatabasePasswordFile();
+var googleSecretFile = Environment.GetEnvironmentVariable("Authentication__Google__ClientSecretFile");
+if (!string.IsNullOrWhiteSpace(googleSecretFile))
+    Environment.SetEnvironmentVariable("Authentication__Google__ClientSecret", File.ReadAllText(googleSecretFile).TrimEnd('\r', '\n'));
 
 // Resolve the true executable directory up front. For a single-file, self-extracting exe -
 // especially when run as a Windows service - the host's content root and AppContext.BaseDirectory
@@ -54,6 +59,8 @@ if (!string.IsNullOrWhiteSpace(configuredUrls) && string.IsNullOrEmpty(Environme
     Environment.SetEnvironmentVariable("ASPNETCORE_URLS", configuredUrls);
 
 var builder = WebApplication.CreateBuilder(args);
+SecurityRuntime.Configure(builder.Configuration);
+AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
 
 // Run as a Windows service when launched by the SCM (see Installer/install-service.bat).
 // This is a no-op when the exe is started interactively, so the desktop shortcut still works.
@@ -90,7 +97,14 @@ catch (UnauthorizedAccessException ex)
     Log.Info($"Could not create global installer mutex (continuing without it): {ex.Message}");
 }
 // MVC
-builder.Services.AddControllersWithViews();
+builder.Services.AddScoped<SecurityBoundaryFilter>();
+builder.Services.AddControllersWithViews(options => options.Filters.AddService<SecurityBoundaryFilter>());
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 51_000_000;
+    options.MemoryBufferThreshold = 51_000_000; // no temporary upload files on the server
+    options.ValueLengthLimit = 1_000_000;
+});
 
 // NHibernate + embedded PostgreSQL init. Registered as a hosted service (and first, so it runs
 // before the watch-folder sweeps) instead of being done inline after builder.Build() - see
@@ -159,6 +173,7 @@ foreach (var config in BankParserRegistry.Parsers)
 // Defined once, reused by both CORS and the RBAC/CSRF origin check below.
 var allowedOrigins = new[]
 {
+    "http://localhost:5007",
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:5175",
@@ -177,10 +192,7 @@ builder.Services.AddCors(options =>
         // Loopback origins and predefined origins are always accepted.
         // Private-LAN origins (e.g. http://10.97.213.230:5007 or phone IP) are accepted
         // whenever local network access is enabled in Settings.
-        policy.SetIsOriginAllowed(o =>
-            (Uri.TryCreate(o, UriKind.Absolute, out var u) && u.IsLoopback)
-            || allowedOrigins.Contains(o)
-            || networkAccessService.IsOriginAllowed(o));
+        policy.SetIsOriginAllowed(o => builder.Environment.IsDevelopment() && allowedOrigins.Contains(o));
     });
 });
 builder.Services.AddControllers()
@@ -194,11 +206,24 @@ builder.Services.AddControllers()
 // keys persisted next to the DB (survives single-file extraction and app restarts).
 var keysDirectory = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Data", "Keys");
 builder.Services.AddCookieSessionAuth(builder.Environment, keysDirectory, cookieName: "BankStatementAnalytics.Auth");
-builder.Services.AddAuthRateLimiting();
+builder.Services.AddSecureSessions(Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Sessions"));
+builder.Services.AddGoogleSignIn(builder.Configuration);
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = 429;
+    options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+        { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        !context.Request.Path.StartsWithSegments("/api") ? RateLimitPartition.GetNoLimiter("static") :
+        RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 
 var app = builder.Build();
 
 app.UseConfiguredProxy(app.Configuration);
+app.UseStrictApiOrigins(allowedOrigins, app.Environment.IsDevelopment());
 app.UseLocalReadiness(async cancellationToken =>
 {
     using var session = NHibernateHelper.SessionFactory.OpenStatelessSession();
@@ -263,8 +288,8 @@ app.UseRoleGate(options =>
 {
     options.FullAccessRoles = new[] { nameof(AppRole.Admin), nameof(AppRole.User) };
     options.AllowedOrigins = allowedOrigins;
-    options.AllowLoopbackOrigins = true;
-    options.IsOriginAllowed = origin => networkAccessService.IsOriginAllowed(origin);
+    options.AllowLoopbackOrigins = app.Environment.IsDevelopment();
+    options.IsOriginAllowed = origin => app.Environment.IsDevelopment() && allowedOrigins.Contains(origin);
 });
 
 app.UseAuthorization();

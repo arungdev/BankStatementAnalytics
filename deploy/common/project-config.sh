@@ -11,7 +11,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     key="${BASH_REMATCH[1]}"
     value="${BASH_REMATCH[2]}"
     case "$key" in
-        DEPLOY_IMAGE|DEPLOY_VERSION|DEPLOY_DIRECTORY|APP_SERVICE|DB_SERVICE|DB_NAME|DB_USER|APP_HOST_PORT|DATA_ROOT|DATA_DIRECTORIES|HEALTH_URL|HTTPS_PROFILE|SUPPORTED_ARCH)
+        DEPLOY_IMAGE|DEPLOY_VERSION|DEPLOY_DIRECTORY|APP_SERVICE|DB_SERVICE|DB_NAME|DB_USER|DB_OPERATOR_USER|SESSION_DIRECTORY|BACKUP_RECIPIENTS_FILE|REQUIRE_BACKUP_ENCRYPTION|APP_HOST_PORT|DATA_ROOT|DATA_DIRECTORIES|HEALTH_URL|SETUP_STATUS_URL|HTTPS_PROFILE|SUPPORTED_ARCH)
             printf -v "$key" '%s' "$value" ;;
         *) echo "Unknown project setting: $key" >&2; exit 2 ;;
     esac
@@ -30,3 +30,5 @@ done
 if [[ -n "${DB_SERVICE:-}" ]]; then
     [[ "$DB_SERVICE" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ && "${DB_NAME:-}" =~ ^[a-zA-Z0-9_]+$ && "${DB_USER:-}" =~ ^[a-zA-Z0-9_]+$ ]]
 fi
+if [[ -n "${DB_OPERATOR_USER:-}" ]]; then [[ "$DB_OPERATOR_USER" =~ ^[a-zA-Z0-9_]+$ ]]; fi
+if [[ -n "${SESSION_DIRECTORY:-}" ]]; then [[ "$SESSION_DIRECTORY" =~ ^(/[a-zA-Z0-9_-]+)+$ ]]; fi

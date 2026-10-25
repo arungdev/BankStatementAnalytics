@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AuthError, AuthField, AuthPasswordField, AuthShell, AuthSubmit, useAuth } from "@common/client";
+import { apiErrorMessage } from '../utils/apiError';
+import useAuthenticationOptions from '../hooks/useAuthenticationOptions';
 
 export default function Setup() {
   const { needsSetup, register } = useAuth();
+  const options = useAuthenticationOptions();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -14,6 +17,10 @@ export default function Setup() {
     e.preventDefault();
     setError('');
 
+    if (password.length < 15 || password.length > 128) {
+      setError('Use a password with 15–128 characters.');
+      return;
+    }
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
       return;
@@ -21,14 +28,23 @@ export default function Setup() {
 
     setSubmitting(true);
     try {
-      await register(username, password);
+      if (needsSetup) {
+        const { default: api } = await import('../api/client');
+        await api.post('/auth/setup', { username, password });
+        window.location.assign('/');
+      } else await register(username, password);
     } catch (err) {
-      setError(err.response?.data || 'Could not create the account.');
+      setError(apiErrorMessage(err, 'Could not create the account.'));
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (!needsSetup && !options.allowRegistration) {
+    return <AuthShell title="Account access" subtitle="Contact your administrator to create an account or reset a password." logo={<img src="/icon-192.png" alt="Bank Analytics" />}>
+      <Link to="/login">Return to sign in</Link>
+    </AuthShell>;
+  }
   return (
     <AuthShell
       title={needsSetup ? 'Welcome' : 'Create account'}

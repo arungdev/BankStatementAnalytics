@@ -7,6 +7,7 @@ Client/dist/
 Common.Client/
 BankStatementAnalytics/wwwroot/
 Publish/
+Setup/
 .git/
 .vs/
 .vscode/
@@ -32,3 +33,6 @@ cookies.txt
 splits_*
 *.csv
 *.sql
+
+.local-analysis/
+.local-docker/

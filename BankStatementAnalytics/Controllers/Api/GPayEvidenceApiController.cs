@@ -1,3 +1,4 @@
+using Common.Framework.Deployment;
 using BankStatementAnalytics.Services;
 using Common.Framework.Web;
 using Microsoft.AspNetCore.Mvc;
@@ -31,8 +32,10 @@ public class GPayEvidenceApiController : TenantControllerBase
     [HttpPost("preview-upload")][RequestSizeLimit(250_000_000)]
     public async Task<IActionResult> PreviewUpload(IFormFile file) {
         try {
-            using var memory=new MemoryStream();await file.CopyToAsync(memory);
-            return Ok(await _service.Preview(CurrentUserId,GPayEvidenceService.Scan(memory.ToArray(),file.FileName)));
+            if (file == null || file.Length == 0) return BadRequest(new { message = "Select a file." });
+            await using var stream = file.OpenReadStream();
+            var bytes = await BoundedUpload.ReadAsync(stream, GPayEvidenceService.MaxArchiveBytes, HttpContext.RequestAborted);
+            return Ok(await _service.Preview(CurrentUserId,GPayEvidenceService.Scan(bytes,file.FileName)));
         } catch(Exception ex) when(ex is ArgumentException or FormatException or System.IO.InvalidDataException){return BadRequest(new {message=ex.Message});}
     }
     [HttpGet("candidates")]

@@ -2,22 +2,37 @@ import { useState, useEffect } from 'react';
 import { FiEye, FiEyeOff, FiUserPlus, FiSlash, FiTrash2, FiRotateCcw } from 'react-icons/fi';
 import api from '../api/client';
 import { Badge, useAuth } from "@common/client";
+import useAuthenticationOptions from '../hooks/useAuthenticationOptions';
+import { apiErrorMessage } from '../utils/apiError';
 
 export default function ProfileSettings() {
   const { username, role, isAdmin } = useAuth();
+  const options = useAuthenticationOptions();
+  const [googleProfile, setGoogleProfile] = useState(null);
+  useEffect(() => {
+    if (options.googleOnly) api.get('/auth/google/profile').then(({ data }) => setGoogleProfile(data)).catch(() => {});
+  }, [options.googleOnly]);
+  if (options.loading) return <p>Loading profile…</p>;
 
   return (
     <div className="profile-groups">
       <section className="profile-group">
         <h2 className="profile-group-title">Account</h2>
-        <IdentityCard username={username} role={role} />
-        <ChangePasswordCard />
+        <IdentityCard username={googleProfile?.displayName || username} role={role} />
+        {options.googleOnly && <p>{googleProfile?.email} · Signed in with Google</p>}
+        {!options.googleOnly && <ChangePasswordCard />}
+        {options.google && !options.cloudGoogleOnly && <form method="post" action="/api/auth/google/link" className="settings-row">
+          <div className="settings-row-main"><h3 className="settings-row-title">Google sign-in</h3>
+            <p className="settings-row-sub">Link Google to this account. Sign in again first if your session is older than ten minutes.</p>
+            <button className="btn btn-secondary" type="submit">Link Google account</button>
+          </div>
+        </form>}
       </section>
 
       {isAdmin && (
         <section className="profile-group">
           <h2 className="profile-group-title">Users</h2>
-          <UserManagementCard currentUsername={username} />
+          <UserManagementCard currentUsername={username} googleOnly={options.googleOnly} />
         </section>
       )}
     </div>
@@ -77,7 +92,7 @@ function ChangePasswordCard() {
       close();
       setMessage({ type: 'success', text: 'Password updated.' });
     } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data || 'Could not change password.' });
+      setMessage({ type: 'error', text: apiErrorMessage(err, 'Could not change password.') });
     } finally {
       setSaving(false);
     }
@@ -167,7 +182,7 @@ function PasswordField({ label, value, reveal, onChange }) {
   );
 }
 
-function UserManagementCard({ currentUsername }) {
+function UserManagementCard({ currentUsername, googleOnly = false }) {
   const [users, setUsers] = useState([]);
   const [adding, setAdding] = useState(false);
   const [newUsername, setNewUsername] = useState('');
@@ -197,7 +212,7 @@ function UserManagementCard({ currentUsername }) {
       closeAdd();
       fetchUsers();
     } catch (err) {
-      setError(err.response?.data || 'Could not create user.');
+      setError(apiErrorMessage(err, 'Could not create user.'));
     }
   };
 
@@ -207,7 +222,7 @@ function UserManagementCard({ currentUsername }) {
       await action();
       fetchUsers();
     } catch (err) {
-      setError(err.response?.data || 'Could not update the user.');
+      setError(apiErrorMessage(err, 'Could not update the user.'));
     }
   };
 
@@ -270,12 +285,12 @@ function UserManagementCard({ currentUsername }) {
           <div className="settings-empty">
             <FiUserPlus size={32} />
             <div className="settings-empty-title">No other users yet</div>
-            <div className="settings-empty-sub">Add a user below to give someone their own login.</div>
+            <div className="settings-empty-sub">{googleOnly ? 'Other users appear after signing up with Google.' : 'Add a user below to give someone their own login.'}</div>
           </div>
         )}
       </div>
 
-      {adding ? (
+      {!googleOnly && (adding ? (
         <div className="settings-add-card" style={{ marginTop: 'var(--space-4)', marginBottom: 0 }}>
           <label className="settings-add-card-label">Add a user</label>
           <form onSubmit={createUser} className="settings-add-row" style={{ flexWrap: 'wrap' }}>
@@ -319,7 +334,7 @@ function UserManagementCard({ currentUsername }) {
         >
           <FiUserPlus size={15} /> Add a user
         </button>
-      )}
+      ))}
     </>
   );
 }

@@ -9,6 +9,10 @@ reuse it for another application. Refresh from source with
 `./scripts/verify-common-deployment.ps1`, and create the end-user ZIP with
 `./scripts/package-deployment.ps1`.
 
+The end-user ZIP contains only deployment scripts, Compose/proxy settings and
+instructions. C# shared-source modules, build/publish tools, development manifests
+and test scripts are excluded; users download the compiled application image.
+
 This repository is **BankStatementAnalytics**, including bills and shared bills,
 not a separately named Billing Application. It targets .NET 10 and React/Vite;
 NHibernate uses PostgreSQL. Windows development and the embedded Windows database
@@ -38,13 +42,36 @@ domain, and certificate email. Keep the BAT file, `docker-compose.yml`, and the
 `deploy/` directory together. Windows OpenSSH Client must be installed; the Ubuntu
 account needs sudo access. SSH handles passwords or keys normally; the launcher
 does not store them or disable host-key verification.
+Existing SSH keys are reused. Otherwise, one password login installs a temporary
+deployment key that is removed afterwards, avoiding repeated login prompts for
+uploads and setup. A sudo password can still be requested separately.
 
 The launcher installs Docker on Ubuntu when absent, pulls
 `arungs125/bankstatementanalytics:3.1.0-linux-1da6c7b`, generates a database secret
-on the server, and starts the private application. It then shows the SSH tunnel
-command for first-admin setup. Type ENABLE only after creating the administrator
-to start Caddy HTTPS. DNS must already point to the server, and the provider
+on the server, and starts the private application. It automatically opens a local
+SSH tunnel and shows the address for first-admin setup. Keep the deployment window
+open while setting up. If port 18080 is occupied, a free local port is selected.
+HTTPS is enabled automatically after the administrator exists; there is no ENABLE
+prompt. Existing installations enable HTTPS immediately. DNS must already point to the server, and the provider
 firewall must allow TCP 80/443. The launcher does not change firewall rules.
+
+If the application is already deployed and only HTTPS needs starting, run
+`enable-https.bat`, or `deploy-ssh.bat -EnableHttpsOnly -Server ubuntu@YOUR_SERVER`.
+This runs the existing server's Compose HTTPS command without redeploying the app.
+
+For deployment while the custom image is unavailable on Docker Hub, distribute an
+offline ZIP containing `application-image.tar`. The launcher automatically uploads
+that archive and Ubuntu loads the expected image tag instead of pulling it. Public
+PostgreSQL and Caddy images still download normally. Create this ZIP on the publisher's
+Windows computer with:
+
+```powershell
+docker save -o .\Setup\application-image.tar arungs125/bankstatementanalytics:3.1.0-linux-1da6c7b
+.\scripts\package-deployment.ps1 -Destination .\Setup\BankStatementAnalytics-SSH-Deploy.zip -ImageArchive .\Setup\application-image.tar
+```
+
+Extract a newly downloaded ZIP into a fresh directory so older launcher files do
+not remain. Keep `application-image.tar` alongside `deploy-ssh.bat` for retries.
 
 For a custom SSH port or release tag, run from PowerShell:
 

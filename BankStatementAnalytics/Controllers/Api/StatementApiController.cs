@@ -1,3 +1,4 @@
+using Common.Framework.Deployment;
 using System.Collections.Generic;
 using BankStatementAnalytics.EnumClass;
 using BankStatementAnalytics.Models;
@@ -529,12 +530,8 @@ namespace BankStatementAnalytics.Controllers.Api
             if (file.Length > StatementImportService.MaxFileBytes)
                 return BadRequest("Statement exceeds the 25 MB limit.");
 
-            byte[] bytes;
-            using (var ms = new MemoryStream())
-            {
-                await file.CopyToAsync(ms);
-                bytes = ms.ToArray();
-            }
+            await using var stream = file.OpenReadStream();
+            var bytes = await BoundedUpload.ReadAsync(stream, StatementImportService.MaxFileBytes, HttpContext.RequestAborted);
 
             var result = await _importer.ImportAsync(account, bytes, file.FileName, password, autoImported: false);
 

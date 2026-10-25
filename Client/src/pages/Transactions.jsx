@@ -1,3 +1,4 @@
+import { canEditWorkspace } from '../utils/workspacePermissions';
 import useAsyncResource from '../hooks/useAsyncResource';
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useOutletContext, useSearchParams, useNavigate } from "react-router-dom";
@@ -47,7 +48,8 @@ const T = {
 
 
 export default function Transactions() {
-  const { isAdmin } = useAuth();
+  const { role } = useAuth();
+  const canEdit = canEditWorkspace(role);
   const { selectedAccountId } = useAccount();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -694,7 +696,7 @@ export default function Transactions() {
       <style>{`
         .tx-row {
           display: grid;
-          grid-template-columns: ${isAdmin ? '36px ' : ''}76px minmax(0,1fr) 168px 128px;
+          grid-template-columns: ${canEdit ? '36px ' : ''}76px minmax(0,1fr) 168px 128px;
           align-items: center;
           gap: 16px;
           padding: 13px 20px;
@@ -718,7 +720,7 @@ export default function Transactions() {
         }
         .tx-head {
           display: grid;
-          grid-template-columns: ${isAdmin ? '36px ' : ''}76px minmax(0,1fr) 168px 128px;
+          grid-template-columns: ${canEdit ? '36px ' : ''}76px minmax(0,1fr) 168px 128px;
           gap: 16px;
           padding: 12px 20px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
@@ -827,7 +829,7 @@ export default function Transactions() {
         }
         .tx-bulk-tag:focus { border-color: ${T.indigo}; }
         @media (max-width: 800px) {
-          .tx-row, .tx-head { grid-template-columns: ${isAdmin ? '36px ' : ''}60px minmax(0,1fr) 110px; }
+          .tx-row, .tx-head { grid-template-columns: ${canEdit ? '36px ' : ''}60px minmax(0,1fr) 110px; }
           .tx-col-cat { display: none; }
         }
         @media (max-width: 640px) {
@@ -876,7 +878,7 @@ export default function Transactions() {
             display: flex !important;
             align-items: center !important;
             gap: 8px !important;
-            padding-left: ${isAdmin ? '28px' : '0'} !important;
+            padding-left: ${canEdit ? '28px' : '0'} !important;
             margin-top: 2px !important;
           }
         }
@@ -931,7 +933,7 @@ export default function Transactions() {
       </div>
 
       {/* ── Bulk action bar — only while something is selected ────────────── */}
-      {isAdmin && selectedIds.size > 0 && (
+      {canEdit && selectedIds.size > 0 && (
         <div className="tx-bulkbar">
           <span className="tx-bulk-count">{selectedIds.size} selected</span>
 
@@ -995,7 +997,7 @@ export default function Transactions() {
         borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
       }}>
         <div className="tx-head">
-          {isAdmin && (
+          {canEdit && (
             <label
               className="tx-check-cell"
               title={allOnPageSelected ? 'Clear this page' : 'Select every transaction on this page'}
@@ -1208,7 +1210,7 @@ export default function Transactions() {
                   className={`tx-row${selectedTx && txKey(selectedTx) === rowKey ? ' selected' : ''}${isChecked ? ' checked' : ''}`}
                   onClick={() => { closeUploadHistory(); setSelectedTx(t); }}
                 >
-                  {isAdmin && (
+                  {canEdit && (
                     <label
                       className="tx-check-cell"
                       onClick={(e) => e.stopPropagation()}
@@ -1286,7 +1288,7 @@ export default function Transactions() {
                           </span>
                         ))}
                         {rowTags.length > 2 && <span style={{ fontSize: '11px', color: T.faint }}>+{rowTags.length - 2}</span>}
-                        {isAdmin && (
+                        {canEdit && (
                           <TagPicker
                             variant="chip"
                             tags={tags}
@@ -1367,7 +1369,7 @@ export default function Transactions() {
                         categories={categories}
                         frequentCategories={frequentCategories}
                         onChange={(val) => handleCategoryChange(t, val)}
-                        onCreate={isAdmin ? (name) => handleCreateCategory(t, name) : undefined}
+                        onCreate={canEdit ? (name) => handleCreateCategory(t, name) : undefined}
                         size="sm"
                       />
                     )}
@@ -1550,8 +1552,8 @@ export default function Transactions() {
                       categories={categories}
                       frequentCategories={frequentCategories}
                       onChange={(val) => handleCategoryChange(selectedTx, val)}
-                      onCreate={isAdmin ? (name) => handleCreateCategory(selectedTx, name) : undefined}
-                      disabled={!isAdmin}
+                      onCreate={canEdit ? (name) => handleCreateCategory(selectedTx, name) : undefined}
+                      disabled={!canEdit}
                       size="md"
                     />
                   </div>
@@ -1561,7 +1563,7 @@ export default function Transactions() {
               <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Tags</div>
-                  {isAdmin && (
+                  {canEdit && (
                     <button
                       type="button"
                       className="btn small"
@@ -1577,13 +1579,13 @@ export default function Transactions() {
                   {(selectedTx.tags || []).map(tag => (
                     <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: 'var(--primary-light)', color: 'var(--primary)', padding: '3px 8px', borderRadius: 'var(--radius-full)', fontSize: '12px', fontWeight: 600 }}>
                       #{tag}
-                      {isAdmin && (
+                      {canEdit && (
                         <span onClick={() => handleRemoveTag(tag)} style={{ cursor: 'pointer', color: 'var(--primary)', opacity: 0.6, fontWeight: 700, fontSize: '14px', lineHeight: 1 }}>×</span>
                       )}
                     </span>
                   ))}
                 </div>
-                {isAdmin && (
+                {canEdit && (
                   <div style={{ marginTop: '8px' }}>
                     <TagPicker
                       tags={tags}
@@ -1592,7 +1594,7 @@ export default function Transactions() {
                       onSelect={handleSelectTag}
                       onCreate={(name) => handleCreateTag(name, selectedTx)}
                       onManage={() => setManageTagsModalOpen(true)}
-                      disabled={!isAdmin}
+                      disabled={!canEdit}
                       size="md"
                     />
                   </div>
@@ -1601,7 +1603,7 @@ export default function Transactions() {
 
               <div style={{ gridColumn: 'span 2' }}>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Note</div>
-                {isAdmin ? (
+                {canEdit ? (
                   <textarea
                     key={selectedTx.id}
                     defaultValue={getPersonalTransactionNote(selectedTx.note)}
@@ -1680,7 +1682,7 @@ export default function Transactions() {
                               <Badge variant="green">0 new</Badge>
                             )}
                             {upload.autoImported && <Badge variant="purple">Auto</Badge>}
-                            {isAdmin && (
+                            {canEdit && (
                               <button className="btn danger small" onClick={() => handleRevert(upload)}>
                                 <FiRotateCcw size={12} /> Revert
                               </button>
@@ -1718,7 +1720,7 @@ export default function Transactions() {
                           {fail.error && (
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{fail.error}</div>
                           )}
-                          {isAdmin && (
+                          {canEdit && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                               <input
                                 type="password"

@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.Extensions.Configuration;
 using System.Data.Common;
 using System.Data.SQLite;
 using BankStatementAnalytics.EnumClass;
@@ -203,4 +204,86 @@ using (var cancelledSearch = new CancellationTokenSource()) {
     try { await searchController.Search("CARD-", cancelledSearch.Token); throw new Exception("cancelled search continued"); }
     catch (OperationCanceledException) { Check(true, "cancelled search stops database work"); }
 }
+SecurityRuntime.Configure(new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+    .AddInMemoryCollection(new Dictionary<string, string?> { ["Deployment:PublicHosting"] = "true" }).Build());
+var originalsBefore = Directory.Exists(UploadStorage.Root)
+    ? Directory.GetFiles(UploadStorage.Root, "*", SearchOption.AllDirectories).Order().ToArray() : Array.Empty<string>();
+var cloudBytes = Encoding.UTF8.GetBytes(header + "04/10/26,UPI-CLOUD-TESTBANK-123456789099,04/10/26,10.00,,CLOUD1,890.00\n");
+var cloud = await importer.ImportAsync(account, cloudBytes, "cloud-synthetic.txt", null, false);
+Check(cloud.Outcome == ImportOutcome.Success && cloud.NewCount == 1, "cloud imports still commit financial records");
+Check(cloud.Upload is { StoredName: "", Path: "", ImportStatus: "Complete" }, "cloud history contains no original-file location");
+var originalsAfter = Directory.Exists(UploadStorage.Root)
+    ? Directory.GetFiles(UploadStorage.Root, "*", SearchOption.AllDirectories).Order().ToArray() : Array.Empty<string>();
+Check(originalsBefore.SequenceEqual(originalsAfter), "cloud upload writes no original file to storage");
+Check((await importer.ImportAsync(other, cloudBytes, "same-cloud.txt", null, false)).Outcome == ImportOutcome.Success,
+    "different users can independently import identical statements");
+Check((await importer.ImportAsync(account, cloudBytes, "renamed-cloud.txt", null, false)).Outcome == ImportOutcome.Duplicate,
+    "cloud deduplication remains scoped to the owning account");
+Check((await importer.ImportAsync(account, "MZsynthetic"u8.ToArray(), "fake.csv", null, false)).Outcome == ImportOutcome.InvalidFile,
+    "executable signature cannot masquerade as a text statement");
+Check((await importer.ImportAsync(account, "not a PDF"u8.ToArray(), "fake.pdf", null, false)).Outcome == ImportOutcome.InvalidFile,
+    "PDF extension requires PDF content");
+var gpay = new GPayTakeoutService();
+await gpay.UpdateAutoImportConfigAsync(101, new UpdateGPayAutoImportRequest { UserName = "Synthetic Alice", BankAccountIds = [account.Id] });
+await gpay.UpdateAutoImportConfigAsync(202, new UpdateGPayAutoImportRequest { UserName = "Synthetic Bob", BankAccountIds = [other.Id] });
+Check((await gpay.GetAutoImportConfigAsync(101)).UserName == "Synthetic Alice" &&
+    (await gpay.GetAutoImportConfigAsync(202)).UserName == "Synthetic Bob", "GPay primary configuration is isolated per user");
+try { await gpay.UpdateAutoImportConfigAsync(101, new UpdateGPayAutoImportRequest { BankAccountIds = [other.Id] }); throw new Exception("cross-user GPay account accepted"); }
+catch (ArgumentException) { Check(true, "GPay configuration rejects another user's bank account"); }
+try { await gpay.UpdateAutoImportConfigAsync(101, new UpdateGPayAutoImportRequest { WatchEnabled = true, WatchFolderPath = scratch }); throw new Exception("cloud watch folder accepted"); }
+catch (ArgumentException) { Check(true, "cloud GPay configuration rejects server watch folders"); }
+var googleIdentities = new GoogleIdentityService();
+var firstGoogle = await googleIdentities.SignInCloudAsync("visitor-first", "visitor@example.invalid", "Visitor");
+Check(firstGoogle.Role == AppRole.User, "the first Google visitor can sign up without an owner and receives only a regular role");
+var nextGoogle = await googleIdentities.SignInCloudAsync("next-subject", "next@example.invalid", "Next");
+Check(nextGoogle.Role == AppRole.User, "later Google signups never become administrators");
+var googleAlice = await googleIdentities.SignInCloudAsync("alice-subject", "alice@example.invalid", "Alice");
+var googleBob = await googleIdentities.SignInCloudAsync("bob-subject", "bob@example.invalid", "Bob");
+Check(googleAlice.Id != googleBob.Id && googleAlice.Role == AppRole.User && googleBob.Role == AppRole.User, "Google signup creates separate regular-user workspaces without passwords or linking");
+Check((await googleIdentities.SignInCloudAsync("alice-subject", "alice@example.invalid", "Alice")).Id == googleAlice.Id, "returning Google sign-in reuses the subject's existing workspace");
+var sameEmail = await googleIdentities.SignInCloudAsync("different-subject", "alice@example.invalid", "Other");
+Check(sameEmail.Id != googleAlice.Id, "matching email never merges different Google subjects or their data");
+using (var session = DbHelper.GetSession()) {
+    var profile = session.Query<ExternalLogin>().Single(x => x.UserId == googleAlice.Id);
+    Check(profile.Email == "alice@example.invalid" && profile.DisplayName == "Alice", "Google user information is stored with that user's identity");
+    Check(!session.Query<Account>().Any(x => x.OwnerUserId == googleAlice.Id || x.OwnerUserId == googleBob.Id), "new Google workspaces do not adopt existing accounts or financial records");
+}
+using (var session = DbHelper.GetSession()) using (var transaction = session.BeginTransaction()) {
+    session.Get<AppUser>(googleBob.Id).IsActive = false; transaction.Commit();
+}
+try { await googleIdentities.SignInCloudAsync("bob-subject", "bob@example.invalid", "Bob"); throw new Exception("disabled Google user accepted"); }
+catch (InvalidOperationException) { Check(true, "disabled users cannot regain access by signing up with the same Google subject"); }
+var priorGoogleAccount = new Account { OwnerUserId = googleAlice.Id, BankName = Bank.HDFC, AccountNumber = "synthetic-google-existing", AccountHolderName = "Synthetic" };
+using (var session = DbHelper.GetSession()) using (var transaction = session.BeginTransaction()) {
+    session.Get<AppUser>(googleAlice.Id).Role = AppRole.Admin;
+    session.Save(priorGoogleAccount); transaction.Commit();
+}
+var formerAdmin = await googleIdentities.SignInCloudAsync("alice-subject", "alice@example.invalid", "Alice");
+Check(formerAdmin.Id == googleAlice.Id && formerAdmin.Role == AppRole.User, "a previous Google administrator returns as a regular user in the same workspace");
+using (var session = DbHelper.GetSession()) Check(session.Get<Account>(priorGoogleAccount.Id).OwnerUserId == formerAdmin.Id,
+    "removing a Google administrator role preserves existing account ownership");
+async Task<bool> PasswordRequestDenied(bool cloud, string scheme)
+{
+    var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Deployment:PublicHosting"] = cloud.ToString() }).Build();
+    var http = new DefaultHttpContext(); http.Request.Scheme = scheme; http.Request.Method = "POST"; http.Request.Path = "/api/auth/login";
+    var action = new ActionContext(http, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
+    var filters = new List<Microsoft.AspNetCore.Mvc.Filters.IFilterMetadata>();
+    var context = new Microsoft.AspNetCore.Mvc.Filters.ResourceExecutingContext(action, filters, new List<Microsoft.AspNetCore.Mvc.ModelBinding.IValueProviderFactory>());
+    var filter = new SecurityBoundaryFilter(config, new RegressionEnvironment(), Microsoft.Extensions.Logging.Abstractions.NullLogger<SecurityBoundaryFilter>.Instance);
+    await filter.OnResourceExecutionAsync(context, () => Task.FromResult(new Microsoft.AspNetCore.Mvc.Filters.ResourceExecutedContext(action, filters)));
+    return context.Result is ObjectResult { StatusCode: 403 };
+}
+Check(await PasswordRequestDenied(true, "https"), "public HTTPS cloud password login is blocked on the server");
+Check(!await PasswordRequestDenied(false, "https"), "local installations retain normal password login");
+Check(!await PasswordRequestDenied(true, "http"), "private SSH-tunnel recovery is retained without enabling public password login");
 Console.WriteLine($"Passed {checks} import reliability checks ({(postgres == null ? "SQLite" : "PostgreSQL")}). Synthetic artifacts: {scratch}");
+
+sealed class RegressionEnvironment : Microsoft.AspNetCore.Hosting.IWebHostEnvironment
+{
+    public string EnvironmentName { get; set; } = "Production";
+    public string ApplicationName { get; set; } = "Synthetic tests";
+    public string WebRootPath { get; set; } = "";
+    public string ContentRootPath { get; set; } = "";
+    public Microsoft.Extensions.FileProviders.IFileProvider WebRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
+    public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
+}

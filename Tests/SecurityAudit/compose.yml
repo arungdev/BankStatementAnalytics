@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bsa_operator
+      POSTGRES_PASSWORD: Synthetic-operator-only-42
+      POSTGRES_DB: bankstatements
+    volumes:
+      - ../../deploy/init-db.sh:/docker-entrypoint-initdb.d/10-app.sh:ro
+      - ./password.synthetic.txt:/run/secrets/db_password:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U bankstatements -d bankstatements']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  app:
+    image: ${BSA_SECURITY_IMAGE:-bankstatementanalytics:security-check}
+    environment:
+      Database__PostgresConnectionString: Host=db;Database=bankstatements;Username=bankstatements;Password=Synthetic-app-only-42
+      Deployment__PublicHosting: 'true'
+    ports: ['127.0.0.1:18089:8080']
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 768m
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']

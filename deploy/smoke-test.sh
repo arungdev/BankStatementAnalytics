@@ -41,5 +41,9 @@ docker compose up -d --wait --wait-timeout 180
 docker compose exec -T bankstatementanalytics grep -q persistence-check /app/Uploads/smoke-marker
 [[ "$(docker compose exec -T db psql -U bankstatements -d bankstatements -Atc 'SELECT value FROM deployment_smoke')" == "42" ]]
 docker compose exec -T bankstatementanalytics curl -fsS http://127.0.0.1:8080/health
+test "$(curl -s -o /dev/null -w '%{http_code}' -b "$cookie_file" http://127.0.0.1:8080/api/accounts)" = 401
+curl -fsS -c "$cookie_file" -H 'Content-Type: application/json' \
+    -d '{"username":"deployment-smoke","password":"Synthetic-test-only-42!"}' \
+    http://127.0.0.1:8080/api/auth/login > /dev/null
 curl -fsS -b "$cookie_file" http://127.0.0.1:8080/api/accounts > /dev/null
-echo 'PASS: startup, SPA, auth, non-root user, persistence, snapshot restore and cookie-key preservation'
+echo 'PASS: startup, SPA, auth, non-root user, persistence, encrypted snapshot restore and session revocation'

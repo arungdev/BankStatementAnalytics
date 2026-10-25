@@ -126,14 +126,19 @@ in `Client/`. Compile the product `.iss` with Inno Setup when validating install
 
 ## Builds & deployment
 
-Next release: **v3.1.0**. See [release notes and readiness checklist](RELEASE_NOTES_v3.1.0.md)
+Release version: **v4.0.0**. See [release artifacts and upgrade prerequisites](docs/releases/RELEASE_NOTES_v4.0.0.md)
 for changes, upgrade requirements, and remaining publication checks.
 
 - **Single-file EXE** — `build.bat` (repo root) publishes a self-contained
   win-x64 executable to `Publish\`, bundling the built SPA (and the embedded
   PostgreSQL runtime when available).
-- **Windows installer** — `build-installer.bat` compiles an installer into
-  `Setup\` that installs the app as a Windows service. Requires the private
+- **V4 release bundle** — `build-installer.bat` opens a menu for local/publish mode,
+  version selection, image TAR export and optional offline cloud ZIP. Local builds
+  are saved in `Setup/Candidates/<version>` and do not upload. Explicit publish mode
+  publishes and verifies the Docker image. See [build options and project layout](docs/PROJECT-STRUCTURE.md).
+  Command-line options such as `-SkipPush` and `-Publish` remain available.
+  The EXE installs the application as a Windows service.
+  Building the local packages requires the private
   `Common.Framework` repo (author only).
 - **Linux / Docker** — follow [the Ubuntu deployment guide](deploy/README.md)
   or launch `deploy-ssh.bat` on Windows to deploy the published image over SSH.
@@ -185,7 +190,7 @@ unsupported by the shared framework; use PostgreSQL for the built-in backup flow
 CI checks frontend lint, regression tests, production builds, vendored artifact
 checksums, and backend regressions on SQLite and PostgreSQL. See
 [Tests/README.md](Tests/README.md) for isolated local verification and
-[VENDORED_DEPENDENCIES.md](VENDORED_DEPENDENCIES.md) for dependency provenance.
+[VENDORED_DEPENDENCIES.md](docs/dependencies/VENDORED_DEPENDENCIES.md) for dependency provenance.
 
 ## License
 
@@ -201,3 +206,7 @@ Note: this is *not* an OSI-approved "open source" license, because
 it restricts use to noncommercial purposes. The third-party
 dependencies (React, ASP.NET Core, NHibernate, etc.) and the
 vendored `Common.Framework` library keep their own separate licenses.
+
+## Repository organization
+
+See [the documentation index and folder guide](docs/README.md) for documentation, source, tooling, and local artifact locations.

@@ -50,8 +50,18 @@ folder-picker roots; the product still owns authentication and its API endpoints
 
 The module also includes publish-image.ps1 (build locally, or build/push when a
 repository and unique tag are supplied) and package-deployment.ps1 (ZIP the public
-deployment files only). Caddy's shared template reads APP_DOMAIN, ACME_EMAIL and
+deployment files only, using an explicit allowlist). End-user ZIPs exclude C# source,
+build/publish tools, test scripts and the development artifact manifest. Those files
+stay in the source checkout; compiled application code is supplied by the image.
+Caddy's shared template reads APP_DOMAIN, ACME_EMAIL and
 APP_UPSTREAM, so each consumer configures its own service address in Compose.
+When registry publication is unavailable, save the exact configured image with
+`docker save -o application-image.tar IMAGE:TAG` and pass that TAR to
+package-deployment.ps1 with `-ImageArchive`. The end-user ZIP then includes
+application-image.tar. The launcher uploads it over authenticated SCP; Ubuntu loads
+it, verifies the expected tag and removes the uploaded TAR. The local TAR remains
+in the extracted ZIP folder for retries. This skips pulling the app image; public
+DB/proxy images still need network access. Publish a fresh archive for each version.
 The shared log4net template writes bounded rotating files and console logs; copy it
 to the consumer's existing log4net.config location when exporting a release.
 
@@ -73,10 +83,38 @@ on failure. Keep older images and snapshots for rollback after schema migrations
 
 Ubuntu setup installs Docker only when absent and does not modify firewall rules or
 host-key verification. The remote login must have sudo access (root works directly).
+The launcher reuses existing SSH key/agent authentication. If password login is
+needed, it authenticates once to install a temporary Ed25519 public key for this
+deployment. Subsequent transfers/connections use that key with BatchMode enabled.
+The matching authorized_keys line and local private key are removed in finally;
+on a network failure the public entry can remain, but its private key is deleted
+and a warning identifies the entry. Login passwords are never captured or stored.
+SSH key authentication must be enabled on the server. The temporary private key
+is unencrypted and exists only in a per-run directory in the Windows user's temp
+folder during deployment. Use an existing ssh-agent key to avoid creating it.
+With SETUP_STATUS_URL configured in project.env, the session polls that endpoint
+until its JSON returns needsSetup=false, then enables HTTPS automatically. Existing
+administrators therefore allow immediate activation; first-time users create the
+administrator through the private tunnel first. Missing/unrecognized status fails
+without enabling the proxy. Without a setup endpoint, pressing Enter after manual
+setup enables HTTPS; SKIP explicitly leaves it unchanged.
+The consumer's enable-https.bat (or deploy-ssh.ps1 -EnableHttpsOnly) starts only
+the existing HTTPS profile in one SSH connection, without uploading or redeploying.
+Installation, setup tunnel and HTTPS activation share one SSH terminal; sudo can
+still ask separately, including again if its normal authorization timeout expires.
 Existing Docker installations must already have Compose. The module supports the
 architecture explicitly listed in project.env; publish a matching image first.
 
 ## Maintaining the module
+
+`setup-google-ssh.ps1` and `configure-google.sh` configure an existing compatible
+server in one interactive SSH session. The template `setup-google-login.bat`
+starts the consumer wrapper. Credentials are entered on the remote terminal;
+the secret is hidden and is never passed in SSH arguments. The helper checks the
+running `/api/auth/options` contract and optional `deploy/google-compose.yml`
+before storing credentials. It preserves the SSH user's home when elevating to
+edit root-owned deployment files. This optional module expects the consumer's
+Google configuration contract; it does not upgrade an older application image.
 
 Edit this canonical directory, run Export-Deployment.ps1 for each consumer, verify
 the generated manifest with the consumer's scripts/verify-common-deployment.ps1,

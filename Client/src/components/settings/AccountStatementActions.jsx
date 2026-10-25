@@ -1,3 +1,5 @@
+import { canEditWorkspace } from '../../utils/workspacePermissions';
+import useAuthenticationOptions from '../../hooks/useAuthenticationOptions';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Drawer, EmptyState, Modal, Tabs, useAuth } from '@common/client';
@@ -8,7 +10,7 @@ import useAsyncResource from '../../hooks/useAsyncResource';
 import api from '../../api/client';
 import { revertStatement, retryAutoImport } from '../../api/statements';
 export default function AccountStatementActions({ account }) {
- const { isAdmin } = useAuth(); const navigate = useNavigate();
+ const { isAdmin, role } = useAuth(); const canEdit = canEditWorkspace(role); const options = useAuthenticationOptions(); const canManageServer = isAdmin && !options.cloudGoogleOnly; const navigate = useNavigate();
  const [showUpload, setShowUpload] = useState(false);
  const [uploadHistoryOpen, setUploadHistoryOpen] = useState(false);
  const [uploadTab, setUploadTab] = useState('success');
@@ -49,7 +51,7 @@ export default function AccountStatementActions({ account }) {
     </div>
    </div>
    <div className="account-panel-actions">
-   {isAdmin && <button type="button" className="btn primary small" onClick={() => setShowUpload(true)}><FiUploadCloud size={13} /> Upload Statement</button>}
+   {canEdit && <button type="button" className="btn primary small" onClick={() => setShowUpload(true)}><FiUploadCloud size={13} /> Upload Statement</button>}
    <button type="button" className="btn small" onClick={() => { setUploadTab('success'); setActionError(''); setUploadHistoryOpen(true); }}><FiFileText size={13} /> Upload History</button>
    </div>
   </section>
@@ -112,7 +114,7 @@ export default function AccountStatementActions({ account }) {
                               <Badge variant="green">0 new</Badge>
                             )}
                             <Badge variant={upload.autoImported ? "purple" : "gray"}>{upload.autoImported ? "Auto" : "Manual"}</Badge>
-                            {isAdmin && (
+                            {canEdit && (
                               <button type="button" className="btn danger small" disabled={!!reverting[upload.id]} onClick={() => handleRevert(upload)}>
                                 <FiRotateCcw size={12} /> {reverting[upload.id] ? 'Reverting…' : 'Revert'}
                               </button>
@@ -148,7 +150,7 @@ export default function AccountStatementActions({ account }) {
                           {fail.error && (
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>{fail.error}</div>
                           )}
-                          {isAdmin && (
+                          {canManageServer && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
                               <input
                                 type="password"

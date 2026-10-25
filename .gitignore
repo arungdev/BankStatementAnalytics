@@ -6,6 +6,7 @@ Client/node_modules/
 /.env
 /secrets/
 /backups/
+/application-image.tar
 /.vs/BankStatementAnalytics
 /BankStatementAnalytics/bin/Debug/net10.0
 /BankStatementAnalytics/obj
@@ -47,3 +48,7 @@ Client/node_modules/
 /splits_eval.csv
 /GPAY_AUDIT.md
 /GPAY_TAKEOUT_ANALYSIS.md
+
+# Private local analysis and verification notes
+/.local-analysis/
+/.local-docker/

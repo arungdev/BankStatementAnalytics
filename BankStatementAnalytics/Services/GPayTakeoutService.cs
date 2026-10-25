@@ -1,3 +1,4 @@
+using Common.Framework.Deployment;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -36,38 +37,8 @@ namespace BankStatementAnalytics.Services
 
         public async Task<GPayAutoImportConfigDto> GetAutoImportConfigAsync(long userId, string? profileId = null)
         {
-            var filePath = GetConfigFilePath();
-            GPayAutoImportConfigDto config;
-            if (File.Exists(filePath))
-            {
-                try
-                {
-                    var json = await File.ReadAllTextAsync(filePath);
-                    config = JsonSerializer.Deserialize<GPayAutoImportConfigDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                             ?? new GPayAutoImportConfigDto();
-                }
-                catch
-                {
-                    config = new GPayAutoImportConfigDto();
-                }
-            }
-            else
-            {
-                var defaultDir = ImportPaths.GPayDirectory;
-                config = new GPayAutoImportConfigDto
-                {
-                    WatchFolderPath = defaultDir,
-                    WatchEnabled = Directory.Exists(defaultDir),
-                    UserName = "ARUN G"
-                };
-            }
-
-            if (string.IsNullOrWhiteSpace(config.UserName))
-            {
-                config.UserName = "ARUN G";
-            }
-
-            if (!string.IsNullOrWhiteSpace(profileId) && profileId != "default") config = await GetProfileAsync(userId, profileId);
+            var config = !string.IsNullOrWhiteSpace(profileId) && profileId != "default"
+                ? await GetProfileAsync(userId, profileId) : await LoadPrimaryConfigAsync(userId);
 
             // Populate current stats from database
             using var session = DbHelper.GetSession();
@@ -105,7 +76,7 @@ namespace BankStatementAnalytics.Services
                     candidates.Add(a.AccountHolderName.Trim());
             }
 
-            if (config.ProfileId == null) candidates.Add("ARUN G");
+            if (!string.IsNullOrWhiteSpace(config.UserName)) candidates.Add(config.UserName);
             config.CandidateUserNames = candidates.OrderBy(c => c).ToList();
             config.Profiles = await ListProfilesAsync(userId);
 
@@ -139,6 +110,7 @@ namespace BankStatementAnalytics.Services
 
         public async Task<GPayTakeoutImportResultDto> SweepAsync(long userId, string? profileId = null)
         {
+            if (SecurityRuntime.PublicHosting) throw new ArgumentException("Server file imports are disabled for public hosting.");
             var config = await GetAutoImportConfigAsync(userId, profileId);
             if (string.IsNullOrWhiteSpace(config.WatchFolderPath) || !Directory.Exists(config.WatchFolderPath))
             {
@@ -180,45 +152,21 @@ namespace BankStatementAnalytics.Services
 
         public async Task SweepBackgroundAsync(CancellationToken stoppingToken)
         {
+            if (SecurityRuntime.PublicHosting) return;
             await SweepAdditionalProfilesAsync(stoppingToken);
-            var filePath = GetConfigFilePath();
-            if (!File.Exists(filePath)) return;
-
-            GPayAutoImportConfigDto? config;
-            try
-            {
-                var json = await File.ReadAllTextAsync(filePath, stoppingToken);
-                config = JsonSerializer.Deserialize<GPayAutoImportConfigDto>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            }
-            catch { return; }
-
-            if (config == null || !config.WatchEnabled || string.IsNullOrWhiteSpace(config.WatchFolderPath) || !Directory.Exists(config.WatchFolderPath))
-                return;
-
-            var candidates = Directory.EnumerateFiles(config.WatchFolderPath, "*.*", SearchOption.TopDirectoryOnly)
-                .Where(f => f.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-                .Select(f => new FileInfo(f))
-                .OrderByDescending(f => f.LastWriteTimeUtc)
-                .ToList();
-
-            if (candidates.Count == 0) return;
-
-            var latest = candidates[0];
-            if (config.LastSyncUtc.HasValue && latest.LastWriteTimeUtc <= config.LastSyncUtc.Value)
-            {
-                return;
-            }
-
             using var session = DbHelper.GetSession();
-            var user = await session.Query<AppUser>().OrderBy(u => u.Id).FirstOrDefaultAsync(stoppingToken);
-            if (user != null)
+            var users = await session.Query<AppUser>().Where(user => user.IsActive && user.Role == AppRole.Admin).Select(user => user.Id).ToListAsync(stoppingToken);
+            foreach (var userId in users)
             {
-                await SweepAsync(user.Id);
+                stoppingToken.ThrowIfCancellationRequested();
+                var config = await LoadPrimaryConfigAsync(userId);
+                if (config.WatchEnabled) await SweepAsync(userId);
             }
         }
 
         public async Task<GPayTakeoutImportResultDto> ImportFromPathAsync(long userId, string filePath, string? expectedArchiveHash = null, string? profileId = null)
         {
+            if (SecurityRuntime.PublicHosting) throw new ArgumentException("Upload a file; server paths are disabled for public hosting.");
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
             {
                 return new GPayTakeoutImportResultDto
@@ -235,9 +183,8 @@ namespace BankStatementAnalytics.Services
 
         public async Task<GPayTakeoutImportResultDto> ImportFromStreamAsync(long userId, Stream stream, string fileName, string? expectedArchiveHash = null, string? profileId = null)
         {
-            using var buffer = new MemoryStream();
-            await stream.CopyToAsync(buffer);
-            var bundle = GPayEvidenceService.Scan(buffer.ToArray(), fileName);
+            var bytes = await BoundedUpload.ReadAsync(stream, GPayEvidenceService.MaxArchiveBytes);
+            var bundle = GPayEvidenceService.Scan(bytes, fileName);
             if (!string.IsNullOrWhiteSpace(profileId) && profileId != "default") { _ = await GetProfileAsync(userId, profileId); bundle.ProfileId = profileId; }
             if (expectedArchiveHash != null && !string.Equals(expectedArchiveHash, bundle.ArchiveHash, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Archive changed since preview. Preview it again before importing.");
             string? Find(string suffix) => bundle.Files.FirstOrDefault(f => f.Path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))?.Content;

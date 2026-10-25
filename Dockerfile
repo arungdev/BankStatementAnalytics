@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl fonts-dejavu-core postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish/ ./
-RUN mkdir -p Data Uploads Logs && chown -R app:app Data Uploads Logs
+RUN mkdir -p Data Uploads Logs Sessions && chown -R app:app Data Uploads Logs Sessions
 ENV Urls=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production \
     Database__Provider=Postgres \

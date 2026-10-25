@@ -1,0 +1,11 @@
+# Optional: docker compose -f docker-compose.yml -f deploy/google-compose.yml --profile https up -d
+services:
+  bankstatementanalytics:
+    environment:
+      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID in .env}
+      Authentication__Google__ClientSecretFile: /run/secrets/google_client_secret
+    secrets:
+      - google_client_secret
+secrets:
+  google_client_secret:
+    file: ./secrets/google_client_secret.txt

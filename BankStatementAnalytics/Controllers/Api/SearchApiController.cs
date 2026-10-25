@@ -92,7 +92,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             // 2. Merchants search
             var merchantResults = await session.Query<Merchant>()
-                .Where(m => (m.OwnerUserId == null || m.OwnerUserId == CurrentUserId) && (
+                .Where(m => m.OwnerUserId == CurrentUserId && (
                     m.Name.ToLower().Contains(lower) ||
                     (m.Category != null && m.Category.ToLower().Contains(lower)) ||
                     (m.SubCategory != null && m.SubCategory.ToLower().Contains(lower))

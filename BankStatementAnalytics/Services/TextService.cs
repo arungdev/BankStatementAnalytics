@@ -60,6 +60,10 @@ namespace BankStatementAnalytics.Services
         public async Task<PreparedStatement> PrepareAsync(
             string filePath, int accountId, Guid uploadId, StatementFileFormat format,
             string? password = null)
+            => Prepare(await File.ReadAllBytesAsync(filePath), filePath, accountId, uploadId, format, password);
+
+        public PreparedStatement Prepare(byte[] bytes, string filePath, int accountId, Guid uploadId,
+            StatementFileFormat format, string? password = null)
         {
             var ext = format switch
             {
@@ -85,11 +89,11 @@ namespace BankStatementAnalytics.Services
             // PDFs are converted to normalized delimiter-separated rows first;
             // text/CSV statements are parsed from the raw file content.
             byte[]? pdfBytes = format == StatementFileFormat.Pdf
-                ? await File.ReadAllBytesAsync(filePath)
+                ? bytes
                 : null;
             var text = pdfBytes != null
                 ? _pdfReader.ExtractNormalizedText(pdfBytes, bank, password)
-                : await File.ReadAllTextAsync(filePath);
+                : ReadText(bytes);
 
             IBankParser parser = config != null
                 ? (IBankParser)_serviceProvider.GetRequiredService(config.ParserType)
@@ -126,6 +130,12 @@ namespace BankStatementAnalytics.Services
                 }
             }
             return new PreparedStatement(transactions, summary, warnings);
+        }
+
+        private static string ReadText(byte[] bytes)
+        {
+            using var reader = new StreamReader(new MemoryStream(bytes), System.Text.Encoding.UTF8, true);
+            return reader.ReadToEnd();
         }
 
         public async Task<int> PersistAsync(NHibernate.ISession session, Account account,

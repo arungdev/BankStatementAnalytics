@@ -1,72 +1,148 @@
 {
-  "sourceRevision": "86bd6861b0eea33a53fbd9588f2a760875164f77",
   "sourceTreeDirty": false,
   "schemaVersion": 1,
+  "source": "Common.Framework/Deployment",
   "artifacts": [
     {
-      "path": "backup.sh",
-      "sha256": "708380b3ed65f9eceff3d4559127ada69d4fe6aeacd5046d3e39a193112fa971"
+      "sha256": "3da27eb824a3f09597a8ed1fc056e152d11e57a6f897bf6a12a47dadaa4becbb",
+      "path": "backup.sh"
     },
     {
-      "path": "deploy-ssh.ps1",
-      "sha256": "12e8373ea2812ff5fb7dada9f1d8f1703381c61439eac4ebb6ea8e0ac87475ef"
+      "sha256": "bf44aa9cd15595a3b0610973508ad2f1bb21f49c5dacdd069a4f17bd3f893c30",
+      "path": "backup-key.ps1"
     },
     {
-      "path": "package-deployment.ps1",
-      "sha256": "d3c6679e81653bfd9a8e1a57cc788daba3e12d9ac34c3878b7ddb739c9046820"
+      "sha256": "d196090298628512a462f4b23333c108b7c0ba6e9af8fae1e594115f01222c91",
+      "path": "build-menu.ps1"
     },
     {
-      "path": "project-config.sh",
-      "sha256": "34bf40fb86ff729bcd3f997b87859281199e39b5c8b2f00043a0683b7254bbcf"
+      "sha256": "8095c3bae54364bfe524ebaba6d50c9ddcbf0f3a56687bcaaf93397ef0bba788",
+      "path": "build-release.ps1"
     },
     {
-      "path": "publish-image.ps1",
-      "sha256": "a3ad73d3c25983cfdacc1faa64b683674923857ca9e2ee38bcc0512aa3441776"
+      "sha256": "8f98ae13e4c85443c2214cab3b03deaf9581b3fcdb3b3b8f77d9d151d100d36f",
+      "path": "configure-google.sh"
     },
     {
-      "path": "README.md",
-      "sha256": "c3162420ef999bbfbd87363896c18771f2af83064ac5a0b178741cab661ca854"
+      "sha256": "dff59b1daa96fcdf70c6d57fcb31767a8efa4d338b87c9ceeb9857d495523b32",
+      "path": "deploy-ssh.ps1"
     },
     {
-      "path": "restore.sh",
-      "sha256": "ae74dd9f6766bea0b49ae2a0f8c6a9d72819b5e74ff7ec8529aa3ca754adb3e7"
+      "sha256": "a3218eec9a8314a71dba6044d684b99409032e513955eecad1918cde5387f288",
+      "path": "local-docker.ps1"
     },
     {
-      "path": "server-deploy.sh",
-      "sha256": "aba31f04052c0fd6fd37b4c07c83c65a50b614fc5ef3cd3b241ebccb056eacdc"
+      "sha256": "4ef39547d364f185ddb6e158a7bab85b949d598535613da987f15785374136cd",
+      "path": "package-deployment.ps1"
     },
     {
-      "path": "Source/ContainerHosting.cs",
-      "sha256": "0b4955f87e0c3f0cd51f271389f30819a221665638ca182d33dae32060f1a309"
+      "sha256": "6fdf5b41cfb7dd5c9c753dfaeb07c384a0c32aa57b3f14cd1c9f4476d06f28ca",
+      "path": "prepare-upgrade.sh"
     },
     {
-      "path": "Source/DesktopInstallerGuard.cs",
-      "sha256": "e50ec346092677e243e0ff2bbb6557dc9bf3b370a8252eb7d19a75cd50242b28"
+      "sha256": "a47f4996e9d764d887612c609687dd732cf92698dfade061e8c34465e8a70036",
+      "path": "project-config.sh"
     },
     {
-      "path": "Source/PlatformFontResolver.cs",
-      "sha256": "416e8f93676afdab44d980c0ce7500fd56277eb0028ef9091ce3a041f8bb7ad3"
+      "sha256": "a3ad73d3c25983cfdacc1faa64b683674923857ca9e2ee38bcc0512aa3441776",
+      "path": "publish-image.ps1"
     },
     {
-      "path": "Source/ProtectedValueStore.cs",
-      "sha256": "989bf34c6c5b2e605b4cfdc16ec29b27532739e185ea2a3bfc96b5cf4ad6c485"
+      "sha256": "a802d2f1fce39ab44d975e93a7e7bdaccbef811978157c9b2dec452e8f5fea7e",
+      "path": "README.md"
     },
     {
-      "path": "Source/RootedFileStore.cs",
-      "sha256": "0ee5aa7552bffe4ede3a8b0bc1a6bb450b6fdd40570a356a68be19223964a6eb"
+      "sha256": "a96196f60122f93e89423f9b19e6dd938d7ff41921cf3787e3536e8af6153b9b",
+      "path": "release-version.ps1"
     },
     {
-      "path": "Source/ServerFolderBrowser.cs",
-      "sha256": "ff3bb1584c26d5f25e6f8b97958bb5166515b29faed4939fc953edf8a7ba80e6"
+      "sha256": "16727ab5047bd5e8978219004cac003d78ebea315c19683a86aedd43720b5b71",
+      "path": "restore.sh"
     },
     {
-      "path": "Templates/Caddyfile",
-      "sha256": "0f04a571df94b61373200d75ca3dc98a5d2afeea810f32bb509f9d9bded2b0cf"
+      "sha256": "6889c2022d0f32f68faa315f394a2aacb23fd1febff63d8dea68c5213a2f72f1",
+      "path": "server-deploy.sh"
     },
     {
-      "path": "Templates/log4net.config",
-      "sha256": "757827045cfdc01ec0a0934171740caf4b85e222706ff64f39d94e34e596894f"
+      "sha256": "18757f6ec08855aa7aeb5da9d8803cb78294ae73e4892a8e90c7658080c10f9b",
+      "path": "session-deploy.sh"
+    },
+    {
+      "sha256": "5a05530d3c1a9f3d1b3ab993a8d68bfa0e0b99235927bfd4636875d479fbd771",
+      "path": "setup-google-ssh.ps1"
+    },
+    {
+      "sha256": "c08cb06913bbfff9a5f1cfc87505a9d338c1862367fc89b7bd8e6f2d9ef88814",
+      "path": "Source/ApiRequestSecurity.cs"
+    },
+    {
+      "sha256": "42361ea1007c45fe3b194cdbbfccb9271ec32df9f1728883a3be250f66bee3ad",
+      "path": "Source/BoundedUpload.cs"
+    },
+    {
+      "sha256": "0b4955f87e0c3f0cd51f271389f30819a221665638ca182d33dae32060f1a309",
+      "path": "Source/ContainerHosting.cs"
+    },
+    {
+      "sha256": "e50ec346092677e243e0ff2bbb6557dc9bf3b370a8252eb7d19a75cd50242b28",
+      "path": "Source/DesktopInstallerGuard.cs"
+    },
+    {
+      "sha256": "1bfcc20e1db4c2b5ee2a83a55f41672041fdf34733f9e72ad2c2386e33d6930d",
+      "path": "Source/PersistentTicketStore.cs"
+    },
+    {
+      "sha256": "416e8f93676afdab44d980c0ce7500fd56277eb0028ef9091ce3a041f8bb7ad3",
+      "path": "Source/PlatformFontResolver.cs"
+    },
+    {
+      "sha256": "989bf34c6c5b2e605b4cfdc16ec29b27532739e185ea2a3bfc96b5cf4ad6c485",
+      "path": "Source/ProtectedValueStore.cs"
+    },
+    {
+      "sha256": "0ee5aa7552bffe4ede3a8b0bc1a6bb450b6fdd40570a356a68be19223964a6eb",
+      "path": "Source/RootedFileStore.cs"
+    },
+    {
+      "sha256": "ff3bb1584c26d5f25e6f8b97958bb5166515b29faed4939fc953edf8a7ba80e6",
+      "path": "Source/ServerFolderBrowser.cs"
+    },
+    {
+      "sha256": "423abd302477cad7f266018b7611fcb910ea237c25585a8be4cecd4c8441dbb6",
+      "path": "ssh-auth.ps1"
+    },
+    {
+      "sha256": "0f04a571df94b61373200d75ca3dc98a5d2afeea810f32bb509f9d9bded2b0cf",
+      "path": "Templates/Caddyfile"
+    },
+    {
+      "sha256": "430bb4d408d1f5af477f4e9442852dd452aa2f73f62638911ac06b15bb78b979",
+      "path": "Templates/enable-https.bat"
+    },
+    {
+      "sha256": "8be169138c86ed60dde8e66d88d1ea52bb11ed309fa933f3dba6df2406383c95",
+      "path": "Templates/Local-Docker.bat"
+    },
+    {
+      "sha256": "757827045cfdc01ec0a0934171740caf4b85e222706ff64f39d94e34e596894f",
+      "path": "Templates/log4net.config"
+    },
+    {
+      "sha256": "b3ffb0a623c1cff6960c804a54703d2ded30689ad9ccbea06061503cf7671e6f",
+      "path": "Templates/Setup.bat"
+    },
+    {
+      "sha256": "8a84292bda7375f26bf21a11c04cc41ad0c0ff12a859a1c8883f2732ce90e089",
+      "path": "Templates/setup-google-login.bat"
+    },
+    {
+      "sha256": "3be1444872fec38c4ea229c9832ed064ff743e3bbb41e1fee22068d445812d7e",
+      "path": "Templates/Update.bat"
+    },
+    {
+      "sha256": "a38bd792ee82991f5c8639e586ac450edda64b08c1a482c2e0e944feb496b4c2",
+      "path": "update-existing.sh"
     }
   ],
-  "source": "Common.Framework/Deployment"
+  "sourceRevision": "65973a579460b7d8805a8746ce8fd10f1cce551d"
 }

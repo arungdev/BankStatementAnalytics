@@ -1,9 +1,9 @@
 import { CATEGORY_NAME_MAX } from "../../utils/categoryName";
 import { FiPlus, FiTag, FiEdit2, FiX } from "react-icons/fi";
 
-export default function CategorySettings({ activeSubCatInputId, categories, editCatName, editCatNameError, editingCatId, handleAddCategory, handleAddSubCategory, handleDeleteCategory, handleDeleteSubCategory, handleUpdateCategory, isAdmin, newCatName, newCatNameError, newSubCatName, newSubCatNameError, setActiveSubCatInputId, setEditCatName, setEditCatNameError, setEditingCatId, setNewCatName, setNewCatNameError, setNewSubCatName, setNewSubCatNameError }) {
+export default function CategorySettings({ activeSubCatInputId, categories, editCatName, editCatNameError, editingCatId, handleAddCategory, handleAddSubCategory, handleDeleteCategory, handleDeleteSubCategory, handleUpdateCategory, canEdit, newCatName, newCatNameError, newSubCatName, newSubCatNameError, setActiveSubCatInputId, setEditCatName, setEditCatNameError, setEditingCatId, setNewCatName, setNewCatNameError, setNewSubCatName, setNewSubCatNameError }) {
   return (<>
-      {isAdmin && (
+      {canEdit && (
         <div className="settings-add-card">
           <label className="settings-add-card-label" htmlFor="new-category">Add a new category</label>
           <div className="settings-add-row">
@@ -31,7 +31,7 @@ export default function CategorySettings({ activeSubCatInputId, categories, edit
           <FiTag size={36} />
           <div className="settings-empty-title">No categories defined</div>
           <div className="settings-empty-sub">
-            {isAdmin ? 'Add one above to start organizing your transactions.' : 'No categories have been added.'}
+            {canEdit ? 'Add one above to start organizing your transactions.' : 'No categories have been added.'}
           </div>
         </div>
       ) : (
@@ -66,7 +66,7 @@ export default function CategorySettings({ activeSubCatInputId, categories, edit
                     <div className="setting-card-text">
                       <h3 className="setting-card-title">
                         {cat.name}
-                        {isAdmin && (
+                        {canEdit && (
                           <button
                             className="settings-edit-link"
                             title="Rename category"
@@ -82,7 +82,7 @@ export default function CategorySettings({ activeSubCatInputId, categories, edit
                         {(cat.subCategories || []).length === 1 ? 'y' : 'ies'}
                       </p>
                     </div>
-                    {isAdmin && (
+                    {canEdit && (
                       <div className="setting-card-control">
                         <button className="btn danger small" onClick={() => handleDeleteCategory(cat.id, cat.name)}>Delete</button>
                       </div>
@@ -96,7 +96,7 @@ export default function CategorySettings({ activeSubCatInputId, categories, edit
                   {(cat.subCategories || []).map((sub, idx) => (
                     <span key={idx} className="subcat-chip">
                       {sub}
-                      {isAdmin && (
+                      {canEdit && (
                         <button
                           className="subcat-chip-remove"
                           onClick={() => handleDeleteSubCategory(cat.id, sub)}
@@ -109,7 +109,7 @@ export default function CategorySettings({ activeSubCatInputId, categories, edit
                     </span>
                   ))}
 
-                  {isAdmin && (activeSubCatInputId === cat.id ? (
+                  {canEdit && (activeSubCatInputId === cat.id ? (
                     <span className="subcat-add-row">
                       <input
                         type="text"
@@ -137,7 +137,7 @@ export default function CategorySettings({ activeSubCatInputId, categories, edit
                     </button>
                   ))}
 
-                  {(cat.subCategories || []).length === 0 && activeSubCatInputId !== cat.id && !isAdmin && (
+                  {(cat.subCategories || []).length === 0 && activeSubCatInputId !== cat.id && !canEdit && (
                     <span className="subcat-empty">None yet</span>
                   )}
                 </div>

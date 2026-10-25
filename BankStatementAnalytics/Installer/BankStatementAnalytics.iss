@@ -8,11 +8,13 @@
 
 #define MyAppName      "Bank Statement Analytics"
 #ifndef MyAppVersion
-  #define MyAppVersion "3.1.0"
+  #define MyAppVersion "4.0.2"
 #endif
-#define MyAppPublisher "Arun G"
+#define MyAppPublisher "Bank Statement Analytics"
 #define MyAppExeName   "BankStatementAnalytics.exe"
-#define MySourceDir    "..\..\Publish"
+#ifndef MySourceDir
+  #define MySourceDir "..\..\Publish"
+#endif
 ; Setup wizard / Add-Remove-Programs icon (Framework.iss maps this to SetupIconFile).
 ; Path is relative to this .iss file.
 #define MyIconFile     "..\icons\AppIcon.ico"

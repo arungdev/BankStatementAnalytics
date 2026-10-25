@@ -144,6 +144,8 @@ namespace BankStatementAnalytics.Controllers.Api
         private static string EscapeCsv(string? value)
         {
             if (string.IsNullOrEmpty(value)) return "";
+            var significant = value.TrimStart();
+            if (significant.Length > 0 && "=+-@".Contains(significant[0])) value = "'" + value;
             if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
             {
                 return $"\"{value.Replace("\"", "\"\"")}\"";

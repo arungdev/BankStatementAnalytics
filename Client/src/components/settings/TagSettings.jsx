@@ -1,8 +1,8 @@
 import { FiPlus, FiBookmark, FiEdit2 } from "react-icons/fi";
 
-export default function TagSettings({ editTagName, editTagNameError, editingTagId, handleAddTag, handleDeleteTag, handleUpdateTag, isAdmin, newTagError, newTagName, setEditTagName, setEditTagNameError, setEditingTagId, setNewTagError, setNewTagName, tags }) {
+export default function TagSettings({ editTagName, editTagNameError, editingTagId, handleAddTag, handleDeleteTag, handleUpdateTag, canEdit, newTagError, newTagName, setEditTagName, setEditTagNameError, setEditingTagId, setNewTagError, setNewTagName, tags }) {
   return (<>
-      {isAdmin && (
+      {canEdit && (
         <div className="settings-add-card">
           <label className="settings-add-card-label" htmlFor="new-tag">Add a new tag</label>
           <div className="settings-add-row">
@@ -30,7 +30,7 @@ export default function TagSettings({ editTagName, editTagNameError, editingTagI
           <FiBookmark size={36} />
           <div className="settings-empty-title">No tags defined</div>
           <div className="settings-empty-sub">
-            {isAdmin ? 'Add one above to start labeling your transactions.' : 'No tags have been added.'}
+            {canEdit ? 'Add one above to start labeling your transactions.' : 'No tags have been added.'}
           </div>
         </div>
       ) : (
@@ -77,7 +77,7 @@ export default function TagSettings({ editTagName, editTagNameError, editingTagI
                         }}>
                           #{tag.name}
                         </span>
-                        {isAdmin && (
+                        {canEdit && (
                           <button
                             className="settings-edit-link"
                             title="Rename tag"
@@ -92,7 +92,7 @@ export default function TagSettings({ editTagName, editTagNameError, editingTagI
                         {tag.usageCount || 0} transaction{tag.usageCount === 1 ? '' : 's'} with this tag
                       </p>
                     </div>
-                    {isAdmin && (
+                    {canEdit && (
                       <div className="setting-card-control">
                         <button className="btn danger small" onClick={() => handleDeleteTag(tag.id, tag.name, tag.usageCount)}>Delete</button>
                       </div>

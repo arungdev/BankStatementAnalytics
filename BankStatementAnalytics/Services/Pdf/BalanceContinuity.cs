@@ -14,8 +14,8 @@ namespace BankStatementAnalytics.Services.Pdf
     {
         public static void WarnOnGaps(IReadOnlyList<BankTransaction> transactions, string context)
         {
-            foreach (var warning in FindGaps(transactions))
-                Log.Info($"{context}: balance continuity WARNING: {warning}");
+            var count = FindGaps(transactions).Count;
+            if (count > 0) Log.Info($"Balance continuity review required ({count} warnings).");
         }
 
         public static List<string> FindGaps(IReadOnlyList<BankTransaction> transactions)

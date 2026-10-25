@@ -4,13 +4,13 @@ import { formatDate, currencyFormatterFull } from "../../utils/format";
 import { Badge, Switch } from "@common/client";
 import GPayProfileSettings from "../../components/GPayProfileSettings";
 
-export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoOpen, browse, cardAccounts, cardDraft, cardDrafts, editAccountName, editingAccountId, gpayAutoOpen, gpayConfig, gpayDraftPath, gpayMessage, gpaySweeping, gpayUserName, handleDeleteAccount, handleImportNow, handleOpenNamePicker, handleSaveAutoImport, handleSaveCardSettings, handleSaveGPayAutoImport, handleSaveGPayUserName, handleSweepGPay, handleToggleAutoImport, handleToggleGPayAutoImport, handleUpdateAccount, isAdmin, loadBrowse, onlyLinkCreatedByMe, openBrowse, openBrowseGPay, setAutoDraft, setAutoOpen, setBrowse, setCardDraft, setCardDrafts, setEditAccountName, setEditingAccountId, setGpayAutoOpen, setGpayConfig, setGpayDraftPath, setGpayMessage, setGpayUserName, setOnlyLinkCreatedByMe, setParticipantList, setShowPw, setSplitDisplayFilter, showPw, splitDisplayFilter, sweeping }) {
+export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoOpen, browse, cardAccounts, cardDraft, cardDrafts, editAccountName, editingAccountId, gpayAutoOpen, gpayConfig, gpayDraftPath, gpayMessage, gpaySweeping, gpayUserName, handleDeleteAccount, handleImportNow, handleOpenNamePicker, handleSaveAutoImport, handleSaveCardSettings, handleSaveGPayAutoImport, handleSaveGPayUserName, handleSweepGPay, handleToggleAutoImport, handleToggleGPayAutoImport, handleUpdateAccount, canEdit, canManageServer, loadBrowse, onlyLinkCreatedByMe, openBrowse, openBrowseGPay, setAutoDraft, setAutoOpen, setBrowse, setCardDraft, setCardDrafts, setEditAccountName, setEditingAccountId, setGpayAutoOpen, setGpayConfig, setGpayDraftPath, setGpayMessage, setGpayUserName, setOnlyLinkCreatedByMe, setParticipantList, setShowPw, setSplitDisplayFilter, showPw, splitDisplayFilter, sweeping }) {
   return (accounts.length === 0 ? (
       <div className="settings-empty">
         <FiCreditCard size={36} />
         <div className="settings-empty-title">No accounts yet</div>
         <div className="settings-empty-sub">
-          {isAdmin ? 'Click “Add account” to link your first bank account.' : 'No accounts have been added.'}
+          {canEdit ? 'Click “Add account” to link your first bank account.' : 'No accounts have been added.'}
         </div>
       </div>
     ) : (
@@ -54,7 +54,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                 </div>
               )}
 
-              {isAdmin && (
+              {canEdit && (
                 <div className="setting-card-control">
                   {editingAccountId === acc.id ? (
                     <>
@@ -78,7 +78,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
 
             {/* Credit-card-only metadata: usually auto-filled from the PDF
                 statement; editable here as the manual fallback. */}
-            {acc.bankName === 'HDFCCreditCard' && isAdmin && (() => {
+            {acc.bankName === 'HDFCCreditCard' && canEdit && (() => {
               const dependentCards = cardAccounts.filter(a => a.sharedLimitAccountId === acc.id);
               const parentCard = cardAccounts.find(a => a.id === acc.sharedLimitAccountId);
               const isPrimary = dependentCards.length > 0;
@@ -183,7 +183,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
             {/* Auto-import: a folder the backend sweeps ~once a minute,
                 importing new statement files like a manual upload. The switch
                 stays visible when collapsed so its state is always readable. */}
-            {isAdmin && (
+            {canManageServer && (
               <div className="account-panel" id={i === 0 ? 'set-auto-import' : undefined}>
                 <div className="account-panel-head">
                   <div style={{ minWidth: 0 }}>
@@ -362,7 +362,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
               </div>
             )}
 
-            {isAdmin && (
+            {canManageServer && (
               <div className="setting-card-control">
                 <button
                   className="btn small"
@@ -386,10 +386,10 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
             {gpayConfig?.activeVouchersCount > 0 && <div><strong>{gpayConfig.activeVouchersCount}</strong><span>Active coupons</span></div>}
           </div>
 
-          <GPayProfileSettings config={gpayConfig} accounts={accounts} canEdit={isAdmin} busy={gpaySweeping} onConfig={config => { setGpayConfig(config); setGpayDraftPath(config.watchFolderPath || ''); setGpayUserName(config.userName || ''); setGpayMessage(null); setBrowse(null); setParticipantList([]); }} />
+          <GPayProfileSettings config={gpayConfig} accounts={accounts} canEdit={canEdit} busy={gpaySweeping} onConfig={config => { setGpayConfig(config); setGpayDraftPath(config.watchFolderPath || ''); setGpayUserName(config.userName || ''); setGpayMessage(null); setBrowse(null); setParticipantList([]); }} />
 
           {/* Auto-import: Google Pay watch folder */}
-          {isAdmin && (
+          {canManageServer && (
             <div className="account-panel">
               <div className="account-panel-head">
                 <div style={{ minWidth: 0 }}>
@@ -519,7 +519,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
           )}
 
           {/* Split & Repayment Preferences */}
-          {isAdmin && (
+          {canEdit && (
             <div className="account-panel gpay-preferences">
               <div className="account-panel-head" style={{ marginBottom: '10px' }}>
                 <div style={{ minWidth: 0 }}>
@@ -539,7 +539,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                       value={gpayUserName}
                       onChange={(e) => setGpayUserName(e.target.value)}
                       onBlur={(e) => handleSaveGPayUserName(e.target.value)}
-                      placeholder="e.g. ARUN G, Arun"
+                      placeholder="e.g. Alex Smith, Alex"
                       className="field-input"
                       style={{ flex: 1 }}
                     />

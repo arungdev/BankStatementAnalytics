@@ -122,6 +122,7 @@ namespace BankStatementAnalytics.Services
 
         private async Task SweepAsync(CancellationToken stoppingToken)
         {
+            if (SecurityRuntime.PublicHosting) return;
             var accounts = (await DbHelper.QueryAsync<Account>(
                     a => a.WatchFolderPath != null && a.WatchFolderPath != ""))
                 .Where(a => a.WatchEnabled != false)   // null == enabled (pre-flag rows)
@@ -129,6 +130,7 @@ namespace BankStatementAnalytics.Services
 
             foreach (var account in accounts)
             {
+                if (!account.OwnerUserId.HasValue || Common.Framework.Auth.AuthService.GetUser(account.OwnerUserId.Value) is not { IsActive: true, Role: Common.Framework.Auth.AppRole.Admin }) continue;
                 stoppingToken.ThrowIfCancellationRequested();
 
                 var folder = account.WatchFolderPath!;

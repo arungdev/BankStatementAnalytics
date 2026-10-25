@@ -127,14 +127,25 @@ namespace BankStatementAnalytics.Controllers.Api
 
         // POST: api/accounts
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] Account account)
+        public async Task<IActionResult> Create([FromBody] CreateAccountRequest request)
         {
-            if (account == null)
+            if (request == null || string.IsNullOrWhiteSpace(request.AccountHolderName)
+                || request.AccountHolderName.Length > 100 || request.AccountNumber == null || request.AccountNumber.Length > 50
+                || request.BranchCode?.Length > 100 || request.CreditLimit is < 0
+                || !System.Enum.IsDefined(request.BankName) || request.StatementDay is < 1 or > 31)
                 return BadRequest();
-
-            // Mask account number before saving for safety
-            account.AccountNumber = account.AccountNumber;
-            account.OwnerUserId = CurrentUserId;
+            if (request.SharedLimitAccountId.HasValue)
+            {
+                var primary = DbHelper.GetById<Account>(request.SharedLimitAccountId.Value);
+                if (!Owns(primary) || primary!.BankName != Bank.HDFCCreditCard || request.BankName != Bank.HDFCCreditCard) return NotFound();
+            }
+            var account = new Account
+            {
+                AccountHolderName = request.AccountHolderName.Trim(), AccountNumber = Account.Mask(request.AccountNumber),
+                BankName = request.BankName, BranchCode = request.BranchCode?.Trim() ?? "",
+                CreditLimit = request.CreditLimit, StatementDay = request.StatementDay,
+                SharedLimitAccountId = request.SharedLimitAccountId, OwnerUserId = CurrentUserId
+            };
 
             await DbHelper.SaveAsync(account);
 
@@ -370,6 +381,17 @@ namespace BankStatementAnalytics.Controllers.Api
         public class UpdateAccountRequest
         {
             public string? AccountHolderName { get; set; }
+        }
+
+        public class CreateAccountRequest
+        {
+            public string AccountHolderName { get; set; } = "";
+            public string AccountNumber { get; set; } = "";
+            public Bank BankName { get; set; }
+            public string? BranchCode { get; set; }
+            public decimal? CreditLimit { get; set; }
+            public int? StatementDay { get; set; }
+            public long? SharedLimitAccountId { get; set; }
         }
 
         public class UpdateAutoImportRequest

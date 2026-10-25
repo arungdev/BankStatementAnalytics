@@ -149,12 +149,13 @@ namespace BankStatementAnalytics.Services
             {
                 try
                 {
-                    if (!Regex.IsMatch(narration, rule.NarrationRegex.Trim(), RegexOptions.IgnoreCase))
+                    if (rule.NarrationRegex.Length > 500 || !Regex.IsMatch(narration, rule.NarrationRegex.Trim(), RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100)))
                         return false;
                 }
                 catch
                 {
-                    // Ignore invalid regex in user input
+                    // Invalid or excessively expensive expressions must never match.
+                    return false;
                 }
             }
 

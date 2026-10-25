@@ -34,6 +34,14 @@ namespace BankStatementAnalytics
 
                     var isPostgres = string.Equals(config["Database:Provider"], "Postgres", StringComparison.OrdinalIgnoreCase);
                     var isEmbedded = isPostgres && string.Equals(config["Database:Embedded"], "true", StringComparison.OrdinalIgnoreCase);
+                    if (isPostgres && !isEmbedded && Services.SecurityRuntime.PublicHosting)
+                    {
+                        using var connection = new Npgsql.NpgsqlConnection(config["Database:PostgresConnectionString"]);
+                        connection.Open();
+                        using var command = new Npgsql.NpgsqlCommand("select rolsuper or rolcreatedb or rolcreaterole or rolreplication from pg_roles where rolname=current_user", connection);
+                        if (command.ExecuteScalar() is true)
+                            throw new InvalidOperationException("Public hosting requires a non-administrative database role. Follow the role migration instructions in SECURITY_AUDIT.md.");
+                    }
 
                     Log.Info($"NHibernate init: appDir='{appDir}', dataDir='{dataDir}', dbPath='{dbPath}', provider={(isPostgres ? "Postgres" : "SQLite")}, embedded={isEmbedded}.");
 
@@ -45,6 +53,7 @@ namespace BankStatementAnalytics
                     NHibernateManager.Initialize(dbPath, mapper =>
                     {
                         mapper.AddMapping<AppUserMap>();
+                        mapper.AddMapping<ExternalLoginMap>();
                         mapper.AddMapping<AccountMap>();
                         mapper.AddMapping<MerchantUpiMap>();
                         mapper.AddMapping<MerchantMap>();

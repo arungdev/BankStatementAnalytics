@@ -1,3 +1,4 @@
+import { canEditWorkspace } from '../utils/workspacePermissions';
 import useAsyncResource from '../hooks/useAsyncResource';
 import RequestError from '../components/RequestError';
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
@@ -55,7 +56,8 @@ function Field({ label, children }) {
 }
 
 export default function Merchants() {
-  const { isAdmin } = useAuth();
+  const { role } = useAuth();
+  const canEdit = canEditWorkspace(role);
   const { theme } = useTheme();
   // Subscribe to the mask flag so toggling "hide amounts" re-renders this page;
   // its other contexts (auth/theme) don't change on toggle, so without this the
@@ -154,10 +156,10 @@ export default function Merchants() {
   const loadMerchants = useCallback(async signal => {
     const [list, suggestions] = await Promise.all([
       api.get(`/merchants${accountQuery}`, { signal }),
-      isAdmin ? api.get('/merchants/category-suggestions', { signal }) : Promise.resolve({ data: [] }),
+      canEdit ? api.get('/merchants/category-suggestions', { signal }) : Promise.resolve({ data: [] }),
     ]);
     return { data: list.data || [], catSuggestions: suggestions.data || [] };
-  }, [accountQuery, isAdmin]);
+  }, [accountQuery, canEdit]);
   const { data: resource, loading, error: loadError, retry, updateData } = useAsyncResource(loadMerchants, { data: [], catSuggestions: [] });
   const { data, catSuggestions } = resource;
   const setData = update => updateData(previous => ({ ...previous, data: typeof update === 'function' ? update(previous.data) : update }));
@@ -797,7 +799,7 @@ export default function Merchants() {
       <style>{`
         .mrc-row {
           display: grid;
-          grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(240px, 2fr) minmax(180px, 1.2fr) minmax(100px, 0.8fr) 96px 110px 20px;
+          grid-template-columns: ${canEdit ? '36px ' : ''}minmax(240px, 2fr) minmax(180px, 1.2fr) minmax(100px, 0.8fr) 96px 110px 20px;
           align-items: center;
           gap: 16px;
           padding: 14px 20px;
@@ -826,7 +828,7 @@ export default function Merchants() {
         }
         .mrc-head {
           display: grid;
-          grid-template-columns: ${isAdmin ? '36px ' : ''}minmax(240px, 2fr) minmax(180px, 1.2fr) minmax(100px, 0.8fr) 96px 110px 20px;
+          grid-template-columns: ${canEdit ? '36px ' : ''}minmax(240px, 2fr) minmax(180px, 1.2fr) minmax(100px, 0.8fr) 96px 110px 20px;
           gap: 16px;
           padding: 12px 20px;
           font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
@@ -951,7 +953,7 @@ export default function Merchants() {
             margin-right: 0 !important;
           }
           .mrc-row, .mrc-head {
-            grid-template-columns: ${isAdmin ? '32px ' : ''}minmax(0,1fr) 90px 18px !important;
+            grid-template-columns: ${canEdit ? '32px ' : ''}minmax(0,1fr) 90px 18px !important;
             gap: 10px !important;
             padding: 12px 14px !important;
           }
@@ -963,7 +965,7 @@ export default function Merchants() {
       {/* ── Selection actions: bulk categorize + merge (title/subtitle come from
            the shared PageHeader). Categorizing works on one row too; merging
            needs at least two. ── */}
-      {isAdmin && selectedIds.length > 0 && (
+      {canEdit && selectedIds.length > 0 && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
           marginBottom: '16px', padding: '10px 14px',
@@ -1062,7 +1064,7 @@ export default function Merchants() {
           <FiFilter size={14} /> Uncategorized
         </Button>
         {/* Still offered when everything is marked, so the marked tab stays reachable. */}
-        {isAdmin && allMergeSuggestions.length > 0 && (
+        {canEdit && allMergeSuggestions.length > 0 && (
           <Button
             variant="secondary"
             onClick={() => {
@@ -1078,7 +1080,7 @@ export default function Merchants() {
               : `✨ ${markedSuggestions.length} marked merge${markedSuggestions.length > 1 ? 's' : ''}`}
           </Button>
         )}
-        {isAdmin && visibleCatSuggestions.length > 0 && (
+        {canEdit && visibleCatSuggestions.length > 0 && (
           <Button
             variant="secondary"
             onClick={() => { setCatExcluded(new Set()); setShowCatModal(true); }}
@@ -1096,7 +1098,7 @@ export default function Merchants() {
         borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
       }}>
         <div className="mrc-head">
-          {isAdmin && (
+          {canEdit && (
             <label className="mrc-check-cell">
               <input
                 type="checkbox"
@@ -1249,7 +1251,7 @@ export default function Merchants() {
                   className={`mrc-row${selectedMerchantId === merchant.id ? ' selected' : ''}`}
                   onClick={() => handleRowClick(merchant.id)}
                 >
-                  {isAdmin && (
+                  {canEdit && (
                     <label
                       className="mrc-check-cell"
                       onClick={(e) => e.stopPropagation()}
@@ -1281,7 +1283,7 @@ export default function Merchants() {
 
                       {/* Inline note — editable for admins, read-only otherwise (and
                           then only rendered when there is something to show). */}
-                      {isAdmin ? (
+                      {canEdit ? (
                         <div className="mrc-note-line" onClick={(e) => e.stopPropagation()}>
                           {noteEditRowId === merchant.id ? (
                             <input
@@ -1319,7 +1321,7 @@ export default function Merchants() {
                   </div>
 
                   <div className="mrc-col-cat" onClick={(e) => e.stopPropagation()}>
-                    {isAdmin ? (
+                    {canEdit ? (
                       <CategoryPicker
                         value={merchant.subCategory || merchant.category || ''}
                         categories={categoriesList}
@@ -1655,7 +1657,7 @@ export default function Merchants() {
                   </>
                 )}
               </div>
-              {isAdmin && (!isEditing ? (
+              {canEdit && (!isEditing ? (
                 <button className="btn small" onClick={handleEditClick}>Edit</button>
               ) : (
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -1772,7 +1774,7 @@ export default function Merchants() {
                   {merchantDetails.aliases.map((alias, idx) => (
                     <span key={`${alias}-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', backgroundColor: T.surface, color: T.muted, padding: '5px 10px', fontSize: '12px', fontWeight: 500, borderRadius: '8px', border: `1px dashed ${T.border}` }}>
                       {alias}
-                      {isAdmin && (
+                      {canEdit && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleUnmerge(alias); }}
                           style={{ background: 'none', border: 'none', color: T.red, cursor: 'pointer', padding: 0, fontWeight: 'bold', lineHeight: 1, fontSize: '15px', display: 'flex', alignItems: 'center' }}

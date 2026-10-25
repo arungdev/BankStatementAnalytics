@@ -1,5 +1,37 @@
 # Verification — 25 October 2026
 
+## Default HTTPS follow-up
+
+The session now enables HTTPS automatically when the configured auth-status
+endpoint reports needsSetup=false. It waits privately for first-admin setup on a
+new instance; existing instances activate HTTPS immediately. Mocked shell tests
+cover an existing administrator, setup changing from pending to complete, and
+refusal to enable HTTPS after an unrecognized status response. Windows PowerShell
+5.1 mocked-SSH tests cover enable-https.bat's HTTPS-only mode, which runs the
+existing server Compose command without file transfers or redeployment. Both
+deployment ZIPs include this helper. A live VPS run of the new default is still
+required; the manually invoked equivalent command was reported working by the user.
+
+## Publication and launcher follow-up
+
+- Published `arungs125/bankstatementanalytics:3.1.0-linux-1da6c7b` successfully.
+  Digest: `sha256:02eeb2fca27f0df558f247584525cdc665ad4ea6a4ae3b52c95eda52c5e44f88`.
+  An anonymous Docker registry request returned HTTP 200 with that digest,
+  confirming that this tag does not require an end-user Docker Hub login.
+- Reused the original tested image for the exact source-commit tag; this release
+  does not silently substitute a different build under the same tag.
+- Windows PowerShell 5.1 tests passed for temporary Ed25519 generation, empty
+  passphrase, cleanup, existing-key authentication and password bootstrap, using
+  mocked SSH/SCP. Installation/admin tunnel/HTTPS use one interactive SSH session.
+- The runtime-only ZIP has 19 files, including the new authentication/session
+  helpers. Package tests verify that C# source and development tools are excluded.
+- Optional offline ZIP includes a Docker-save archive under application-image.tar.
+  Docker load restored the expected image tag locally; mocked launcher tests
+  confirmed authenticated SCP upload. This path bypasses pulling the custom app
+  image, while public DB/proxy images still require network access.
+- Live SSH/sudo/temporary authorized_keys installation on the VPS has not been
+  exercised by the agent; these checks still require an actual deployment run.
+
 ## Shared-module extraction verification
 
 The reusable implementation now lives in Common.Framework/Deployment. Generated
@@ -96,3 +128,29 @@ through GitHub during this session.
 - The Windows SSH launcher has passed PowerShell parsing and the Ubuntu helper
   has passed Bash syntax validation. No remote server was used to test automatic
   Docker installation or the full SSH/SCP/sudo workflow.
+# V4.0.0 release verification — 25 October 2026
+
+The release coordinator generated all three V4 artifacts in `Setup` and published
+`arungs125/bankstatementanalytics:4.0.0`. Anonymous registry verification returned
+HTTP 200 with digest
+`sha256:96cd2a3bb135e87336784998ba65d10c5648fa029e6559ccd76bdd3419460076`.
+
+- 195 backend regression checks and 17 frontend tests passed.
+- npm audit after compatible lockfile updates reported zero vulnerabilities;
+  the .NET package advisory scan reported no vulnerable packages from its feeds.
+- Windows application ProductVersion is 4.0.0. Its portable ZIP contains the
+  PostgreSQL bundle and excludes runtime customer data and service helpers.
+- Extracted portable app started against its own fresh embedded PostgreSQL on
+  localhost:18091, passed readiness and exposed first-admin setup. Synthetic
+  database and app processes were stopped afterwards.
+- The published Linux image passed 14 multi-user HTTP checks on an isolated
+  PostgreSQL stack. The application database role reported SUPERUSER, CREATEDB
+  and CREATEROLE false. Test containers and volumes were removed afterwards.
+- Cloud ZIP contains 30 runtime/document entries, uses image version 4.0.0,
+  includes deployment/HTTPS/Google launchers and excludes source, Docker TARs,
+  private credentials and customer data. All three SHA256 checksums matched.
+
+The Inno installer was compiled but not installed over the existing local service.
+No live Ubuntu deployment was performed. Existing-server database-role and backup
+prerequisites still apply; consult `CLOUD_SECURITY.md`. The wider audit's remaining
+checks are recorded in `SECURITY_AUDIT.md`.

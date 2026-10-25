@@ -15,6 +15,7 @@ import AccountFilter, { ALL_ACCOUNTS } from "./components/AccountFilter";
 import NotificationBell from "./components/NotificationBell";
 import PrivacyToggle from "./components/PrivacyToggle";
 import Login from "./pages/Login";
+import useAuthenticationOptions from './hooks/useAuthenticationOptions';
 import Setup from "./pages/Setup";
 import InsightsFilters from "./components/filters/InsightsFilters";
 import ReportsFilters from "./components/filters/ReportsFilters";
@@ -47,10 +48,13 @@ export default function App() {
 
 function AuthGate() {
   const { loading, isAuthenticated, needsSetup } = useAuth();
+  const authenticationOptions = useAuthenticationOptions();
+  const location = useLocation();
+  const setupRequired = needsSetup && !authenticationOptions.googleOnly;
 
   // Same markup/classes as the pre-mount splash in index.html (styled there),
   // so the hand-off from static HTML to React is seamless.
-  if (loading) {
+  if (loading || authenticationOptions.loading) {
     return (
       <div className="boot-splash">
         <img src="/icon-192.png" alt="Bank Analytics" className="boot-logo" />
@@ -59,17 +63,18 @@ function AuthGate() {
     );
   }
 
+  if (authenticationOptions.unavailable) return <div className="boot-splash">Unable to load sign-in options. Please reload this page.</div>;
   return (
     <Routes>
       <Route
         path="/setup"
-        element={needsSetup ? <Setup /> : (isAuthenticated ? <Navigate to="/" replace /> : <Setup />)}
+        element={authenticationOptions.googleOnly ? <Navigate to="/login" replace /> : (setupRequired ? <Setup /> : (isAuthenticated ? <Navigate to="/" replace /> : <Setup />))}
       />
       <Route
         path="/login"
-        element={needsSetup ? <Navigate to="/setup" replace /> : (isAuthenticated ? <Navigate to="/" replace /> : <Login />)}
+        element={setupRequired ? <Navigate to="/setup" replace /> : (isAuthenticated && !new URLSearchParams(location.search).has('googleError') ? <Navigate to="/" replace /> : <Login />)}
       />
-      <Route element={needsSetup ? <Navigate to="/setup" replace /> : (isAuthenticated ? <Layout /> : <Navigate to="/login" replace />)}>
+      <Route element={setupRequired ? <Navigate to="/setup" replace /> : (isAuthenticated ? <Layout /> : <Navigate to="/login" replace />)}>
         <Route path="/" element={<Overview />} />
         <Route path="/trends" element={<Trends />} />
         <Route path="/transactions" element={<Transactions />} />
