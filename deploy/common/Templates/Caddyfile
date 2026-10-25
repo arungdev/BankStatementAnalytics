@@ -1,0 +1,11 @@
+{
+    email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy {$APP_UPSTREAM}
+    log {
+        output stdout
+    }
+}

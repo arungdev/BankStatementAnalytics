@@ -62,11 +62,13 @@ services:
     environment:
       APP_DOMAIN: ${APP_DOMAIN:-localhost}
       ACME_EMAIL: ${ACME_EMAIL:-}
+      APP_UPSTREAM: bankstatementanalytics:8080
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/common/Templates:/etc/caddy/common:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

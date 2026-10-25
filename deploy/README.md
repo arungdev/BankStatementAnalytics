@@ -1,5 +1,14 @@
 # Ubuntu Docker deployment
 
+Reusable implementation lives in `Common.Framework/Deployment` and is exported to
+`deploy/common` for public clones and end-user ZIPs. This project's small launchers
+delegate to it; `deploy/project.env` contains its non-secret identity, database,
+service and storage settings. See [the shared-module guide](common/README.md) to
+reuse it for another application. Refresh from source with
+`./scripts/update-common-deployment.ps1`, verify with
+`./scripts/verify-common-deployment.ps1`, and create the end-user ZIP with
+`./scripts/package-deployment.ps1`.
+
 This repository is **BankStatementAnalytics**, including bills and shared bills,
 not a separately named Billing Application. It targets .NET 10 and React/Vite;
 NHibernate uses PostgreSQL. Windows development and the embedded Windows database

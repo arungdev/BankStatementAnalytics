@@ -14,6 +14,7 @@ COPY BankStatementAnalytics/BankStatementAnalytics.csproj BankStatementAnalytics
 COPY BankStatementAnalytics/lib/ BankStatementAnalytics/lib/
 RUN dotnet restore BankStatementAnalytics/BankStatementAnalytics.csproj
 COPY BankStatementAnalytics/ BankStatementAnalytics/
+COPY deploy/common/Source/ deploy/common/Source/
 COPY --from=client /src/BankStatementAnalytics/wwwroot/ BankStatementAnalytics/wwwroot/
 RUN dotnet publish BankStatementAnalytics/BankStatementAnalytics.csproj -c Release --no-restore \
     -p:SkipClientBuild=true -p:UseSharedCompilation=false -o /app/publish

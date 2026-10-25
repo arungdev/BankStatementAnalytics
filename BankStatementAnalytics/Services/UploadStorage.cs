@@ -22,34 +22,10 @@ namespace BankStatementAnalytics.Services
             return name;
         }
 
-        public static void DeleteFile(string storedName)
-        {
-            if (string.IsNullOrEmpty(storedName))
-                return;
+        private static Common.Framework.Deployment.RootedFileStore Store =>
+            new(Root, "Invalid stored statement path.");
 
-            var filePath = ResolvePath(storedName);
-            if (File.Exists(filePath))
-                File.Delete(filePath);
-
-            // Drop the account folder once its last statement is gone.
-            var dir = Path.GetDirectoryName(filePath);
-            if (dir != null
-                && !string.Equals(Path.GetFullPath(dir), Path.GetFullPath(Root), StringComparison.OrdinalIgnoreCase)
-                && Directory.Exists(dir)
-                && !Directory.EnumerateFileSystemEntries(dir).Any())
-            {
-                Directory.Delete(dir);
-            }
-        }
-
-        public static string ResolvePath(string storedName)
-        {
-            var root = Path.GetFullPath(Root) + Path.DirectorySeparatorChar;
-            var path = Path.GetFullPath(Path.Combine(root, storedName));
-            if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
-                || Path.IsPathRooted(storedName))
-                throw new ArgumentException("Invalid stored statement path.", nameof(storedName));
-            return path;
-        }
+        public static void DeleteFile(string storedName) => Store.DeleteFile(storedName);
+        public static string ResolvePath(string storedName) => Store.ResolvePath(storedName);
     }
 }

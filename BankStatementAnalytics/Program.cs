@@ -16,18 +16,9 @@ using Common.Framework.Web;
 using System;
 using System.IO;
 using System.Threading;
-using Microsoft.AspNetCore.HttpOverrides;
-using System.Net;
+using Common.Framework.Deployment;
 
-// Compose mounts the password separately; never bake credentials into the image.
-var passwordFile = Environment.GetEnvironmentVariable("Database__PasswordFile");
-if (!string.IsNullOrWhiteSpace(passwordFile))
-{
-    var connection = new Npgsql.NpgsqlConnectionStringBuilder(
-        Environment.GetEnvironmentVariable("Database__PostgresConnectionString"));
-    connection.Password = File.ReadAllText(passwordFile).TrimEnd('\r', '\n');
-    Environment.SetEnvironmentVariable("Database__PostgresConnectionString", connection.ConnectionString);
-}
+ContainerHosting.LoadDatabasePasswordFile();
 
 // Resolve the true executable directory up front. For a single-file, self-extracting exe -
 // especially when run as a Windows service - the host's content root and AppContext.BaseDirectory
@@ -207,37 +198,11 @@ builder.Services.AddAuthRateLimiting();
 
 var app = builder.Build();
 
-// Trust only the explicitly configured reverse proxy, before cookies and origin checks.
-var proxyAddress = app.Configuration["Deployment:KnownProxy"];
-if (!string.IsNullOrWhiteSpace(proxyAddress))
+app.UseConfiguredProxy(app.Configuration);
+app.UseLocalReadiness(async cancellationToken =>
 {
-    var forwarded = new ForwardedHeadersOptions
-    {
-        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-        ForwardLimit = 1
-    };
-    forwarded.KnownProxies.Add(IPAddress.Parse(proxyAddress));
-    app.UseForwardedHeaders(forwarded);
-}
-
-// Available only to local container probes; tests actual database connectivity.
-app.Use(async (context, next) =>
-{
-    if (context.Request.Path == "/health" && context.Connection.RemoteIpAddress is { } remote && IPAddress.IsLoopback(remote))
-    {
-        try
-        {
-            using var session = NHibernateHelper.SessionFactory.OpenStatelessSession();
-            await session.CreateSQLQuery("select 1").SetTimeout(3).UniqueResultAsync<int>(context.RequestAborted);
-            await context.Response.WriteAsync("healthy");
-        }
-        catch
-        {
-            context.Response.StatusCode = 503;
-        }
-        return;
-    }
-    await next(context);
+    using var session = NHibernateHelper.SessionFactory.OpenStatelessSession();
+    await session.CreateSQLQuery("select 1").SetTimeout(3).UniqueResultAsync<int>(cancellationToken);
 });
 
 app.UseCors("React");

@@ -1,5 +1,36 @@
 # Verification — 25 October 2026
 
+## Shared-module extraction verification
+
+The reusable implementation now lives in Common.Framework/Deployment. Generated
+deploy/common artifacts have SHA-256 checksums and are linked into the application;
+the existing framework DLL remains unchanged. Project identity, PostgreSQL settings,
+service names, ports and persistent paths are configured in deploy/project.env.
+
+After extraction, the following checks passed:
+
+- Application build with zero errors/warnings and final Linux Docker image build.
+- All 36 import reliability checks: imports, legacy protected passwords, restored
+  key ring, ownership and stored-path confinement.
+- Update installation guard regressions with the thin product wrapper.
+- Hosting/storage/PDF module tests on Windows and inside the Linux runtime,
+  including quoted secret values, trusted/untrusted forwarded headers, local-only
+  readiness, readiness failure, traversal rejection and Linux path case sensitivity.
+- Cross-project deployment tests using synthetic invoice service/database/storage
+  settings and mocked Docker: backup/restore selection, unsafe-root rejection,
+  file-only projects, and refusal to restore another database's snapshot.
+- Actual isolated Linux PostgreSQL/application smoke test: first-admin setup,
+  authenticated APIs, PDF export, non-root execution, volume persistence, full
+  backup/restore and preserved authentication cookies.
+- Shared Caddy template with local HTTPS: Secure cookie, authenticated GET, and
+  same-origin account creation through the trusted proxy.
+- PowerShell/Bash syntax, Compose configuration and shared-module checksums.
+
+The end-user ZIP was regenerated with the shared module. Remote SSH/Ubuntu Docker
+installation remains untested without a target server. Test containers and volumes
+were isolated from the normal application. Independent card/filter UI edits present
+in the workspace were not changed by this extraction.
+
 Inspected the actual BankStatementAnalytics project: .NET 10, React/Vite,
 NHibernate/PostgreSQL, vendored Common.Framework DLL, Windows embedded PostgreSQL,
 PDF generation, import/storage services, auth/network middleware, updates and backups.

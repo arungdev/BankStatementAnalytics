@@ -19,6 +19,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../deploy/common/Source/*.cs" Link="Common.Deployment/%(Filename)%(Extension)" />
     <Content Remove="log4net.config" />
   </ItemGroup>
 

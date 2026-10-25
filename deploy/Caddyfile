@@ -1,11 +1,1 @@
-{
-    email {$ACME_EMAIL}
-}
-
-{$APP_DOMAIN} {
-    encode zstd gzip
-    reverse_proxy bankstatementanalytics:8080
-    log {
-        output stdout
-    }
-}
+import /etc/caddy/common/Caddyfile

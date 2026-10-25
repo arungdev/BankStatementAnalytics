@@ -1,30 +1,15 @@
-using Microsoft.AspNetCore.DataProtection;
+using Common.Framework.Deployment;
 
 namespace BankStatementAnalytics.Services;
 
-/// <summary>Separate, backed-up key ring for statement passwords (never auth cookies).</summary>
+// Product-specific key location and purposes are retained for existing backups.
 public sealed class StatementPasswordProtector
 {
-    private const string Prefix = "protected:v1:";
-    private readonly IDataProtector _protector;
-
+    private readonly ProtectedValueStore _store;
     public StatementPasswordProtector() : this(new DirectoryInfo(Path.Combine(UploadStorage.Root, ".statement-keys"))) { }
-
-    public StatementPasswordProtector(DirectoryInfo keys)
-    {
-        // BackupService includes the Uploads tree; restoring the database therefore
-        // also restores the keys needed to read its statement passwords.
-        _protector = DataProtectionProvider.Create(keys,
-            options => options.SetApplicationName("BankStatementAnalytics.StatementPasswords"))
-            .CreateProtector("statement-password.v1");
-    }
-
-    public string? Protect(string? value) => string.IsNullOrEmpty(value)
-        ? null : Prefix + _protector.Protect(value);
-
-    public string? Unprotect(string? value) => string.IsNullOrEmpty(value)
-        ? null : value.StartsWith(Prefix, StringComparison.Ordinal)
-            ? _protector.Unprotect(value[Prefix.Length..]) : value;
-
-    public bool IsProtected(string value) => value.StartsWith(Prefix, StringComparison.Ordinal);
+    public StatementPasswordProtector(DirectoryInfo keys) =>
+        _store = new ProtectedValueStore(keys, "BankStatementAnalytics.StatementPasswords", "statement-password.v1");
+    public string? Protect(string? value) => _store.Protect(value);
+    public string? Unprotect(string? value) => _store.Unprotect(value);
+    public bool IsProtected(string value) => _store.IsProtected(value);
 }

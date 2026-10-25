@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: pwsh -NoProfile -File scripts/verify-common-deployment.ps1
+      - run: bash Tests/DeploymentReuse/test.sh
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'

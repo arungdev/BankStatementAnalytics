@@ -22,3 +22,19 @@ When updating either library:
 Application releases use `npm ci` and the committed lockfile. Keep the source
 commit, build logs, and manifest with release artifacts so future dependency
 updates can be traced.
+
+## Deployment source module
+
+`Common.Framework/Deployment` is the canonical private source for reusable Docker,
+SSH, backup/restore and optional hosting/PDF/installer modules. Its generated public
+copy is `deploy/common`, with per-file SHA-256 hashes in `deploy/common/manifest.json`.
+Refresh with `./scripts/update-common-deployment.ps1` and verify with
+`./scripts/verify-common-deployment.ps1`. The application's small wrappers and
+`deploy/project.env` supply only its identity and deployment settings.
+
+The legacy local framework source lacks APIs present in the current vendored DLL.
+This extraction deliberately preserves that DLL, distributing the new optional
+modules as linked source instead of rebuilding an incompatible binary. Consumer
+clones do not require access to Common.Framework. Follow the module README to reuse
+it in the next project; keep private source changes in the framework repository
+and refresh consumers through the exporter rather than hand-editing generated files.

@@ -169,31 +169,8 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             if (string.IsNullOrWhiteSpace(path))
             {
-                // Quick access first: the native Explorer dialog can't hand a web page
-                // a real path, so surface the folders people actually keep statements in.
-                var roots = new List<(string Name, string Path)>();
-                try
-                {
-                    foreach (var profile in OperatingSystem.IsWindows()
-                        ? Directory.EnumerateDirectories(@"C:\Users")
-                        : new[] { Common.Framework.AppPaths.ResolveWritableAppDataDirectory() })
-                    {
-                        var user = Path.GetFileName(profile);
-                        if (user is "Public" or "Default" or "Default User" or "All Users")
-                            continue;
-                        foreach (var sub in new[] { "Downloads", "Documents", "Desktop" })
-                        {
-                            var candidate = Path.Combine(profile, sub);
-                            if (Directory.Exists(candidate))
-                                roots.Add(($"{sub} ({user})", candidate));
-                        }
-                    }
-                }
-                catch { /* profile listing is best-effort */ }
-
-                roots.AddRange(DriveInfo.GetDrives()
-                    .Where(d => d.IsReady)
-                    .Select(d => (d.Name, d.Name)));
+                var roots = Common.Framework.Deployment.ServerFolderBrowser.GetRoots(
+                    Common.Framework.AppPaths.ResolveWritableAppDataDirectory());
 
                 return Ok(new
                 {

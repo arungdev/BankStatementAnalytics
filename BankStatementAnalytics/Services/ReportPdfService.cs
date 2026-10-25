@@ -24,37 +24,7 @@ namespace BankStatementAnalytics.Services
             // PDFsharp Core needs an explicit resolver: Segoe UI on Windows and
             // the image's DejaVu Sans fonts on Linux, both including the rupee glyph.
             // The resolver is a set-once process-wide global.
-            GlobalFontSettings.FontResolver = new SegoeFontResolver();
-        }
-
-        // Keep Windows report typography; use freely packaged fonts on Linux.
-        private sealed class SegoeFontResolver : IFontResolver
-        {
-            private static readonly string FontDir = OperatingSystem.IsWindows()
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts")
-                : "/usr/share/fonts/truetype/dejavu";
-
-            public byte[]? GetFont(string faceName) => File.ReadAllBytes(Path.Combine(FontDir, faceName));
-
-            public FontResolverInfo? ResolveTypeface(string familyName, bool bold, bool italic)
-            {
-                var file = (bold, italic) switch
-                {
-                    (true, true) => "segoeuiz.ttf",
-                    (true, false) => "segoeuib.ttf",
-                    (false, true) => "segoeuii.ttf",
-                    _ => "segoeui.ttf",
-                };
-                if (!OperatingSystem.IsWindows())
-                    file = (bold, italic) switch
-                    {
-                        (true, true) => "DejaVuSans-BoldOblique.ttf",
-                        (true, false) => "DejaVuSans-Bold.ttf",
-                        (false, true) => "DejaVuSans-Oblique.ttf",
-                        _ => "DejaVuSans.ttf"
-                    };
-                return new FontResolverInfo(file);
-            }
+            GlobalFontSettings.FontResolver = new Common.Framework.Deployment.PlatformFontResolver();
         }
 
         private const string FontName = "Segoe UI";

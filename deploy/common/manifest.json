@@ -1,0 +1,72 @@
+{
+  "source": "Common.Framework/Deployment",
+  "sourceRevision": "3ed2f9e906d507f07a679f847f76bdf19cd294b7",
+  "artifacts": [
+    {
+      "path": "backup.sh",
+      "sha256": "708380b3ed65f9eceff3d4559127ada69d4fe6aeacd5046d3e39a193112fa971"
+    },
+    {
+      "path": "deploy-ssh.ps1",
+      "sha256": "12e8373ea2812ff5fb7dada9f1d8f1703381c61439eac4ebb6ea8e0ac87475ef"
+    },
+    {
+      "path": "package-deployment.ps1",
+      "sha256": "d3c6679e81653bfd9a8e1a57cc788daba3e12d9ac34c3878b7ddb739c9046820"
+    },
+    {
+      "path": "project-config.sh",
+      "sha256": "34bf40fb86ff729bcd3f997b87859281199e39b5c8b2f00043a0683b7254bbcf"
+    },
+    {
+      "path": "publish-image.ps1",
+      "sha256": "a3ad73d3c25983cfdacc1faa64b683674923857ca9e2ee38bcc0512aa3441776"
+    },
+    {
+      "path": "README.md",
+      "sha256": "c3162420ef999bbfbd87363896c18771f2af83064ac5a0b178741cab661ca854"
+    },
+    {
+      "path": "restore.sh",
+      "sha256": "ae74dd9f6766bea0b49ae2a0f8c6a9d72819b5e74ff7ec8529aa3ca754adb3e7"
+    },
+    {
+      "path": "server-deploy.sh",
+      "sha256": "aba31f04052c0fd6fd37b4c07c83c65a50b614fc5ef3cd3b241ebccb056eacdc"
+    },
+    {
+      "path": "Source/ContainerHosting.cs",
+      "sha256": "0b4955f87e0c3f0cd51f271389f30819a221665638ca182d33dae32060f1a309"
+    },
+    {
+      "path": "Source/DesktopInstallerGuard.cs",
+      "sha256": "e50ec346092677e243e0ff2bbb6557dc9bf3b370a8252eb7d19a75cd50242b28"
+    },
+    {
+      "path": "Source/PlatformFontResolver.cs",
+      "sha256": "416e8f93676afdab44d980c0ce7500fd56277eb0028ef9091ce3a041f8bb7ad3"
+    },
+    {
+      "path": "Source/ProtectedValueStore.cs",
+      "sha256": "989bf34c6c5b2e605b4cfdc16ec29b27532739e185ea2a3bfc96b5cf4ad6c485"
+    },
+    {
+      "path": "Source/RootedFileStore.cs",
+      "sha256": "0ee5aa7552bffe4ede3a8b0bc1a6bb450b6fdd40570a356a68be19223964a6eb"
+    },
+    {
+      "path": "Source/ServerFolderBrowser.cs",
+      "sha256": "ff3bb1584c26d5f25e6f8b97958bb5166515b29faed4939fc953edf8a7ba80e6"
+    },
+    {
+      "path": "Templates/Caddyfile",
+      "sha256": "0f04a571df94b61373200d75ca3dc98a5d2afeea810f32bb509f9d9bded2b0cf"
+    },
+    {
+      "path": "Templates/log4net.config",
+      "sha256": "757827045cfdc01ec0a0934171740caf4b85e222706ff64f39d94e34e596894f"
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceTreeDirty": false
+}
