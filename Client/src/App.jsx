@@ -234,6 +234,7 @@ function Layout() {
   // (Overview, Merchants, Investments, …) leave it undefined so it isn't drawn.
   const filters = isInsights
     ? <InsightsFilters
+          account={accounts.find(a => a.id === selectedAccountId)}
       range={insightRange}
       setRange={setInsightRange}
       groupBy={insightGroupBy}
@@ -241,6 +242,7 @@ function Layout() {
     />
     : isTrends
       ? <TrendsFilters
+          account={accounts.find(a => a.id === selectedAccountId)}
         period={trendsPeriod}
         setPeriod={setTrendsPeriod}
         dateRange={trendsRange}
@@ -249,6 +251,7 @@ function Layout() {
       />
       : isTransactions
         ? <TransactionsFilters
+          account={accounts.find(a => a.id === selectedAccountId)}
           dateRange={transactionsRange}
           setDateRange={setTransactionsRange}
         />

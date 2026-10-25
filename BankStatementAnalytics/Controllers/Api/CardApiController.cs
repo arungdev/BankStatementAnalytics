@@ -19,6 +19,23 @@ namespace BankStatementAnalytics.Controllers.Api
     [Route("api/cards")]
     public class CardApiController : TenantControllerBase
     {
+        // Calendar metadata; imported dates override monthly estimates.
+        [HttpGet("{accountId}/statement-dates")]
+        public IActionResult GetStatementDates(int accountId)
+        {
+            var account = DbHelper.GetById<Account>((long)accountId);
+            if (account is null || !Owns(account) || account.BankName != Bank.HDFCCreditCard)
+                return NotFound();
+            using var session = DbHelper.GetSession();
+            var statements = session.Query<CardStatementSummary>()
+                .Where(s => s.AccountId == accountId && s.StatementDate != null)
+                .OrderBy(s => s.StatementDate).ToList();
+            return Ok(new {
+                StatementDay = account.StatementDay ?? statements.LastOrDefault()?.StatementDate?.Day,
+                Statements = statements.Select(s => new { s.StatementDate, s.PeriodStart, s.PeriodEnd })
+            });
+        }
+
         // GET: api/cards/{accountId}/summary
         [HttpGet("{accountId}/summary")]
         public IActionResult GetSummary(int accountId)

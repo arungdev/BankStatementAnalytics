@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import './filter-chip.css';
+import api from '../api/client';
+import { Link } from 'react-router-dom';
+import { billingDates, billingCycles, isCreditCard } from '../utils/cardBilling';
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -14,7 +17,7 @@ const fmt = (d) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'num
 const pad = (n) => String(n).padStart(2, '0');
 
 /* ─── Single Month Calendar ─────────────────────────────────────────────── */
-function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayClick, onDayHover }) {
+function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayClick, onDayHover, billing }) {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const prevDays = new Date(year, month, 0).getDate();
@@ -25,6 +28,7 @@ function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayC
   const remaining = 42 - cells.length;
   for (let i = 1; i <= remaining; i++) cells.push({ day: i, cur: false });
 
+  const statementDates = billingDates(year, month, billing);
   const rangeEnd = hovered && start && !end ? hovered : end;
 
   return (
@@ -54,6 +58,7 @@ function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayC
           const isEnd      = isSameDay(date, rangeEnd);
           const inRange    = isBetween(date, start, rangeEnd) || isBetween(date, rangeEnd, start);
           const isEndpoint = isStart || isEnd;
+          const statement = statementDates.some(d => isSameDay(d, date));
           const today      = isSameDay(date, new Date());
 
           let bg = 'transparent', color = 'var(--text-main)';
@@ -72,6 +77,16 @@ function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayC
 
           return (
             <div key={idx}
+              title={statement ? 'Statement Date' : undefined}
+              role="button"
+              tabIndex={0}
+              aria-label={fmt(date) + (statement ? ', Statement Date' : '') + (today ? ', Today' : '')}
+              aria-pressed={!!isEndpoint}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault(); onDayClick(date);
+                }
+              }}
               onClick={() => onDayClick(date)}
               onMouseEnter={() => onDayHover(date)}
               style={{
@@ -87,6 +102,8 @@ function MonthCalendar({ year, month, onMonthChange, start, end, hovered, onDayC
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 width: 23, height: 23, borderRadius: '50%',
                 background: bg, color,
+                outline: statement ? '2px solid #b7791f' : undefined,
+                outlineOffset: -2,
                 fontSize: 11, fontWeight: isEndpoint ? 700 : today ? 600 : 400,
                 transition: 'background 0.1s',
               }}>
@@ -152,6 +169,7 @@ const timeInputStyle = {
  *   <DateRangePicker value={range} onChange={setRange} />
  */
 export default function DateRangePicker({
+  account,
   value,
   onChange,
   showTime = true,
@@ -161,6 +179,27 @@ export default function DateRangePicker({
   prefixLabel = 'Period',   // muted label inside the trigger chip; pass null to hide
 }) {
   const compact = size === 'sm';
+  const [open, setOpen] = useState(false);
+  const [billingAttempt, setBillingAttempt] = useState(0);
+  const [billingResult, setBillingResult] = useState(null);
+  const card = isCreditCard(account);
+  const billing = card && billingResult?.id === account.id ? billingResult.data : null;
+  const cycles = billingCycles(billing);
+  const cyclePresets = card && cycles ? [
+    { label: 'Current Billing Cycle', value: 'CURRENT_BILLING', range: cycles.current },
+    { label: 'Previous Billing Cycle', value: 'PREVIOUS_BILLING', range: cycles.last },
+  ] : [];
+  const presetGroups = PRESET_GROUPS.map(group => group.title === 'Quick'
+    ? { ...group, items: [...group.items, ...cyclePresets] } : group);
+  const availablePresets = presetGroups.flatMap(group => group.items);
+  useEffect(() => {
+    if (!card || !open) return;
+    let active = true;
+    api.get(`/cards/${account.id}/statement-dates`)
+      .then(res => { if (active) setBillingResult({ id: account.id, data: res.data }); })
+      .catch(() => { if (active) setBillingResult({ id: account.id, error: true }); });
+    return () => { active = false; };
+  }, [card, open, billingAttempt, account?.id, account?.statementDay]);
 
   /* ── Size-dependent layout numbers ──────────────────────────────────── */
   const dims = compact
@@ -171,13 +210,12 @@ export default function DateRangePicker({
         presetPad: '7px 10px', presetFont: 13, footerPad: '12px 20px', dateFieldPad: '7px 12px',
         dateFieldFont: 13, gapBetweenCals: 24, gapBetweenFields: 16 };
 
-  const [open, setOpen]         = useState(false);
   const [preset, setPreset]     = useState(value?.preset ?? 'LAST_30');
   const [customN, setCustomN]   = useState('');
 
   // Calendar state
   const now = new Date();
-  const [leftYear,  setLeftYear]  = useState(now.getFullYear());
+  const [leftYear,  setLeftYear]  = useState(now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear());
   const [leftMonth, setLeftMonth] = useState(now.getMonth() === 0 ? 11 : now.getMonth() - 1);
   const [rightYear, setRightYear] = useState(now.getFullYear());
   const [rightMonth,setRightMonth]= useState(now.getMonth());
@@ -271,7 +309,8 @@ export default function DateRangePicker({
   const applyPreset = (p) => {
     setPreset(p);
     if (p === 'CUSTOM') return;
-    const { start, end } = resolvePreset(p);
+    const cycle = cyclePresets.find(option => option.value === p);
+    const { start, end } = cycle ? { start: startOfDay(cycle.range.start), end: endOfDay(cycle.range.end) } : resolvePreset(p);
     setSelStart(start); setSelEnd(end); setPicking('start');
     if (start) syncMonths(start, end);
   };
@@ -321,8 +360,10 @@ export default function DateRangePicker({
     if (s) { s.setHours(startH, startM, 0, 0); }
     if (e) { e.setHours(endH, endM, 59, 999); }
 
-    const label = PRESETS.find(p => p.value === preset)?.label ?? 'Custom Range';
-    onChange?.({ start: s, end: e, preset, label });
+    const label = availablePresets.find(p => p.value === preset)?.label ?? 'Custom Range';
+    // Billing shortcuts resolve to absolute dates, preserving the existing persisted range contract.
+    const appliedPreset = preset === 'CURRENT_BILLING' || preset === 'PREVIOUS_BILLING' ? 'CUSTOM' : preset;
+    onChange?.({ start: s, end: e, preset: appliedPreset, label });
     setOpen(false);
   };
 
@@ -332,6 +373,34 @@ export default function DateRangePicker({
     setPreset(value?.preset ?? 'LAST_30');
     setOpen(false);
   };
+
+  const billingInfo = card && (
+    <div style={{ marginTop: 10, paddingTop: 8, fontSize: 11, lineHeight: 1.5,
+      borderTop: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
+      {billing ? <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
+          <span aria-hidden="true" style={{ width: 9, height: 9, border: '2px solid #b7791f', borderRadius: '50%' }} />
+          <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Statement Date</span>
+          <span title="Imported statement dates are used when available. Other dates are estimates based on your statement day." style={{ cursor: 'help' }}>ⓘ</span>
+        </div>
+        {cycles && <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px' }}>
+            <span>Previous <strong style={{ color: 'var(--text-main)' }}>{fmt(cycles.previous)}</strong></span>
+            <span>Upcoming <strong style={{ color: 'var(--text-main)' }}>{fmt(cycles.upcoming)}</strong></span>
+          </div>
+          <details style={{ marginTop: 5 }}>
+            <summary style={{ cursor: 'pointer' }}>Billing cycles</summary>
+            <div>Previous: {fmt(cycles.last.start)} → {fmt(cycles.last.end)}</div>
+            <div>Current: {fmt(cycles.current.start)} → {fmt(cycles.current.end)}</div>
+            <div>Dates without an imported statement are estimated.</div>
+          </details>
+        </>}
+        {!billing.statementDay && <Link onClick={() => setOpen(false)} to="/settings?tab=accounts">Configure statement day</Link>}
+      </> : billingResult?.id === account.id && billingResult.error
+        ? <span>Unable to load statement dates. <button type="button" onClick={() => setBillingAttempt(n => n + 1)}>Retry</button></span>
+        : 'Loading statement dates…'}
+    </div>
+  );
 
   // Trigger label
   const activeLabel = (() => {
@@ -427,7 +496,7 @@ export default function DateRangePicker({
                   WebkitOverflowScrolling: 'touch',
                   scrollbarWidth: 'none',
                 }}>
-                  {PRESETS.map(p => (
+                  {availablePresets.map(p => (
                     <button
                       key={p.value}
                       className={`drp-preset${preset === p.value ? ' active' : ''}`}
@@ -496,12 +565,14 @@ export default function DateRangePicker({
 
                   {/* Single calendar for mobile */}
                   <MonthCalendar
+                      billing={billing}
                     year={leftYear} month={leftMonth}
                     onMonthChange={navigateLeft}
                     start={selStart} end={selEnd} hovered={hovered}
                     onDayClick={handleDayClick}
                     onDayHover={d => { if (selStart && !selEnd) setHovered(d); }}
                   />
+                  {billingInfo}
                 </div>
               </>
             ) : (
@@ -511,9 +582,9 @@ export default function DateRangePicker({
                 <div style={{
                   width: dims.sidebarWidth, borderRight: '1px solid var(--border-subtle)',
                   padding: compact ? '8px 6px' : '12px 8px', display: 'flex', flexDirection: 'column', gap: 1,
-                  maxHeight: compact ? 400 : 'none', overflowY: compact ? 'auto' : 'visible',
+                  maxHeight: compact ? (card ? 330 : 400) : 'none', overflowY: compact ? 'auto' : 'visible',
                 }}>
-                  {PRESET_GROUPS.map((group, gi) => (
+                  {presetGroups.map((group, gi) => (
                     <div key={group.title ?? gi} style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: gi === 0 ? 0 : 6 }}>
                       {group.title && (
                         <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-faint)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: dims.sideTitlePad }}>{group.title}</div>
@@ -607,6 +678,7 @@ export default function DateRangePicker({
                   {/* Dual calendars */}
                   <div style={{ display: 'flex', gap: dims.gapBetweenCals }}>
                     <MonthCalendar
+                      billing={billing}
                       year={leftYear} month={leftMonth}
                       onMonthChange={navigateLeft}
                       start={selStart} end={selEnd} hovered={hovered}
@@ -615,6 +687,7 @@ export default function DateRangePicker({
                     />
                     <div style={{ width: 1, background: 'var(--border-subtle)', flexShrink: 0 }} />
                     <MonthCalendar
+                      billing={billing}
                       year={rightYear} month={rightMonth}
                       onMonthChange={navigateRight}
                       start={selStart} end={selEnd} hovered={hovered}
@@ -622,6 +695,7 @@ export default function DateRangePicker({
                       onDayHover={d => { if (selStart && !selEnd) setHovered(d); }}
                     />
                   </div>
+                  {billingInfo}
                 </div>
               </div>
             )}

@@ -3,13 +3,14 @@ import DateRangePicker from "../../components/Daterangepicker";
 
 
 
-export default function TrendsFilters({ period, setPeriod, dateRange, setDateRange, isCreditCard }) {
+export default function TrendsFilters({ account, period, setPeriod, dateRange, setDateRange, isCreditCard }) {
   const periods = ['day', 'week', 'month'];
   if (isCreditCard) periods.push('billing_month');
   return (
     <>
       <FilterGroup style={{ position: 'relative', zIndex: 500 }}>
         <DateRangePicker
+          account={account}
           value={dateRange}
           onChange={setDateRange}
           showTime={false}

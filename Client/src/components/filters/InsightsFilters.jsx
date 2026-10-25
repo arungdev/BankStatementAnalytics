@@ -9,7 +9,7 @@ const GROUP_TABS = [
 ];
 
 export default function InsightsFilters({
-  range, setRange,
+  account, range, setRange,
   groupBy, setGroupBy,
 }) {
   return (
@@ -17,6 +17,7 @@ export default function InsightsFilters({
       {/* Period */}
       <FilterGroup style={{ position: 'relative', zIndex: 'var(--z-dropdown)' }}>
         <DateRangePicker
+          account={account}
           value={range}
           onChange={setRange}
           showTime={false}
