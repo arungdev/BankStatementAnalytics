@@ -13,7 +13,7 @@ public sealed partial class GPayEvidenceService
     public sealed record ActivityBankCandidate(ActivityBankLink Bank, string? Payee, DateTime TransactionDate, DateTime? ValueDate, decimal Amount, int CompetingActivities);
     public sealed record ActivityBankMatch(string Status, string Reason, ActivityBankLink? Bank = null,
         List<ActivityBankCandidate>? Candidates = null, int CompetingActivityCount = 0);
-    public sealed record AutomaticMatchResult(int Linked);
+    public sealed record AutomaticMatchResult(int Linked, List<GPaySyncChange>? Changes = null);
     private static string BankKey(BankTransaction bank) => TxKey(bank.AccountId, bank.BankReference, bank.BankType, bank.TransactionType);
     private static string BankKey(ReviewSourceRequest bank) => TxKey(bank.AccountId, bank.BankReference, bank.BankType, bank.TransactionType);
     private static ActivityBankLink BankLink(BankTransaction bank) => new(bank.AccountId, bank.BankReference, bank.BankType, bank.TransactionType);
@@ -39,6 +39,11 @@ public sealed partial class GPayEvidenceService
         return field.Success ? Normalize(field.Groups[1].Value) : "";
     }
 
+    private static GPayAutoImportConfigDto? ConfigForProfile(List<GPayEvidenceRecord> records, string? profileId) =>
+        records.Where(record => record.Kind == (profileId == null ? "PrimaryConfig" : "Profile"))
+            .Select(record => JsonSerializer.Deserialize<GPayAutoImportConfigDto>(record.Payload, Json)!)
+            .FirstOrDefault(config => profileId == null || config.ProfileId == profileId);
+
     private static HashSet<PayeeAlias> ConfirmedPayeeAliases(List<GPayEvidenceRecord> records, List<Account> accounts, List<BankTransaction> banks)
     {
         var aliases = new HashSet<PayeeAlias>();
@@ -58,14 +63,18 @@ public sealed partial class GPayEvidenceService
                 || string.IsNullOrWhiteSpace(activity.CounterPartyName) || string.IsNullOrWhiteSpace(activity.AccountSuffix)
                 || bank.TransactionDate.Date != activity.Timestamp.Date || bank.TransferGroupId != null || bank.Mode != "UPI"
                 || (credit ? bank.Credit : bank.Debit) != activity.Amount || (credit ? bank.Debit : bank.Credit) != 0) continue;
-            var eligibleAccounts = accounts;
-            if (payload.ProfileId != null)
-            {
-                if (!profiles.TryGetValue(payload.ProfileId, out var profile)) continue;
-                if (profile.BankAccountIds.Count > 0) eligibleAccounts = accounts.Where(account => profile.BankAccountIds.Contains(account.Id)).ToList();
-            }
+            var accountConfig = ConfigForProfile(records, payload.ProfileId);
+            if (payload.ProfileId != null && accountConfig == null) continue;
+            var configuredAccounts = accountConfig?.BankAccountIds ?? new List<long>();
+            var eligibleAccounts = configuredAccounts.Count > 0
+                ? accounts.Where(account => configuredAccounts.Contains(account.Id)).ToList()
+                : accounts;
             var hinted = eligibleAccounts.Where(account => account.AccountNumber?.EndsWith(activity.AccountSuffix, StringComparison.Ordinal) == true).ToList();
-            if (hinted.Count != 1 || hinted[0].Id != bank.AccountId) continue;
+            if (configuredAccounts.Count > 0)
+            {
+                if (!configuredAccounts.Contains(bank.AccountId)) continue;
+            }
+            else if (hinted.Count != 1 || hinted[0].Id != bank.AccountId) continue;
             var name = StatementPayee(bank);
             var routing = PayeeRoutingCode(bank);
             if (routing.Length == 0 || Regex.Replace(name, @"[^\p{L}\p{N}]", "").Length < 5) continue;
@@ -96,6 +105,17 @@ public sealed partial class GPayEvidenceService
         evidence = null;
         var sourceIds = ActivityIds(bank.Note);
         if (sourceIds.Count > 0) return !string.IsNullOrWhiteSpace(activity.RefId) && sourceIds.All(id => id == activity.RefId);
+        // A GPay receipt's UPI transaction ID is a bank-side payment identifier,
+        // unlike RefId (the Google activity ID). Exact reference agreement can
+        // resolve merchant-vs-account-holder naming differences safely.
+        var upiId = Regex.Replace(activity.UpiTransactionId ?? "", @"\D", "");
+        if (upiId.Length is >= 10 and <= 20)
+        {
+            var bankIds = new[] { bank.BankReference, Regex.Match(bank.Description ?? "", @"^UPI/([^/]+)/", RegexOptions.IgnoreCase).Groups[1].Value }
+                .Select(value => Regex.Replace(value ?? "", @"\D", ""));
+            if (bankIds.Any(id => id == upiId))
+            { evidence = "the UPI transaction ID exactly matches the bank reference"; return true; }
+        }
         var tokens = Regex.Split(Normalize(activity.CounterPartyName), @"[^\p{L}\p{N}]+").Where(token => token.Length >= 3).ToList();
         if (!string.IsNullOrWhiteSpace(activity.CounterPartyName) && tokens.Count == 0) return false;
         var text = Normalize(bank.Description + " " + bank.Narration + " " + bank.UpiVpa + " " + bank.CounterParty?.Name);
@@ -132,14 +152,30 @@ public sealed partial class GPayEvidenceService
         var activityIds = activities.Select(activity => activity.Record.Id).ToHashSet();
         var reserved = decisions.Where(decision => decision.Accept && activityIds.Contains(decision.RecordId)).Select(BankKey).ToHashSet();
         var profiles = records.Where(record => record.Kind == "Profile").Select(record => JsonSerializer.Deserialize<GPayAutoImportConfigDto>(record.Payload, Json)!).ToDictionary(profile => profile.ProfileId!);
-        var duplicates = activities.GroupBy(activity => (activity.Payload.ProfileId, activity.Payload.IdentityKey)).Where(group => group.Count() > 1).Select(group => group.Key).ToHashSet();
+        var duplicateCopies = new HashSet<int>();
+        var conflictingDuplicates = new HashSet<int>();
+        foreach (var group in activities.GroupBy(activity => (activity.Payload.ProfileId, activity.Payload.IdentityKey)).Where(group => group.Count() > 1))
+        {
+            var versions = group.ToList();
+            var normalized = versions.Select(version => JsonSerializer.Serialize(JsonSerializer.Deserialize<GPayUpiActivityItem>(version.Payload.Data, Json), Json)).Distinct(StringComparer.Ordinal).ToList();
+            if (normalized.Count == 1)
+            {
+                var canonical = versions.OrderByDescending(version => decisionsByRecord[version.Record.Id].Any(decision => decision.Accept))
+                    .ThenBy(version => version.Record.Id).First();
+                duplicateCopies.UnionWith(versions.Where(version => version.Record.Id != canonical.Record.Id).Select(version => version.Record.Id));
+            }
+            else conflictingDuplicates.UnionWith(versions.Select(version => version.Record.Id));
+        }
         var result = new Dictionary<int, ActivityBankMatch>();
         var candidates = new Dictionary<int, List<BankTransaction>>();
         var unmatchedReasons = new Dictionary<int, string>();
         var payeeEvidence = new Dictionary<string, string>();
         var valueDateMatches = new HashSet<string>();
+        var nameMismatchMatches = new HashSet<string>();
         foreach (var (record, payload) in activities)
         {
+            if (duplicateCopies.Contains(record.Id))
+            { result[record.Id] = new("Duplicate", "This is an identical copy of another imported GPay activity; only one source record is used for matching."); continue; }
             var activity = JsonSerializer.Deserialize<GPayUpiActivityItem>(payload.Data, Json)!;
             var credit = activity.Type == "Received";
             bool AmountAgrees(BankTransaction bank) => (credit ? bank.Credit : bank.Debit) == activity.Amount && (credit ? bank.Debit : bank.Credit) == 0;
@@ -161,16 +197,17 @@ public sealed partial class GPayEvidenceService
             { result[record.Id] = new("Not eligible", "Only completed payments with a known amount and direction are matched."); continue; }
             if (previous.Any(decision => !decision.Accept))
             { result[record.Id] = new("Unlinked", "A previous bank match was rejected; automatic matching will not override that decision."); continue; }
-            if (duplicates.Contains((payload.ProfileId, payload.IdentityKey)))
+            if (conflictingDuplicates.Contains(record.Id))
             { result[record.Id] = new("Ambiguous", "Multiple source versions exist for this activity."); }
-            var profileAccounts = accounts;
-            if (payload.ProfileId != null)
-            {
-                if (!profiles.TryGetValue(payload.ProfileId, out var profile)) { result[record.Id] = new("Unlinked", "The source GPay profile is unavailable."); continue; }
-                if (profile.BankAccountIds.Count > 0) profileAccounts = accounts.Where(account => profile.BankAccountIds.Contains(account.Id)).ToList();
-            }
-            var suffixAccounts = string.IsNullOrWhiteSpace(activity.AccountSuffix) ? profileAccounts : profileAccounts.Where(account => account.AccountNumber?.EndsWith(activity.AccountSuffix, StringComparison.Ordinal) == true).ToList();
-            if (!string.IsNullOrWhiteSpace(activity.AccountSuffix) && suffixAccounts.Count != 1)
+            var accountConfig = ConfigForProfile(records, payload.ProfileId);
+            if (payload.ProfileId != null && accountConfig == null) { result[record.Id] = new("Unlinked", "The source GPay profile is unavailable."); continue; }
+            var configuredAccounts = accountConfig?.BankAccountIds ?? new List<long>();
+            var explicitlyConfigured = configuredAccounts.Count > 0;
+            var profileAccounts = explicitlyConfigured ? accounts.Where(account => configuredAccounts.Contains(account.Id)).ToList() : accounts;
+            var suffixAccounts = explicitlyConfigured || string.IsNullOrWhiteSpace(activity.AccountSuffix)
+                ? profileAccounts
+                : profileAccounts.Where(account => account.AccountNumber?.EndsWith(activity.AccountSuffix, StringComparison.Ordinal) == true).ToList();
+            if (!explicitlyConfigured && !string.IsNullOrWhiteSpace(activity.AccountSuffix) && suffixAccounts.Count != 1)
             { result[record.Id] = new("Unlinked", "The source account hint does not identify a unique imported bank account."); continue; }
             var eligibleAccounts = suffixAccounts.Select(account => account.Id).ToHashSet();
             var dateMatches = datedBanks[(activity.Timestamp.Date, credit, activity.Amount)].Where(bank => eligibleAccounts.Contains(bank.AccountId)
@@ -181,13 +218,21 @@ public sealed partial class GPayEvidenceService
                 : eligible.Count == 0
                     ? "Matching bank payments are already linked to another GPay activity or excluded as own-account transfers."
                     : "Bank payments with a matching transaction/value date, amount and direction exist, but their payee names or stored GPay identifiers do not agree.";
-            candidates[record.Id] = eligible
-                .Where(bank => {
+            var payeeMatches = eligible.Where(bank => {
                     var agrees = ActivityPayeeAgrees(activity, bank, payload.ProfileId, aliases, out var evidence);
                     if (evidence != null) payeeEvidence[record.Id + "|" + BankKey(bank)] = evidence;
                     if (agrees && bank.TransactionDate.Date != activity.Timestamp.Date) valueDateMatches.Add(record.Id + "|" + BankKey(bank));
                     return agrees;
                 }).ToList();
+            // If names/IDs differ, allow a link only when amount, direction, date,
+            // account and transfer checks leave exactly one bank candidate. Cross-
+            // activity competition is checked below before any link is proposed.
+            if (payeeMatches.Count == 0 && eligible.Count == 1)
+            {
+                payeeMatches.Add(eligible[0]);
+                nameMismatchMatches.Add(record.Id + "|" + BankKey(eligible[0]));
+            }
+            candidates[record.Id] = payeeMatches;
         }
         var competingSources = candidates.SelectMany(pair => pair.Value.Select(bank => (Key: BankKey(bank), Id: pair.Key)))
             .GroupBy(pair => pair.Key).ToDictionary(group => group.Key, group => group.Select(pair => pair.Id).ToHashSet());
@@ -204,7 +249,9 @@ public sealed partial class GPayEvidenceService
             {
                 var bank = matches[0];
                 var key = recordId + "|" + BankKey(bank);
-                var reason = valueDateMatches.Contains(key)
+                var reason = nameMismatchMatches.Contains(key)
+                    ? "Unique exact amount, direction, date and source account match; bank payee name differs from GPay."
+                    : valueDateMatches.Contains(key)
                     ? $"Unique UPI payment with exact amount and direction; the bank value date ({bank.ValueDate:dd MMM yyyy}) matches GPay, while its transaction date is {bank.TransactionDate:dd MMM yyyy}."
                     : "Unique payment on the same date with exact amount, direction and available account/payee information.";
                 if (payeeEvidence.TryGetValue(key, out var evidence)) reason += " Payee evidence: " + evidence + ".";
@@ -219,7 +266,7 @@ public sealed partial class GPayEvidenceService
         return result;
     }
 
-    public async Task<AutomaticMatchResult> AutoMatchActivities(long userId)
+    public async Task<AutomaticMatchResult> AutoMatchActivities(long userId, string? profileId = null, bool restrictToProfile = false)
     {
         using var session = DbHelper.GetSession();
         using var transaction = session.BeginTransaction();
@@ -227,12 +274,16 @@ public sealed partial class GPayEvidenceService
         var accounts = await session.Query<Account>().Where(account => account.OwnerUserId == userId).OrderBy(account => account.Id).ToListAsync();
         foreach (var account in accounts) await session.LockAsync(account, LockMode.Upgrade);
         var ids = accounts.Select(account => account.Id).ToList();
-        var records = await session.Query<GPayEvidenceRecord>().Where(record => record.OwnerUserId == userId).ToListAsync();
+        var records = await session.Query<GPayEvidenceRecord>().Where(record => record.OwnerUserId == userId && record.Kind != "SyncHistory").ToListAsync();
         var banks = await session.Query<BankTransaction>().Where(bank => ids.Contains(bank.AccountId)).ToListAsync();
         var plans = PlanAutomaticActivityMatches(records, accounts, banks);
         var linked = 0;
+        var changes = new List<GPaySyncChange>();
         foreach (var (recordId, match) in plans.Where(pair => pair.Value.Status == "Ready"))
         {
+            var source = records.Single(record => record.Id == recordId);
+            var payload = JsonSerializer.Deserialize<EvidencePayload>(source.Payload, Json)!;
+            if (restrictToProfile && payload.ProfileId != profileId) continue;
             var link = match.Bank!;
             var bank = banks.Single(bank => BankKey(bank) == TxKey(link.AccountId, link.BankReference, link.BankType, link.TransactionType));
             await session.LockAsync(bank, LockMode.Upgrade);
@@ -242,14 +293,19 @@ public sealed partial class GPayEvidenceService
             var decisions = current.Select(record => JsonSerializer.Deserialize<ReviewSourceRequest>(record.Payload, Json)!).ToList();
             if (decisions.Any(decision => decision.RecordId == recordId || decision.Accept && BankKey(decision) == BankKey(bank) && records.Any(record => record.Id == decision.RecordId && record.Kind == "Activity"))) continue;
             var aliases = ConfirmedPayeeAliases(records.Where(record => record.Kind != "Decision").Concat(current).ToList(), accounts, banks);
-            var source = records.Single(record => record.Id == recordId);
-            var payload = JsonSerializer.Deserialize<EvidencePayload>(source.Payload, Json)!;
             var activity = JsonSerializer.Deserialize<GPayUpiActivityItem>(payload.Data, Json)!;
             if (bank.TransferGroupId != null || bank.Mode == "TRANSFER" || !ActivityDateAgrees(activity, bank)
                 || (activity.Type == "Received" ? bank.Credit : bank.Debit) != activity.Amount
-                || (activity.Type == "Received" ? bank.Debit : bank.Credit) != 0
-                || !ActivityPayeeAgrees(activity, bank, payload.ProfileId, aliases, out _)) continue;
-            var method = bank.TransactionDate.Date == activity.Timestamp.Date ? "AutomaticSameDay" : "AutomaticValueDate";
+                || (activity.Type == "Received" ? bank.Debit : bank.Credit) != 0) continue;
+            var payeeAgrees = ActivityPayeeAgrees(activity, bank, payload.ProfileId, aliases, out _);
+            if (!payeeAgrees)
+            {
+                var currentPlan = PlanAutomaticActivityMatches(records.Where(record => record.Kind != "Decision").Concat(current).ToList(), accounts, banks);
+                if (!currentPlan.TryGetValue(recordId, out var uniquePlan) || uniquePlan.Status != "Ready"
+                    || uniquePlan.Bank == null || TxKey(uniquePlan.Bank.AccountId, uniquePlan.Bank.BankReference, uniquePlan.Bank.BankType, uniquePlan.Bank.TransactionType) != BankKey(bank)) continue;
+            }
+            var method = !payeeAgrees ? "AutomaticUniqueAmountDate"
+                : bank.TransactionDate.Date == activity.Timestamp.Date ? "AutomaticSameDay" : "AutomaticValueDate";
             var request = new ReviewSourceRequest { RecordId = recordId, Accept = true, AccountId = link.AccountId, BankReference = link.BankReference, BankType = link.BankType, TransactionType = link.TransactionType, MatchMethod = method };
             if (!ActivityIds(bank.Note).Contains(activity.RefId ?? ""))
             {
@@ -260,8 +316,10 @@ public sealed partial class GPayEvidenceService
             await session.SaveAsync(new GPayEvidenceRecord { OwnerUserId = userId, Kind = "Decision", SourceKey = Hash($"{recordId}|{link.AccountId}|{link.BankReference}|{link.BankType}|{link.TransactionType}"), Payload = JsonSerializer.Serialize(request) });
             await session.SaveAsync(new GPayEvidenceRecord { OwnerUserId = userId, Kind = "ReviewAudit", SourceKey = Hash(Guid.NewGuid().ToString()), Payload = JsonSerializer.Serialize(new { Request = request, Method = method, Reason = match.Reason, DecidedUtc = DateTime.UtcNow }) });
             linked++;
+            changes.Add(new("Bank link", "Linked", recordId, activity.CounterPartyName ?? activity.Type, activity.Amount,
+                $"Account {bank.AccountId}; bank reference {bank.BankReference}. {match.Reason}"));
         }
         await transaction.CommitAsync();
-        return new AutomaticMatchResult(linked);
+        return new AutomaticMatchResult(linked, changes);
     }
 }

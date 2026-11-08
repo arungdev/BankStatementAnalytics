@@ -17,6 +17,8 @@ namespace BankStatementAnalytics.Services
         public string? AccountSuffix { get; set; }
         public DateTime Timestamp { get; set; }
         public string? RefId { get; set; }
+        // The UPI transaction ID is distinct from Google's activity/source ID.
+        public string? UpiTransactionId { get; set; }
         public string? Status { get; set; }
     }
 
@@ -91,6 +93,8 @@ namespace BankStatementAnalytics.Services
                     CounterPartyName = CounterpartyRegex.Match(remainder) is var cp && cp.Success ? cp.Groups[1].Value.Trim() : null,
                     AccountSuffix = AccountSuffixRegex.Match(remainder) is var acc && acc.Success ? acc.Groups[1].Value : null,
                     RefId = values.FirstOrDefault(v => !string.IsNullOrEmpty(v) && !states.Contains(v)),
+                    UpiTransactionId = values.Select(v => Regex.Match(v, @"(?:UPI\s+transaction\s+ID\s*[:#]?\s*)?(\d{10,20})", RegexOptions.IgnoreCase))
+                        .Where(m => m.Success).Select(m => m.Groups[1].Value).FirstOrDefault(),
                     Status = values.FirstOrDefault(v => states.Contains(v)) ?? "Unknown"
                 });
             }

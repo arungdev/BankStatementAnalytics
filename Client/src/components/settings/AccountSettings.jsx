@@ -3,8 +3,10 @@ import { FiCreditCard, FiEdit2, FiChevronUp, FiChevronDown, FiFolder, FiEyeOff, 
 import { formatDate, currencyFormatterFull } from "../../utils/format";
 import { Badge, Switch } from "@common/client";
 import GPayProfileSettings from "../../components/GPayProfileSettings";
+import { gpayPreferenceKey } from "../../utils/gpayPreferences";
+import GPayProfileInsights from '../GPayProfileInsights';
 
-export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoOpen, browse, cardAccounts, cardDraft, cardDrafts, editAccountName, editingAccountId, gpayAutoOpen, gpayConfig, gpayDraftPath, gpayMessage, gpaySweeping, gpayUserName, handleDeleteAccount, handleImportNow, handleOpenNamePicker, handleSaveAutoImport, handleSaveCardSettings, handleSaveGPayAutoImport, handleSaveGPayUserName, handleSweepGPay, handleToggleAutoImport, handleToggleGPayAutoImport, handleUpdateAccount, canEdit, canManageServer, loadBrowse, onlyLinkCreatedByMe, openBrowse, openBrowseGPay, setAutoDraft, setAutoOpen, setBrowse, setCardDraft, setCardDrafts, setEditAccountName, setEditingAccountId, setGpayAutoOpen, setGpayConfig, setGpayDraftPath, setGpayMessage, setGpayUserName, setOnlyLinkCreatedByMe, setParticipantList, setShowPw, setSplitDisplayFilter, showPw, splitDisplayFilter, sweeping }) {
+export default function AccountSettings({ onGpayPanelWidthChange, accounts, autoDraft, autoDrafts, autoOpen, browse, cardAccounts, cardDraft, cardDrafts, editAccountName, editingAccountId, gpayAutoOpen, gpayConfig, gpayDraftPath, gpayMessage, gpaySweeping, gpayUserName, handleDeleteAccount, handleImportNow, handleOpenNamePicker, handleSaveAutoImport, handleSaveCardSettings, handleSaveGPayAutoImport, handleSaveGPayUserName, handleSweepGPay, handleToggleAutoImport, handleToggleGPayAutoImport, handleUpdateAccount, canEdit, canManageServer, loadBrowse, onlyLinkCreatedByMe, openBrowse, openBrowseGPay, setAutoDraft, setAutoOpen, setBrowse, setCardDraft, setCardDrafts, setEditAccountName, setEditingAccountId, setGpayAutoOpen, setGpayConfig, setGpayDraftPath, setGpayMessage, setGpayUserName, setOnlyLinkCreatedByMe, setParticipantList, setShowPw, setSplitDisplayFilter, showPw, splitDisplayFilter, sweeping }) {
   return (accounts.length === 0 ? (
       <div className="settings-empty">
         <FiCreditCard size={36} />
@@ -350,11 +352,14 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                   </span>
                 </h3>
                 <p className="setting-card-desc">Google Takeout imports
-                  {gpayConfig?.lastSyncUtc && <> · Last synced {formatDate(gpayConfig.lastSyncUtc)}</>}
                 </p>
               </div>
             </div>
 
+          </div>
+
+          <GPayProfileSettings insights={<GPayProfileInsights onPanelWidthChange={onGpayPanelWidthChange} key={gpayConfig?.profileId || "default"} config={gpayConfig} syncing={gpaySweeping} />} config={gpayConfig} accounts={accounts} canEdit={canEdit} busy={gpaySweeping} onConfig={config => { setGpayConfig(config); setGpayDraftPath(config.watchFolderPath || ''); setGpayUserName(config.userName || ''); setGpayMessage(null); setGpayAutoOpen(false); setBrowse(null); setParticipantList([]); }}>
+          <div className="gpay-profile-sync">
             {gpayConfig?.totalVolume > 0 && (
               <div className="account-balance">
                 <span className="account-balance-label">Total expenses</span>
@@ -376,18 +381,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
               </div>
             )}
           </div>
-
-          <div className="gpay-summary" aria-label="Google Pay import summary">
-            <div><strong>{gpayConfig?.totalGroups || 0}</strong><span>Groups</span></div>
-            <div><strong>{gpayConfig?.totalSplits || 0}</strong><span>Splits</span></div>
-            <div><strong>{gpayConfig?.bankMatches || 0}</strong><span>Bank matches</span></div>
-            {gpayConfig?.upiActivitiesEnriched > 0 && <div><strong>{gpayConfig.upiActivitiesEnriched}</strong><span>UPI enriched</span></div>}
-            {gpayConfig?.cashbackTotalEarned > 0 && <div><strong>{currencyFormatterFull.format(gpayConfig.cashbackTotalEarned)}</strong><span>Cashback</span></div>}
-            {gpayConfig?.activeVouchersCount > 0 && <div><strong>{gpayConfig.activeVouchersCount}</strong><span>Active coupons</span></div>}
-          </div>
-
-          <GPayProfileSettings config={gpayConfig} accounts={accounts} canEdit={canEdit} busy={gpaySweeping} onConfig={config => { setGpayConfig(config); setGpayDraftPath(config.watchFolderPath || ''); setGpayUserName(config.userName || ''); setGpayMessage(null); setBrowse(null); setParticipantList([]); }} />
-
+          <p className="account-panel-hint">{gpayConfig?.lastSyncUtc ? `Last synced ${formatDate(gpayConfig.lastSyncUtc)}` : "This profile has not synced yet."}</p>
           {/* Auto-import: Google Pay watch folder */}
           {canManageServer && (
             <div className="account-panel">
@@ -587,7 +581,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                     value={splitDisplayFilter}
                     onChange={(e) => {
                       setSplitDisplayFilter(e.target.value);
-                      localStorage.setItem('bsp_gpay_split_filter', e.target.value);
+                      localStorage.setItem(gpayPreferenceKey('split_filter', gpayConfig?.profileId), e.target.value);
                     }}
                     className="field-input"
                   >
@@ -618,7 +612,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
                     checked={onlyLinkCreatedByMe}
                     onChange={(checked) => {
                       setOnlyLinkCreatedByMe(checked);
-                      localStorage.setItem('bsp_gpay_only_link_created_by_me', checked ? 'true' : 'false');
+                      localStorage.setItem(gpayPreferenceKey('only_link_created_by_me', gpayConfig?.profileId), checked ? 'true' : 'false');
                     }}
                     label="Only link splits created by me"
                   />
@@ -626,6 +620,7 @@ export default function AccountSettings({ accounts, autoDraft, autoDrafts, autoO
               </div>
             </div>
           )}
+          </GPayProfileSettings>
         </section>
       </div>
     ));

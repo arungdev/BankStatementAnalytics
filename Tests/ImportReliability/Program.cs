@@ -232,6 +232,84 @@ try { await gpay.UpdateAutoImportConfigAsync(101, new UpdateGPayAutoImportReques
 catch (ArgumentException) { Check(true, "GPay configuration rejects another user's bank account"); }
 try { await gpay.UpdateAutoImportConfigAsync(101, new UpdateGPayAutoImportRequest { WatchEnabled = true, WatchFolderPath = scratch }); throw new Exception("cloud watch folder accepted"); }
 catch (ArgumentException) { Check(true, "cloud GPay configuration rejects server watch folders"); }
+var emptyProfile = await gpay.CreateProfileAsync(101, new CreateGPayProfileRequest { Name = "Disposable GPay", UserName = "Synthetic Alice", BankAccountIds = [account.Id] });
+try { await gpay.DeleteProfileAsync(202, emptyProfile.ProfileId!); throw new Exception("another user's GPay profile was deleted"); }
+catch (ArgumentException) { Check(true, "GPay profile deletion is restricted to its owner"); }
+try { await gpay.DeleteProfileAsync(101, "default"); throw new Exception("Primary GPay was deleted"); }
+catch (ArgumentException) { Check(true, "Primary GPay cannot be deleted"); }
+int bankRowsBeforeDelete;
+using (var session = DbHelper.GetSession()) bankRowsBeforeDelete = session.Query<BankTransaction>().Count();
+var afterProfileDelete = await gpay.DeleteProfileAsync(101, emptyProfile.ProfileId!);
+Check(afterProfileDelete.ProfileId == null && afterProfileDelete.UserName == "Synthetic Alice"
+    && !afterProfileDelete.Profiles.Any(p => p.Id == emptyProfile.ProfileId), "empty profile deletion returns to Primary GPay and preserves its configuration");
+using (var session = DbHelper.GetSession()) Check(session.Query<BankTransaction>().Count() == bankRowsBeforeDelete
+    && session.Query<Account>().Any(a => a.Id == account.Id), "profile deletion preserves bank transactions and accounts");
+var protectedProfile = await gpay.CreateProfileAsync(101, new CreateGPayProfileRequest { Name = "Imported GPay", UserName = "Synthetic Alice" });
+using (var session = DbHelper.GetSession()) using (var tx = session.BeginTransaction()) {
+    await session.SaveAsync(new GPayEvidenceRecord { OwnerUserId = 101, Kind = "Batch", SourceKey = "synthetic-profile-batch", Payload = System.Text.Json.JsonSerializer.Serialize(new { ProfileId = protectedProfile.ProfileId }) });
+    await tx.CommitAsync();
+}
+try { await gpay.DeleteProfileAsync(101, protectedProfile.ProfileId!); throw new Exception("profile with imported evidence was deleted"); }
+catch (InvalidOperationException) { Check(true, "profile deletion protects imported evidence even when there are no groups"); }
+Check((await gpay.ListProfilesAsync(101)).Any(p => p.Id == protectedProfile.ProfileId), "rejected deletion preserves the profile");
+var groupProfile = await gpay.CreateProfileAsync(101, new CreateGPayProfileRequest { Name = "Group GPay", UserName = "Synthetic Alice" });
+using (var session = DbHelper.GetSession()) using (var tx = session.BeginTransaction()) {
+    await session.SaveAsync(new BillGroup { OwnerUserId = 101, Name = "Synthetic profile group", GPayProfileId = groupProfile.ProfileId });
+    await tx.CommitAsync();
+}
+try { await gpay.DeleteProfileAsync(101, groupProfile.ProfileId!); throw new Exception("profile with a group was deleted"); }
+catch (InvalidOperationException) { Check(true, "profile deletion protects existing groups"); }
+var syncProfile = await gpay.CreateProfileAsync(101, new CreateGPayProfileRequest { Name = "Sync history GPay", UserName = "Synthetic Alice", BankAccountIds = [account.Id] });
+var syncDocument = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new GPayTakeoutData { GroupExpenses = [new GPayExpenseItem {
+    CreationTime = "2026-10-02T12:00:00Z", Creator = "Synthetic Alice", GroupName = "History group", Title = "History lunch", TotalAmount = "₹300",
+    Items = [new GPayExpenseMemberItem { Payer = "Synthetic Alice", Amount = "₹150", State = "PAID_RECEIVED" }, new GPayExpenseMemberItem { Payer = "Synthetic Friend", Amount = "₹150", State = "PENDING" }]
+}] });
+using (var stream = new MemoryStream(syncDocument)) Check((await gpay.ImportFromStreamAsync(101, stream, "history.json", profileId: syncProfile.ProfileId)).Success, "recorded profile upload succeeds");
+using (var stream = new MemoryStream(syncDocument)) Check((await gpay.ImportFromStreamAsync(101, stream, "renamed-history.json", profileId: syncProfile.ProfileId)).Success, "repeated profile upload succeeds without inserting duplicates");
+var historyJson = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.SyncHistoryAsync(101, syncProfile.ProfileId));
+var historyRuns = historyJson.GetProperty("Runs").EnumerateArray().ToList();
+Check(historyRuns.Count == 2 && historyRuns.All(run => run.GetProperty("Status").GetString() == "Success"), "each upload has a separate successful history entry");
+Check(historyRuns[0].GetProperty("Added").GetInt32() == 0 && historyRuns[0].GetProperty("Updated").GetInt32() == 0 && historyRuns[0].GetProperty("Unchanged").GetInt32() == 1, "no-op sync history records unchanged sources rather than reporting updates");
+var firstHistoryId = historyRuns[1].GetProperty("Id").GetInt32();
+var syncDetailsJson = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.SyncDetailsAsync(101, syncProfile.ProfileId, firstHistoryId));
+var historyChanges = syncDetailsJson.GetProperty("Run").GetProperty("Changes").EnumerateArray().ToList();
+Check(historyChanges.Any(change => change.GetProperty("Kind").GetString() == "Split" && change.GetProperty("Description").GetString() == "History lunch")
+    && historyChanges.Any(change => change.GetProperty("Kind").GetString() == "Expense"), "sync details include committed financial rows and source additions");
+try { await gpay.SyncDetailsAsync(202, syncProfile.ProfileId, firstHistoryId); throw new Exception("another user read sync history"); }
+catch (ArgumentException) { Check(true, "sync details cannot be read by another user"); }
+try { await gpay.SyncDetailsAsync(101, protectedProfile.ProfileId, firstHistoryId); throw new Exception("another profile read sync history"); }
+catch (ArgumentException) { Check(true, "sync details are restricted to their GPay profile"); }
+try { using var brokenStream = new MemoryStream("invalid JSON"u8.ToArray()); await gpay.ImportFromStreamAsync(101, brokenStream, "broken.json", profileId: syncProfile.ProfileId); throw new Exception("broken import succeeded"); }
+catch (ArgumentException) { Check(true, "broken sync preserves its failure"); }
+historyJson = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.SyncHistoryAsync(101, syncProfile.ProfileId));
+Check(historyJson.GetProperty("Runs")[0].GetProperty("Status").GetString() == "Failed", "failed imports are retained in profile sync history");
+var tileJson = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.ProfileDetailsAsync(101, syncProfile.ProfileId, "splits"));
+Check(tileJson.GetProperty("Total").GetInt32() == (await gpay.GetAutoImportConfigAsync(101, syncProfile.ProfileId)).TotalSplits
+    && tileJson.GetProperty("Records")[0].GetProperty("Title").GetString() == "History lunch", "split tile details agree with the selected profile's count");
+var groupTile = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.ProfileDetailsAsync(101, syncProfile.ProfileId, "groups", search: "Synthetic Friend"));
+Check(groupTile.GetProperty("Total").GetInt32() == 1 && groupTile.GetProperty("Records")[0].GetProperty("Members")[0].GetString() == "Synthetic Friend",
+    "group details expose a structured member list and support member search");
+var noTileMatches = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.ProfileDetailsAsync(101, protectedProfile.ProfileId, "splits", search: "History lunch"));
+Check(noTileMatches.GetProperty("Total").GetInt32() == 0, "detail search cannot return another profile's records");
+var sourceActivity = new GPayUpiActivityItem { Type = "Paid", Amount = 777.33m, Timestamp = new DateTime(2026, 10, 2), CounterPartyName = "Synthetic Merchant", RefId = "history-activity", AccountSuffix = "different", Status = "Completed" };
+async Task<(List<GPaySyncChange> Changes, int Unchanged)> StoreHistoryActivity() {
+    var bundle = new GPayBundle { FileName = "synthetic.zip", ArchiveHash = "synthetic-history", ProfileId = syncProfile.ProfileId };
+    bundle.Records.Add(new GPaySourceRow("Activity", "history-activity", System.Text.Json.JsonSerializer.Serialize(sourceActivity)));
+    using var session = DbHelper.GetSession(); using var tx = session.BeginTransaction();
+    var changes = await GPayEvidenceService.StoreBundle(session, 101, bundle); await tx.CommitAsync(); return changes;
+}
+Check((await StoreHistoryActivity()).Changes.Single().Action == "Added", "source audit reports a newly inserted payment");
+sourceActivity.UpiTransactionId = "132100099999";
+Check((await StoreHistoryActivity()).Changes.Single().Action == "Updated", "source audit reports a newly populated UPI ID as an update");
+Check((await StoreHistoryActivity()).Unchanged == 1, "source audit reports repeated payments as unchanged");
+using (var session = DbHelper.GetSession()) using (var tx = session.BeginTransaction()) {
+    await session.SaveAsync(new BankTransaction { AccountId = account.Id, BankReference = "132100099999", BankType = "HDFC", TransactionType = "DR", TransactionDate = sourceActivity.Timestamp, Debit = 777.33m, Mode = "UPI", Description = "Synthetic Merchant", Note = "Keep this personal note" });
+    await tx.CommitAsync();
+}
+var historyLinks = await new GPayEvidenceService().AutoMatchActivities(101, syncProfile.ProfileId, restrictToProfile: true);
+Check(historyLinks.Linked == 1 && historyLinks.Changes?.Single().Action == "Linked", "automatic matching reports the exact committed bank link for sync auditing");
+var upiTile = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.ProfileDetailsAsync(101, syncProfile.ProfileId, "upi"));
+Check(upiTile.GetProperty("Total").GetInt32() == 1 && (await gpay.GetAutoImportConfigAsync(101, syncProfile.ProfileId)).UpiActivitiesEnriched == 1, "UPI tile details and cumulative profile count agree");
 var googleIdentities = new GoogleIdentityService();
 var firstGoogle = await googleIdentities.SignInCloudAsync("visitor-first", "visitor@example.invalid", "Visitor");
 Check(firstGoogle.Role == AppRole.User, "the first Google visitor can sign up without an owner and receives only a regular role");

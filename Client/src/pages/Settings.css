@@ -9,7 +9,10 @@
 
 .settings-page {
   max-width: 1180px;
+  container: settings-page / inline-size;
 }
+
+
 
 .settings-shell {
   display: grid;
@@ -1355,3 +1358,13 @@
   to { transform: rotate(360deg); }
 }
 
+
+@container settings-page (max-width: 880px) {
+  .settings-shell { grid-template-columns:minmax(0,1fr); gap:20px; }
+  .settings-rail { position:relative; min-width:0; }
+  .settings-nav { flex-direction:row; align-items:center; gap:8px; overflow-x:auto; padding-bottom:6px; }
+  .settings-nav-group,.settings-nav-group-items { display:flex; flex-direction:row; gap:8px; flex-shrink:0; }
+  .settings-nav-group + .settings-nav-group { padding:0 0 0 8px; margin:0; border-top:0; border-left:1px solid var(--border-color); }
+  .settings-nav-group-header,.settings-nav-hint { display:none; }
+  .settings-nav-item { width:auto; flex-shrink:0; border-radius:var(--radius-full); padding:8px 12px; }
+}

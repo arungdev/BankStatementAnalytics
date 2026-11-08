@@ -11,7 +11,7 @@ public sealed partial class GPayEvidenceService
     public async Task<object> Workspace(long userId)
     {
         using var session = DbHelper.GetSession();
-        var records = await session.Query<GPayEvidenceRecord>().Where(r => r.OwnerUserId == userId).ToListAsync();
+        var records = await session.Query<GPayEvidenceRecord>().Where(r => r.OwnerUserId == userId && r.Kind != "SyncHistory").ToListAsync();
         var groups = await session.Query<SplitGroup>().Where(g => g.OwnerUserId == userId).ToListAsync();
         var members = await session.Query<SplitGroupMember>().Where(m => m.OwnerUserId == userId).ToListAsync();
         var names = await OwnerNames(session, userId);
@@ -54,7 +54,20 @@ public sealed partial class GPayEvidenceService
         }).Where(x=>x.Reason!=null).ToList();
         var settlements = members.Where(m => Imported(m.Group)).Select(m => new { SplitId = m.Group.Id, Title = m.Group.Title, m.Id, m.ParticipantName, m.SourceState, m.SettlementEvidence, m.AssignedAmount, m.PaidAmount, EligibleFlow = IsCreator(m.Group,names) != IsSelf(m,names), IsOwner = IsSelf(m, names), Direction = IsCreator(m.Group, names) ? "To collect" : "Owed by me", Active = m.Group.Status is not ("Closed" or "Cancelled"), AgeDays = Math.Max(0, (DateTime.UtcNow.AddMinutes(330).Date - m.Group.Date.Date).Days), HasBankLink = m.LinkedBankReference != null }).ToList();
         var profiles = records.Where(record => record.Kind == "Profile").Select(record => JsonSerializer.Deserialize<GPayAutoImportConfigDto>(record.Payload, Json)!).ToDictionary(profile => profile.ProfileId!, profile => profile.ProfileName);
-        object[] Read(string kind) => records.Where(r => r.Kind == kind).OrderByDescending(r => r.Id).Select(r => {
+        IEnumerable<GPayEvidenceRecord> VisibleSourceRecords(string kind)
+        {
+            var sourceRecords = records.Where(record => record.Kind == kind);
+            if (kind != "Activity") return sourceRecords;
+            var acceptedIds = records.Where(record => record.Kind == "Decision")
+                .Select(record => JsonSerializer.Deserialize<ReviewSourceRequest>(record.Payload, Json)!)
+                .Where(decision => decision.Accept).Select(decision => decision.RecordId).ToHashSet();
+            return sourceRecords.GroupBy(record => {
+                var payload = JsonSerializer.Deserialize<EvidencePayload>(record.Payload, Json)!;
+                var activity = JsonSerializer.Deserialize<GPayUpiActivityItem>(payload.Data, Json)!;
+                return (payload.ProfileId, payload.IdentityKey, Data: JsonSerializer.Serialize(activity, Json));
+            }).Select(group => group.OrderByDescending(record => acceptedIds.Contains(record.Id)).ThenBy(record => record.Id).First());
+        }
+        object[] Read(string kind) => VisibleSourceRecords(kind).OrderByDescending(r => r.Id).Select(r => {
             var payload = JsonSerializer.Deserialize<EvidencePayload>(r.Payload, Json)!;
             return (object)new { r.Id, r.CreatedUtc, Source = payload, ProfileName = payload.ProfileId == null ? "Primary GPay" : profiles.GetValueOrDefault(payload.ProfileId, "GPay profile"), BankMatch = activityMatches.GetValueOrDefault(r.Id) };
         }).ToArray();

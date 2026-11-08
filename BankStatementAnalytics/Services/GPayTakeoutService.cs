@@ -52,22 +52,10 @@ namespace BankStatementAnalytics.Services
                 .Select(a => a.Id)
                 .ToListAsync();
 
-            int upiEnriched = 0;
-            if (userAccountIds.Count > 0 && config.ProfileId == null)
-            {
-                upiEnriched = await session.Query<BankTransaction>()
-                    .CountAsync(t => userAccountIds.Contains(t.AccountId) && t.Note != null && t.Note.Contains("GPay:"));
-            }
-
             config.TotalGroups = billGroups.Count;
             config.TotalSplits = splits.Count;
             config.TotalVolume = splits.Sum(s => s.TotalAmount);
             config.BankMatches = matchedCount;
-            if (upiEnriched > 0 || config.UpiActivitiesEnriched == 0)
-            {
-                config.UpiActivitiesEnriched = upiEnriched;
-            }
-
             var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var accounts = await session.Query<Account>().Where(a => a.OwnerUserId == userId).ToListAsync();
             foreach (var a in accounts)
@@ -79,6 +67,15 @@ namespace BankStatementAnalytics.Services
             if (!string.IsNullOrWhiteSpace(config.UserName)) candidates.Add(config.UserName);
             config.CandidateUserNames = candidates.OrderBy(c => c).ToList();
             config.Profiles = await ListProfilesAsync(userId);
+
+            var profileSources = await ProfileSourcesAsync(session, userId, config.ProfileId);
+            var activityIds = profileSources.Where(entry => entry.Record.Kind == "Activity").Select(entry => entry.Record.Id).ToHashSet();
+            var activityLinks = await ConfirmedActivityLinksAsync(session, userId, activityIds);
+            config.UpiActivitiesEnriched = activityLinks.Count;
+            config.CashbackTotalEarned = profileSources.Where(entry => entry.Record.Kind == "Cashback").GroupBy(entry => entry.Source.IdentityKey)
+                .Select(group => JsonSerializer.Deserialize<GPayCashbackItem>(group.OrderByDescending(entry => entry.Record.Id).First().Source.Data, GPayEvidenceService.Json)!.Amount).Sum();
+            config.ActiveVouchersCount = profileSources.Where(entry => entry.Record.Kind == "Voucher").GroupBy(entry => entry.Source.IdentityKey)
+                .Count(group => JsonSerializer.Deserialize<GPayVoucherItem>(group.OrderByDescending(entry => entry.Record.Id).First().Source.Data, GPayEvidenceService.Json)!.IsActive);
 
             return config;
         }
@@ -108,10 +105,13 @@ namespace BankStatementAnalytics.Services
             return await GetAutoImportConfigAsync(userId, profileId);
         }
 
-        public async Task<GPayTakeoutImportResultDto> SweepAsync(long userId, string? profileId = null)
+        public Task<GPayTakeoutImportResultDto> SweepAsync(long userId, string? profileId = null, string trigger = "Manual sync") =>
+            RecordSyncAsync(userId, profileId, trigger, null, run => SweepCoreAsync(userId, run));
+
+        private async Task<GPayTakeoutImportResultDto> SweepCoreAsync(long userId, GPaySyncRun run)
         {
             if (SecurityRuntime.PublicHosting) throw new ArgumentException("Server file imports are disabled for public hosting.");
-            var config = await GetAutoImportConfigAsync(userId, profileId);
+            var config = await GetAutoImportConfigAsync(userId, run.ProfileId);
             if (string.IsNullOrWhiteSpace(config.WatchFolderPath) || !Directory.Exists(config.WatchFolderPath))
             {
                 return new GPayTakeoutImportResultDto
@@ -137,8 +137,10 @@ namespace BankStatementAnalytics.Services
             }
 
             var latestFile = files[0];
-            var result = await ImportFromPathAsync(userId, latestFile.FullName, profileId: config.ProfileId);
+            run.FileName = latestFile.Name;
+            var result = await ImportFromPathCoreAsync(userId, latestFile.FullName, null, run);
 
+            config = await GetAutoImportConfigAsync(userId, run.ProfileId);
             config.LastSyncUtc = DateTime.UtcNow;
             config.LastResult = result.Success ? result.Message : $"Failed: {result.Message}";
             if (result.CashbackTotalEarned > 0) config.CashbackTotalEarned = result.CashbackTotalEarned;
@@ -160,11 +162,14 @@ namespace BankStatementAnalytics.Services
             {
                 stoppingToken.ThrowIfCancellationRequested();
                 var config = await LoadPrimaryConfigAsync(userId);
-                if (config.WatchEnabled) await SweepAsync(userId);
+                if (config.WatchEnabled) await SweepAsync(userId, trigger: "Automatic sync");
             }
         }
 
-        public async Task<GPayTakeoutImportResultDto> ImportFromPathAsync(long userId, string filePath, string? expectedArchiveHash = null, string? profileId = null)
+        public Task<GPayTakeoutImportResultDto> ImportFromPathAsync(long userId, string filePath, string? expectedArchiveHash = null, string? profileId = null) =>
+            RecordSyncAsync(userId, profileId, "File import", filePath, run => ImportFromPathCoreAsync(userId, filePath, expectedArchiveHash, run));
+
+        private async Task<GPayTakeoutImportResultDto> ImportFromPathCoreAsync(long userId, string filePath, string? expectedArchiveHash, GPaySyncRun run)
         {
             if (SecurityRuntime.PublicHosting) throw new ArgumentException("Upload a file; server paths are disabled for public hosting.");
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
@@ -178,22 +183,27 @@ namespace BankStatementAnalytics.Services
 
             if (new FileInfo(filePath).Length > 250_000_000) throw new ArgumentException("Takeout file exceeds 250 MB.");
             await using var stream = File.OpenRead(filePath);
-            return await ImportFromStreamAsync(userId, stream, Path.GetFileName(filePath), expectedArchiveHash, profileId);
+            return await ImportFromStreamCoreAsync(userId, stream, Path.GetFileName(filePath), expectedArchiveHash, run);
         }
 
-        public async Task<GPayTakeoutImportResultDto> ImportFromStreamAsync(long userId, Stream stream, string fileName, string? expectedArchiveHash = null, string? profileId = null)
+        public Task<GPayTakeoutImportResultDto> ImportFromStreamAsync(long userId, Stream stream, string fileName, string? expectedArchiveHash = null, string? profileId = null) =>
+            RecordSyncAsync(userId, profileId, "Upload", fileName, run => ImportFromStreamCoreAsync(userId, stream, fileName, expectedArchiveHash, run));
+
+        private async Task<GPayTakeoutImportResultDto> ImportFromStreamCoreAsync(long userId, Stream stream, string fileName, string? expectedArchiveHash, GPaySyncRun run)
         {
             var bytes = await BoundedUpload.ReadAsync(stream, GPayEvidenceService.MaxArchiveBytes);
             var bundle = GPayEvidenceService.Scan(bytes, fileName);
-            if (!string.IsNullOrWhiteSpace(profileId) && profileId != "default") { _ = await GetProfileAsync(userId, profileId); bundle.ProfileId = profileId; }
+            run.Warnings.AddRange(bundle.Warnings);
+            if (run.ProfileId != null) { _ = await GetProfileAsync(userId, run.ProfileId); bundle.ProfileId = run.ProfileId; }
             if (expectedArchiveHash != null && !string.Equals(expectedArchiveHash, bundle.ArchiveHash, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Archive changed since preview. Preview it again before importing.");
             string? Find(string suffix) => bundle.Files.FirstOrDefault(f => f.Path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))?.Content;
             var result = await ProcessImportDataAsync(userId, JsonSerializer.Serialize(new GPayTakeoutData { GroupExpenses = bundle.Expenses }),
                 Find("Cashback rewards.csv"), bundle.Files.FirstOrDefault(f => f.Path.Contains("Google transactions/transactions_", StringComparison.OrdinalIgnoreCase))?.Content,
-                Find("My Activity.html"), Find("Voucher rewards.json"), bundle);
+                Find("My Activity.html"), Find("Voucher rewards.json"), bundle, run);
             if (result.Success) {
                 try {
-                    var matches = await new GPayEvidenceService().AutoMatchActivities(userId);
+                    var matches = await new GPayEvidenceService().AutoMatchActivities(userId, run.ProfileId, restrictToProfile: true);
+                    run.Changes.AddRange(matches.Changes ?? new());
                     result.UpiActivitiesEnriched = matches.Linked;
                     if (matches.Linked > 0) result.Message += $" Automatically linked {matches.Linked} GPay payments to bank transactions.";
                 } catch (Exception exception) {
@@ -211,7 +221,7 @@ namespace BankStatementAnalytics.Services
             string? cashbackCsv,
             string? transactionsCsv,
             string? activityHtml,
-            string? voucherJson, GPayBundle bundle)
+            string? voucherJson, GPayBundle bundle, GPaySyncRun run)
         {
             GPayTakeoutData? takeoutData = null;
             if (!string.IsNullOrWhiteSpace(groupExpensesJson))
@@ -236,6 +246,8 @@ namespace BankStatementAnalytics.Services
                 }
             }
 
+            // Share the configuration/deletion gate so a profile cannot disappear during import.
+            using var gate = await ImportAccountGate.AcquireAsync(-userId);
             using var session = DbHelper.GetSession();
 
             // 1. Identify the user's identity / name
@@ -268,6 +280,7 @@ namespace BankStatementAnalytics.Services
             decimal totalVolume = 0m;
 
             var groupSummaryList = new List<GPayGroupImportSummaryDto>();
+            var syncChanges = new List<GPaySyncChange>();
 
             using var tx = session.BeginTransaction();
 
@@ -311,6 +324,7 @@ namespace BankStatementAnalytics.Services
                             await session.SaveAsync(billGroup);
                             billGroupMap[groupName] = billGroup;
                             groupsCreated++;
+                            syncChanges.Add(new("Group", "Added", billGroup.Id, groupName));
                         }
 
                         // Collect distinct participant names
@@ -335,6 +349,7 @@ namespace BankStatementAnalytics.Services
                                 await session.SaveAsync(newBgMember);
                                 billGroup.Members.Add(newBgMember);
                                 existingMemberNames.Add(pName);
+                                syncChanges.Add(new("Group member", "Added", newBgMember.Id, pName, Detail: groupName));
                             }
                         }
 
@@ -430,6 +445,7 @@ namespace BankStatementAnalytics.Services
                                 await session.SaveAsync(member);
                                 splitGroup.Members.Add(member);
                                 membersImported++;
+                                syncChanges.Add(new("Split member", "Added", member.Id, member.ParticipantName, itemAmount, splitTitle));
 
                                 if (isSettled && !isItemUser)
                                 {
@@ -443,6 +459,7 @@ namespace BankStatementAnalytics.Services
                             existingSplits.Add(splitGroup);
 
                             splitsImported++;
+                            syncChanges.Add(new("Split", "Added", splitGroup.Id, splitTitle, totalAmount, groupName));
                             groupSplitsAdded++;
                         }
 
@@ -471,8 +488,11 @@ namespace BankStatementAnalytics.Services
                     activeVouchersCount = vouchers.Count(v => v.IsActive);
                 }
 
-                await GPayEvidenceService.StoreBundle(session, userId, bundle);
+                var sources = await GPayEvidenceService.StoreBundle(session, userId, bundle);
                 await tx.CommitAsync();
+                run.Changes.AddRange(syncChanges);
+                run.Changes.AddRange(sources.Changes);
+                run.Unchanged = sources.Unchanged;
 
                 var messageParts = new List<string>();
                 if (splitsImported > 0 || groupsCreated > 0)

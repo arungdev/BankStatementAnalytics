@@ -15,6 +15,7 @@ import GPayTakeoutReview from '../components/GPayTakeoutReview';
 import LinkedTransactionDrawer from '../components/LinkedTransactionDrawer';
 import './Splits.css';
 import { isImportedGPayGroup, isImportedGPayExpense } from "../utils/groupMembers";
+import { gpayPreferenceKey, readGPayPreference } from '../utils/gpayPreferences';
 import { createSplitGroup, updateSplitMember, linkTransactionToMember, unlinkTransactionFromMember, deleteSplitMember, deleteSplitGroup, getCandidateTransactions, createBillGroup, deleteBillGroup, addBillGroupMember, importTakeoutPath, importTakeoutUpload, getSplitGroupById } from "../api/splits";
 
 const fmtDate = (d) =>
@@ -243,7 +244,6 @@ export default function Splits() {
   const isImportedSplit = split => isImportedGPayExpense(split)
     || isImportedGPayGroup(billGroups.find(group => group.id === split?.billGroupId));
 
-  const onlyLinkCreatedByMe = localStorage.getItem('bsp_gpay_only_link_created_by_me') !== 'false';
   const configuredUserName = localStorage.getItem('bsp_gpay_user_name') || 'ARUN G';
 
   const selfNameTokens = useMemo(() => {
@@ -261,6 +261,7 @@ export default function Splits() {
 
   const canLinkIncomingCredit = (group, member) => {
     if (member?.isUser || isSelfMember(member)) return false;
+    const onlyLinkCreatedByMe = readGPayPreference('only_link_created_by_me', group?.gPayProfileId, 'true') !== 'false';
     if (onlyLinkCreatedByMe && !group?.isCreatedByUser) return false;
     return true;
   };
@@ -802,7 +803,7 @@ export default function Splits() {
 
       {/* KPI Stat Cards */}
       {splitLinkError?.key === location.key && <div role="alert" className="shared-bills-summary"><p>{splitLinkError.message}</p><button className="btn btn--outline" onClick={() => setSplitLinkAttempt(value => value + 1)}>Retry opening expense</button></div>}
-      {gpayProfiles.length > 1 && <label className="splits-profile-filter">GPay profile<select value={gpayProfileId} onChange={event => { setGpayProfileId(event.target.value); setSelectedBillGroupId(null); setSelectedSplitDetail(null); setLinkedTransaction(null); }}><option value="all">All profiles &amp; custom splits</option>{gpayProfiles.map(profile => <option key={profile.id} value={profile.id}>{maskName(profile.name)}</option>)}<option value="custom">Custom splits only</option></select></label>}
+      {gpayProfiles.length > 1 && <label className="splits-profile-filter">GPay profile<select value={gpayProfileId} onChange={event => { setGpayProfileId(event.target.value); setSplitFilter(readGPayPreference('split_filter', event.target.value, 'all')); setSelectedBillGroupId(null); setSelectedSplitDetail(null); setLinkedTransaction(null); }}><option value="all">All profiles &amp; custom splits</option>{gpayProfiles.map(profile => <option key={profile.id} value={profile.id}>{maskName(profile.name)}</option>)}<option value="custom">Custom splits only</option></select></label>}
       <div className="splits-summary">
         <StatCard
           label="Total Bill Volume"
@@ -884,7 +885,7 @@ export default function Splits() {
           <div className="splits-filter-bar">
             <div className="splits-filters" role="group" aria-label="Filter confirmed splits">
               {[['all', 'All Splits', splitCounts.all], ['owed_by_me', 'Owed by Me', splitCounts.owedByMe], ['to_collect', 'To Collect', splitCounts.toCollect], ['created_by_me', 'Created by Me', splitCounts.createdByMe], ['included', 'Involving Me', splitCounts.included]].map(([key, label, count]) => (
-                <button key={key} type="button" aria-pressed={splitFilter === key} onClick={() => { setSplitFilter(key); localStorage.setItem('bsp_gpay_split_filter', key); }}>
+                <button key={key} type="button" aria-pressed={splitFilter === key} onClick={() => { setSplitFilter(key); localStorage.setItem(gpayPreferenceKey('split_filter', gpayProfileId), key); }}>
                   {label}<span>{count}</span>
                 </button>
               ))}

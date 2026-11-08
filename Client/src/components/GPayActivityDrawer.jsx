@@ -9,7 +9,7 @@ const titles = { activities: 'Payment details', orders: 'Order details', rewards
 const labels = { CounterPartyName: 'Recipient / sender', AccountSuffix: 'Account', RefId: 'GPay activity ID', TransactionId: 'Order transaction ID', PaymentMethod: 'Payment method', ExpiryTimestamp: 'Expires', Timestamp: 'Date and time', Time: 'Date and time', Date: 'Date', Type: 'Payment type' };
 const dateFields = new Set(['Timestamp', 'Time', 'Date', 'ExpiryTimestamp']);
 
-export default function GPayActivityDrawer({ selection, onClose, onBank, width = 450, onWidthChange }) {
+export default function GPayActivityDrawer({ selection, onClose, onBank, onFindMatch, width = 450, onWidthChange }) {
   const { maskAmounts } = usePrivacy();
   const [viewport, setViewport] = useState(() => window.innerWidth);
   const closeButton = useRef(null);
@@ -68,6 +68,7 @@ export default function GPayActivityDrawer({ selection, onClose, onBank, width =
       {fields.length === 0 && <p>Source details are unavailable for this record.</p>}
       <p className="gpay-detail-note">Details from your GPay export.{kind === 'activities' ? ' The activity ID is a source identifier, not a verified bank reference.' : kind === 'vouchers' ? ' Expiry does not confirm whether a voucher has been redeemed.' : ''}</p>
       {kind !== 'vouchers' && record && <div className="gpay-detail-bank-match"><strong>{record.bankMatch?.bank ? 'Linked bank transaction' : record.bankMatch?.status === 'Ambiguous' ? 'Multiple possible matches · Not linked' : record.bankMatch?.status || 'Not linked'}</strong>{record.bankMatch?.reason && <p className="gpay-detail-note">{record.bankMatch.reason}</p>}{record.bankMatch?.bank && <button type="button" className="btn btn--outline gpay-detail-review" onClick={() => onBank?.(record)}><FiLink /> View bank transaction</button>}
+        {kind === 'activities' && !record.bankMatch?.bank && record.bankMatch?.status !== 'Duplicate' && record.bankMatch?.status !== 'Not eligible' && <button type="button" className="btn btn--outline gpay-detail-review" onClick={() => onFindMatch?.(record)}><FiLink /> Find bank transaction</button>}
         {record.bankMatch?.status === 'Ambiguous' && record.bankMatch.candidates?.length > 0 && <ul className="gpay-detail-candidates" aria-label="Possible bank matches, none linked">{record.bankMatch.candidates.map(candidate => <li key={`${candidate.bank.accountId}|${candidate.bank.bankReference}|${candidate.bank.bankType}|${candidate.bank.transactionType}`}>
           <div className="gpay-detail-candidate-heading"><strong>{maskName(candidate.payee || 'Unnamed bank payee')}</strong><strong>{currencyFormatterFull.format(candidate.amount)}</strong></div>
           <p>{candidate.bank.bankType} · {display('Date', candidate.transactionDate)}<br /><span>{text(candidate.bank.bankReference)}</span></p>

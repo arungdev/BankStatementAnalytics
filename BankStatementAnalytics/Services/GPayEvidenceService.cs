@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using BankStatementAnalytics.Models;
 using Common.Framework.Data;
@@ -15,6 +16,9 @@ namespace BankStatementAnalytics.Services;
 
 public sealed partial class GPayEvidenceService
 {
+    private static readonly JsonSerializerOptions ActivitySourceJson = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+    private readonly record struct ActivitySemanticKey(string? ProfileId, string IdentityKey, string Type, decimal Amount,
+        string? CounterPartyName, string? AccountSuffix, DateTime Timestamp, string? Status);
     public const long MaxArchiveBytes = 50_000_000;
     public const long MaxExpandedBytes = 100_000_000;
     public static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
@@ -78,7 +82,7 @@ public sealed partial class GPayEvidenceService
                 } else if (file.Path.EndsWith("My Activity.html", StringComparison.OrdinalIgnoreCase)) {
                     kind = "Activity";
                     var activities = GPayActivityParser.ParseMyActivityHtml(file.Content);
-                    foreach (var a in activities) { bundle.Records.Add(new(kind, Hash(a.RefId ?? JsonSerializer.Serialize(a)), JsonSerializer.Serialize(a))); parsed++; }
+                    foreach (var a in activities) { bundle.Records.Add(new(kind, Hash(a.RefId ?? JsonSerializer.Serialize(a, ActivitySourceJson)), JsonSerializer.Serialize(a, ActivitySourceJson))); parsed++; }
                     var cells = Regex.Matches(file.Content, "<div class=\"outer-cell").Count;
                     var headlines = Regex.Matches(file.Content, "body-1\">(?:Paid|Sent|Received)\\s").Count;
                     bundle.Warnings.Add($"Activity inventory: {cells} cells; {headlines} payment headlines; {parsed} parsed payments; {activities.Count(a => a.Status == "Unknown")} unknown statuses.");
@@ -101,15 +105,69 @@ public sealed partial class GPayEvidenceService
         return bundle;
     }
 
-    public static async Task StoreBundle(ISession session, long userId, GPayBundle bundle)
+    public static async Task<(List<GPaySyncChange> Changes, int Unchanged)> StoreBundle(ISession session, long userId, GPayBundle bundle)
     {
-        var stored = (await session.Query<GPayEvidenceRecord>().Where(r => r.OwnerUserId == userId).ToListAsync()).Select(r => (r.Kind, r.SourceKey)).ToHashSet();
-        async Task Add(string kind, string key, string payload) {
-            if (!stored.Add((kind, key))) return;
-            await session.SaveAsync(new GPayEvidenceRecord { OwnerUserId = userId, Kind = kind, SourceKey = key, Payload = payload });
+        var changes = new List<GPaySyncChange>();
+        var unchanged = 0;
+        var existingRecords = await session.Query<GPayEvidenceRecord>().Where(r => r.OwnerUserId == userId && r.Kind != "SyncHistory").ToListAsync();
+        var stored = existingRecords.Select(r => (r.Kind, r.SourceKey)).ToHashSet();
+        var storedActivities = new Dictionary<ActivitySemanticKey, GPayEvidenceRecord>();
+        foreach (var record in existingRecords.Where(record => record.Kind == "Activity"))
+        {
+            var payload = JsonSerializer.Deserialize<EvidencePayload>(record.Payload, Json)!;
+            var activity = JsonSerializer.Deserialize<GPayUpiActivityItem>(payload.Data, Json)!;
+            storedActivities.TryAdd(new(payload.ProfileId, payload.IdentityKey, activity.Type, activity.Amount,
+                activity.CounterPartyName, activity.AccountSuffix, activity.Timestamp, activity.Status), record);
         }
-        foreach (var r in bundle.Records) await Add(r.Kind, Hash((bundle.ProfileId == null ? "" : bundle.ProfileId + "|") + r.IdentityKey + r.Payload), JsonSerializer.Serialize(new EvidencePayload(r.IdentityKey, r.Payload, bundle.ArchiveHash, bundle.ProfileId)));
+        async Task<GPayEvidenceRecord?> Add(string kind, string key, string payload) {
+            if (!stored.Add((kind, key))) { if (kind != "Batch") unchanged++; return null; }
+            var record = new GPayEvidenceRecord { OwnerUserId = userId, Kind = kind, SourceKey = key, Payload = payload };
+            await session.SaveAsync(record);
+            if (kind != "Batch") {
+                var source = JsonSerializer.Deserialize<EvidencePayload>(payload, Json)!;
+                using var document = JsonDocument.Parse(source.Data);
+                var data = document.RootElement;
+                string Field(string name) => data.ValueKind == JsonValueKind.Object
+                    ? data.EnumerateObject().FirstOrDefault(field => string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase)).Value.ToString() : "";
+                var label = new[] { "CounterPartyName", "Title", "Description", "Summary", "Type" }.Select(Field).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? kind;
+                var rawAmount = string.IsNullOrEmpty(Field("Amount")) ? Field("total_amount") : Field("Amount");
+                decimal? amount = decimal.TryParse(Regex.Replace(rawAmount, @"[^\d.-]", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var number) ? number : null;
+                changes.Add(new(kind, "Added", record.Id, label, amount, "Imported source: " + source.IdentityKey));
+            }
+            return record;
+        }
+        foreach (var r in bundle.Records)
+        {
+            var scopedIdentity = (bundle.ProfileId ?? "default") + "|" + r.IdentityKey;
+            if (r.Kind == "Activity")
+            {
+                var incoming = JsonSerializer.Deserialize<GPayUpiActivityItem>(r.Payload, Json)!;
+                var activityKey = new ActivitySemanticKey(bundle.ProfileId, r.IdentityKey, incoming.Type, incoming.Amount,
+                    incoming.CounterPartyName, incoming.AccountSuffix, incoming.Timestamp, incoming.Status);
+                if (storedActivities.TryGetValue(activityKey, out var existing))
+                {
+                    var payload = JsonSerializer.Deserialize<EvidencePayload>(existing.Payload, Json)!;
+                    var current = JsonSerializer.Deserialize<GPayUpiActivityItem>(payload.Data, Json)!;
+                    if (string.IsNullOrWhiteSpace(current.UpiTransactionId) && !string.IsNullOrWhiteSpace(incoming.UpiTransactionId))
+                    {
+                        current.UpiTransactionId = incoming.UpiTransactionId;
+                        existing.Payload = JsonSerializer.Serialize(payload with { Data = JsonSerializer.Serialize(current, ActivitySourceJson) });
+                        await session.UpdateAsync(existing);
+                        changes.Add(new("Activity", "Updated", existing.Id, current.CounterPartyName ?? current.Type, current.Amount,
+                            "UPI transaction ID added: " + incoming.UpiTransactionId));
+                    }
+                    else unchanged++;
+                    continue;
+                }
+                var semanticKey = Hash(JsonSerializer.Serialize(new { incoming.Type, incoming.Amount, incoming.CounterPartyName, incoming.AccountSuffix, incoming.Timestamp, incoming.Status }));
+                var added = await Add(r.Kind, Hash(scopedIdentity + "|" + semanticKey), JsonSerializer.Serialize(new EvidencePayload(r.IdentityKey, r.Payload, bundle.ArchiveHash, bundle.ProfileId)));
+                if (added != null) storedActivities[activityKey] = added;
+                continue;
+            }
+            await Add(r.Kind, Hash((bundle.ProfileId == null ? "" : bundle.ProfileId + "|") + r.IdentityKey + r.Payload), JsonSerializer.Serialize(new EvidencePayload(r.IdentityKey, r.Payload, bundle.ArchiveHash, bundle.ProfileId)));
+        }
         await Add("Batch", bundle.ProfileId == null ? bundle.ArchiveHash : Hash(bundle.ProfileId + "|" + bundle.ArchiveHash), JsonSerializer.Serialize(new { bundle.FileName, bundle.ArchiveHash, bundle.ProfileId, bundle.Inventory, bundle.Warnings, ImportedUtc = DateTime.UtcNow, ParserVersion = 1 }));
+        return (changes, unchanged);
     }
 
     public async Task<object> Preview(long userId, GPayBundle bundle)

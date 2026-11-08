@@ -29,7 +29,7 @@ public sealed partial class GPayEvidenceService
         // Matching must see all activities, including those outside the requested page,
         // so competing payments cannot be mistaken for unique bank matches.
         var records = await session.Query<GPayEvidenceRecord>()
-            .Where(r => r.OwnerUserId == userId && (r.Kind == "Profile" || (kind == "Activity" && (r.Kind == "Decision" || r.Kind == "Activity"))))
+            .Where(r => r.OwnerUserId == userId && (r.Kind == "Profile" || (kind == "Activity" && (r.Kind == "PrimaryConfig" || r.Kind == "Decision" || r.Kind == "Activity"))))
             .ToListAsync();
         var profiles = records.Where(r => r.Kind == "Profile")
             .Select(r => JsonSerializer.Deserialize<GPayAutoImportConfigDto>(r.Payload, Json)!)
@@ -67,13 +67,32 @@ public sealed partial class GPayEvidenceService
         var postgres = dialect is NHibernate.Dialect.PostgreSQLDialect;
         var sqlite = dialect is NHibernate.Dialect.SQLiteDialect;
         if (!postgres && !sqlite) throw new ArgumentException("Activity pagination requires PostgreSQL or SQLite.");
-        string PayloadField(string field) => postgres ? $"cast(r.Payload as json)->>'{field}'" : $"json_extract(r.Payload, '$.{field}')";
-        var sourceJson = postgres ? $"cast(({PayloadField("Data")}) as json)" : PayloadField("Data");
-        string SourceField(string field) => postgres ? $"({sourceJson})->>'{field}'" : $"json_extract({sourceJson}, '$.{field}')";
+        string PayloadFieldFor(string alias, string field) => postgres ? $"cast({alias}.Payload as json)->>'{field}'" : $"json_extract({alias}.Payload, '$.{field}')";
+        string PayloadField(string field) => PayloadFieldFor("r", field);
+        string DataJson(string alias) => postgres ? $"cast({PayloadFieldFor(alias, "Data")} as json)" : PayloadFieldFor(alias, "Data");
+        string SourceFieldFor(string alias, string field) => postgres
+            ? $"({DataJson(alias)})->>'{field}'"
+            : $"json_extract({DataJson(alias)}, '$.{field}')";
+        string SourceField(string field) => SourceFieldFor("r", field);
         var where = "r.OwnerUserId = :owner and r.Kind = :kind";
+        if (kind == "Activity")
+        {
+            // Reimports across parser versions may serialize optional null fields
+            // differently. Collapse only semantically identical source copies;
+            // changed activity details with the same source ID remain reviewable.
+            var fields = new[] { "Type", "Amount", "CounterPartyName", "AccountSuffix", "Timestamp", "RefId", "UpiTransactionId", "Status" };
+            var sameIdentity = $"{PayloadFieldFor("d", "IdentityKey")} = {PayloadFieldFor("r", "IdentityKey")}";
+            var sameProfile = $"coalesce({PayloadFieldFor("d", "ProfileId")}, 'default') = coalesce({PayloadFieldFor("r", "ProfileId")}, 'default')";
+            var duplicateData = PayloadFieldFor("d", "Data");
+            var currentData = PayloadFieldFor("r", "Data");
+            var sameData = postgres
+                ? $"((cast(({duplicateData}) as jsonb) - 'UpiTransactionId') = (cast(({currentData}) as jsonb) - 'UpiTransactionId') and coalesce({SourceFieldFor("d", "UpiTransactionId")}, '') = coalesce({SourceFieldFor("r", "UpiTransactionId")}, ''))"
+                : string.Join(" and ", fields.Select(field => $"{SourceFieldFor("d", field)} is {SourceFieldFor("r", field)}"));
+            where += $" and not exists (select 1 from gpay_evidence_records d where d.OwnerUserId = r.OwnerUserId and d.Kind = r.Kind and d.Id < r.Id and {sameIdentity} and {sameProfile} and {sameData})";
+        }
         if (profileId != "all") where += $" and coalesce({PayloadField("ProfileId")}, 'default') = :profile";
         if (!string.IsNullOrEmpty(search)) {
-            var decoded = postgres ? $"(select string_agg(value, ' ') from json_each_text({sourceJson}))" : $"(select group_concat(value, ' ') from json_each({sourceJson}))";
+            var decoded = postgres ? $"(select string_agg(value, ' ') from json_each_text({DataJson("r")}))" : $"(select group_concat(value, ' ') from json_each({DataJson("r")}))";
             where += $" and (lower(r.Payload) like :search escape '!' or lower({decoded}) like :search escape '!')";
         }
         var nameSql = "coalesce(" + string.Join(",", new[] { "CounterPartyName", "Description", "Summary", "Type" }.Select(f => $"nullif({SourceField(f)}, '')")) + ", 'Unnamed payment')";

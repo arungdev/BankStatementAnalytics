@@ -1,0 +1,89 @@
+.gpay-insight-tiles button { border:1px solid transparent; background:var(--surface-2,#f5f5fa); color:var(--text-main); border-radius:8px; padding:12px; text-align:left; cursor:pointer; min-width:0; }
+.gpay-insight-tiles button strong,.gpay-insight-tiles button>span { display:block; }
+.gpay-insight-tiles button>span { font-size:12px; color:var(--text-muted); margin-top:5px; }
+.gpay-insight-tiles button:hover { border-color:var(--primary); }
+.gpay-insight-tiles button:focus-visible,.gpay-sync-history-row:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+.gpay-sync-history { margin:20px 0; border-top:1px solid var(--border-color); padding-top:16px; }
+.gpay-sync-history-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.gpay-sync-history h4 { margin:0; font-size:14px; }
+.gpay-sync-history>p { font-size:12px; }
+.gpay-sync-history-row { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; border:0; border-bottom:1px solid var(--border-color); background:transparent; color:var(--text-main); padding:12px 0; text-align:left; cursor:pointer; font:inherit; font-size:12px; }
+.gpay-sync-history-row>span { min-width:0; }
+.gpay-sync-history-row small { display:block; color:var(--text-muted); margin-top:5px; overflow-wrap:anywhere; }
+.gpay-sync-status { font-weight:600; }
+.gpay-sync-status.is-success { color:var(--success,#15803d); }
+.gpay-sync-status.is-failed { color:var(--danger,#dc2626); }
+.gpay-profile-detail-panel { padding:0; overflow-wrap:anywhere; color:var(--text-main); }
+.gpay-profile-detail-panel h3 { font-size:16px; }
+.gpay-sync-run-summary { padding:14px; border-radius:8px; background:var(--surface-2,#f5f5fa); font-size:13px; margin-bottom:16px; }
+.gpay-profile-detail-row { padding:14px 0; border-bottom:1px solid var(--border-color); font-size:13px; }
+.gpay-profile-detail-row>div { display:flex; align-items:start; justify-content:space-between; gap:12px; }
+.gpay-profile-detail-row small { display:block; margin-top:6px; color:var(--text-muted); }
+.gpay-profile-detail-row p { margin-bottom:0; font-size:12px; line-height:1.6; }
+.gpay-insight-pagination { display:flex; justify-content:space-between; align-items:center; gap:10px; padding-top:14px; font-size:12px; }
+@media(max-width:600px) { .gpay-sync-history-row { flex-wrap:wrap; } }
+.gpay-insight-tiles button[aria-pressed=true] { border-color:var(--primary); background:var(--primary-light); }
+.gpay-insight-back { display:inline-flex; align-items:center; gap:8px; padding:0 0 20px; border:0; background:transparent; color:var(--primary); font:inherit; font-size:13px; cursor:pointer; }
+.gpay-collection-header { display:flex; gap:12px; align-items:center; margin:0 0 20px; }
+.gpay-collection-header h3 { margin:0 0 5px; font-size:18px; letter-spacing:-.02em; }
+.gpay-collection-header>div>span { color:var(--text-muted); font-size:12px; }
+.gpay-collection-icon { display:grid; place-items:center; flex-shrink:0; width:46px; height:46px; color:var(--primary); background:var(--primary-light); border-radius:12px; }
+.gpay-insight-search { display:flex; align-items:center; gap:9px; padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; color:var(--text-muted); background:var(--surface); margin-bottom:14px; }
+.gpay-insight-search input { border:0; outline:0; background:transparent; font:inherit; font-size:13px; color:var(--text-main); width:100%; min-width:0; }
+.gpay-insight-search:focus-within { outline:2px solid var(--primary); outline-offset:2px; }
+.gpay-insight-row { display:flex; align-items:center; gap:12px; width:100%; border:0; border-bottom:1px solid var(--border-subtle); background:transparent; color:var(--text-main); text-align:left; padding:16px 0; cursor:pointer; font:inherit; }
+.gpay-insight-row:hover { background:var(--surface-2); }
+.gpay-insight-row-main { min-width:0; flex:1; }
+.gpay-insight-row-main>strong { display:block; font-size:14px; font-weight:650; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gpay-insight-row-main>small,.gpay-insight-row-main>span { display:block; color:var(--text-muted); font-size:12px; line-height:1.5; margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gpay-insight-row-end { display:flex; align-items:center; gap:8px; color:var(--text-muted); }
+.gpay-insight-row-end>strong { color:var(--text-main); font-size:14px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.gpay-record-hero { display:flex; flex-direction:column; align-items:center; gap:12px; padding:8px 0 26px; border-bottom:1px solid var(--border-color); text-align:center; }
+.gpay-record-hero h3 { font-size:17px; margin:0; line-height:1.5; }
+.gpay-record-hero>span { font-size:13px; color:var(--text-muted); }
+.gpay-record-amount { font-size:34px; font-weight:800; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+.gpay-record-amount.is-credit { color:var(--success); }
+.gpay-record-badge { background:var(--primary-light); color:var(--primary)!important; border-radius:6px; padding:4px 9px; font-size:11px!important; font-weight:600; }
+.gpay-record-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 18px; padding:24px 0; margin:0; }
+.gpay-record-fields .is-wide { grid-column:1 / -1; }
+.gpay-record-fields dt { text-transform:uppercase; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:7px; letter-spacing:.02em; }
+.gpay-record-fields dd { margin:0; font-size:14px; line-height:1.6; }
+.gpay-record-section { padding:20px 0; border-top:1px solid var(--border-color); }
+.gpay-record-section>h4,.gpay-record-section-title { font-size:13px; margin:0 0 16px; font-weight:650; }
+.gpay-record-section>p { font-size:14px; line-height:1.7; margin:0; white-space:pre-wrap; }
+.gpay-record-members { list-style:none; padding:0; margin:0; display:grid; gap:14px; }
+.gpay-record-members li { display:flex; align-items:center; gap:12px; font-size:13px; }
+.gpay-sync-result { display:flex; align-items:center; gap:10px; padding:14px; border-radius:9px; background:var(--surface-2); margin-bottom:16px; }
+.gpay-sync-result strong,.gpay-sync-result span { display:block; font-size:13px; }
+.gpay-sync-result span { color:var(--text-muted); font-size:12px; margin-top:4px; }
+.gpay-sync-result.is-success { color:var(--success); background:var(--success-light); }
+.gpay-sync-result.is-failed { color:var(--danger); background:var(--danger-light); }
+.gpay-sync-counts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.gpay-sync-counts>div { background:var(--surface-2); border-radius:7px; padding:12px 8px; }
+.gpay-sync-counts strong,.gpay-sync-counts span { display:block; }
+.gpay-sync-counts strong { font-size:19px; font-variant-numeric:tabular-nums; }
+.gpay-sync-counts span { color:var(--text-muted); font-size:11px; margin-top:5px; }
+.gpay-sync-message { color:var(--text-muted); font-size:13px; line-height:1.7; padding-bottom:20px; border-bottom:1px solid var(--border-color); }
+.gpay-record-section-title { margin:22px 0 4px; }
+.gpay-record-section-title>span { color:var(--text-muted); font-weight:400; margin-left:6px; }
+.gpay-import-notes { font-size:12px; line-height:1.7; margin-bottom:20px; }
+.gpay-import-notes summary { color:var(--primary); cursor:pointer; }
+.gpay-insight-empty { display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px; padding:40px 18px; color:var(--text-muted); }
+.gpay-insight-empty h4 { color:var(--text-main); margin:0; font-size:15px; }
+.gpay-insight-empty p { margin:0; font-size:13px; line-height:1.6; }
+.gpay-insight-loading { display:flex; justify-content:center; align-items:center; gap:10px; padding:40px 0; color:var(--text-muted); font-size:13px; }
+.gpay-profile-detail-panel button:focus-visible,.gpay-profile-detail-panel summary:focus-visible { outline:2px solid var(--primary); outline-offset:3px; }
+.gpay-history-entry { display:flex; align-items:center; gap:12px; width:100%; padding:14px 0; margin:16px 0 6px; border:0; border-top:1px solid var(--border-color); border-bottom:1px solid var(--border-color); background:transparent; color:var(--text-main); text-align:left; cursor:pointer; font:inherit; }
+.gpay-history-entry>span:nth-child(2) { flex:1; min-width:0; }
+.gpay-history-entry strong,.gpay-history-entry small { display:block; }
+.gpay-history-entry strong { font-size:13px; }
+.gpay-history-entry small { color:var(--text-muted); font-size:12px; margin-top:5px; line-height:1.5; }
+.gpay-history-entry-icon { display:grid; place-items:center; width:36px; height:36px; border-radius:9px; background:var(--primary-light); color:var(--primary); flex-shrink:0; }
+.gpay-history-entry:hover { color:var(--primary); }
+.gpay-history-entry:focus-visible { outline:2px solid var(--primary); outline-offset:3px; }
+.gpay-history-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; font-size:12px; color:var(--text-muted); }
+.gpay-history-toolbar button { display:inline-flex; gap:6px; align-items:center; }
+.gpay-history-panel-list .gpay-sync-history-row { flex-wrap:nowrap; padding:18px 0; }
+.gpay-history-panel-list .gpay-sync-history-row>span:first-child { flex:1; }
+.gpay-history-panel-list .gpay-sync-history-row>svg { flex-shrink:0; color:var(--text-muted); }
+.gpay-history-file { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

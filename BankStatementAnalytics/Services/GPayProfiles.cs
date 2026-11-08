@@ -86,6 +86,39 @@ public partial class GPayTakeoutService
             throw new ArgumentException("Each GPay profile needs a separate export folder to prevent cross-profile imports.");
     }
 
+    public async Task<GPayAutoImportConfigDto> DeleteProfileAsync(long userId, string profileId)
+    {
+        if (string.IsNullOrWhiteSpace(profileId) || profileId == "default")
+            throw new ArgumentException("Primary GPay cannot be deleted.");
+        using var gate = await ImportAccountGate.AcquireAsync(-userId);
+        using var session = DbHelper.GetSession();
+        using var transaction = session.BeginTransaction();
+        var key = GPayEvidenceService.Hash(profileId);
+        var record = await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(r =>
+            r.OwnerUserId == userId && r.Kind == "Profile" && r.SourceKey == key)
+            ?? throw new ArgumentException("GPay profile not found.");
+        var hasGroups = await session.Query<BillGroup>().AnyAsync(g => g.OwnerUserId == userId && g.GPayProfileId == profileId)
+            || await session.Query<SplitGroup>().AnyAsync(g => g.OwnerUserId == userId && g.GPayProfileId == profileId);
+        var evidence = await session.Query<GPayEvidenceRecord>()
+            .Where(r => r.OwnerUserId == userId && r.Kind != "Profile" && r.Kind != "PrimaryConfig" && r.Kind != "SyncHistory")
+            .Select(r => r.Payload).ToListAsync();
+        var hasSources = evidence.Any(payload => {
+            using var document = JsonDocument.Parse(payload);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object
+                && (root.TryGetProperty("ProfileId", out var id) || root.TryGetProperty("profileId", out id))
+                && id.ValueKind == JsonValueKind.String && id.GetString() == profileId;
+        });
+        if (hasGroups || hasSources)
+            throw new InvalidOperationException("This profile has imported data and cannot be deleted. Its records and bank links have been preserved.");
+        await session.DeleteAsync(record);
+        var historyPrefix = SyncPrefix(profileId);
+        var history = await session.Query<GPayEvidenceRecord>().Where(r => r.OwnerUserId == userId && r.Kind == "SyncHistory" && r.SourceKey.StartsWith(historyPrefix)).ToListAsync();
+        foreach (var entry in history) await session.DeleteAsync(entry);
+        await transaction.CommitAsync();
+        return await GetAutoImportConfigAsync(userId);
+    }
+
     private async Task SaveProfileConfigAsync(long userId, GPayAutoImportConfigDto config, bool create = false)
     {
         // Summary lists are response-only; avoid nesting profiles in saved configuration.
@@ -114,7 +147,7 @@ public partial class GPayTakeoutService
             if (!record.OwnerUserId.HasValue || Common.Framework.Auth.AuthService.GetUser(record.OwnerUserId.Value)?.Role != Common.Framework.Auth.AppRole.Admin
                 || !profile.WatchEnabled || string.IsNullOrWhiteSpace(profile.WatchFolderPath) || !Directory.Exists(profile.WatchFolderPath)) continue;
             var latest = Directory.EnumerateFiles(profile.WatchFolderPath, "*.*", SearchOption.TopDirectoryOnly).Where(file => file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".json", StringComparison.OrdinalIgnoreCase)).Select(file => new FileInfo(file)).OrderByDescending(file => file.LastWriteTimeUtc).FirstOrDefault();
-            if (latest != null && (!profile.LastSyncUtc.HasValue || latest.LastWriteTimeUtc > profile.LastSyncUtc.Value)) await SweepAsync(record.OwnerUserId.Value, profile.ProfileId);
+            if (latest != null && (!profile.LastSyncUtc.HasValue || latest.LastWriteTimeUtc > profile.LastSyncUtc.Value)) await SweepAsync(record.OwnerUserId.Value, profile.ProfileId, "Automatic sync");
         }
     }
 }

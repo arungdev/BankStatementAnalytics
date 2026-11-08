@@ -30,6 +30,7 @@ import { getBackupStatus, downloadBackup, restoreBackup, readApiError } from "..
 import { getUpdateStatus, getUpdateInstallation, checkForUpdates, downloadUpdate, cancelDownload, applyUpdate, downloadUpdateBinary } from "../api/update";
 import { getUpdateOutcome, isInstallingUpdate } from "../utils/updateProgress";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
+import { readGPayPreference } from '../utils/gpayPreferences';
 
 import "./Settings.css";
 
@@ -300,6 +301,7 @@ export default function Settings() {
 
   // Google Pay Auto-import state & handlers
   const [gpayConfig, setGpayConfig] = useState(null);
+  const [gpayPanelWidth, setGpayPanelWidth] = useState(0);
   const [gpayAutoOpen, setGpayAutoOpen] = useState(false);
   const [gpayDraftPath, setGpayDraftPath] = useState('');
   const [gpaySweeping, setGpaySweeping] = useState(false);
@@ -317,6 +319,11 @@ export default function Settings() {
   const [namePickerSearch, setNamePickerSearch] = useState('');
   const [participantList, setParticipantList] = useState([]);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
+
+  useEffect(() => {
+    setSplitDisplayFilter(readGPayPreference('split_filter', gpayConfig?.profileId, 'all'));
+    setOnlyLinkCreatedByMe(readGPayPreference('only_link_created_by_me', gpayConfig?.profileId, 'true') !== 'false');
+  }, [gpayConfig?.profileId]);
 
   useEffect(() => {
     getGPayAutoImportConfig().then(res => {
@@ -1161,14 +1168,14 @@ export default function Settings() {
 
   const renderUpdates = () => <UpdateSettings SettingCard={SettingCard} applyingUpdate={applyingUpdate} manualInstallation={manualInstallation} checkingUpdate={checkingUpdate} formatBytes={formatBytes} handleApplyUpdate={handleApplyUpdate} handleCancelDownload={handleCancelDownload} handleCheckUpdate={handleCheckUpdate} handleDownloadUpdate={handleDownloadUpdate} handleSaveFileDirectly={handleSaveFileDirectly} updateError={updateError} updateMessage={updateMessage} updateStatus={updateStatus} />;
 
-  const renderAccounts = () => <AccountSettings accounts={accounts} autoDraft={autoDraft} autoDrafts={autoDrafts} autoOpen={autoOpen} browse={browse} cardAccounts={cardAccounts} cardDraft={cardDraft} cardDrafts={cardDrafts} editAccountName={editAccountName} editingAccountId={editingAccountId} gpayAutoOpen={gpayAutoOpen} gpayConfig={gpayConfig} gpayDraftPath={gpayDraftPath} gpayMessage={gpayMessage} gpaySweeping={gpaySweeping} gpayUserName={gpayUserName} handleDeleteAccount={handleDeleteAccount} handleImportNow={handleImportNow} handleOpenNamePicker={handleOpenNamePicker} handleSaveAutoImport={handleSaveAutoImport} handleSaveCardSettings={handleSaveCardSettings} handleSaveGPayAutoImport={handleSaveGPayAutoImport} handleSaveGPayUserName={handleSaveGPayUserName} handleSweepGPay={handleSweepGPay} handleToggleAutoImport={handleToggleAutoImport} handleToggleGPayAutoImport={handleToggleGPayAutoImport} handleUpdateAccount={handleUpdateAccount} canEdit={canEdit} canManageServer={canManageServer} loadBrowse={loadBrowse} onlyLinkCreatedByMe={onlyLinkCreatedByMe} openBrowse={openBrowse} openBrowseGPay={openBrowseGPay} openHistory={openHistory} setAutoDraft={setAutoDraft} setAutoOpen={setAutoOpen} setBrowse={setBrowse} setCardDraft={setCardDraft} setCardDrafts={setCardDrafts} setEditAccountName={setEditAccountName} setEditingAccountId={setEditingAccountId} setGpayAutoOpen={setGpayAutoOpen} setGpayConfig={setGpayConfig} setGpayDraftPath={setGpayDraftPath} setGpayMessage={setGpayMessage} setGpayUserName={setGpayUserName} setOnlyLinkCreatedByMe={setOnlyLinkCreatedByMe} setParticipantList={setParticipantList} setShowPw={setShowPw} setSplitDisplayFilter={setSplitDisplayFilter} showPw={showPw} splitDisplayFilter={splitDisplayFilter} sweeping={sweeping} />;
+  const renderAccounts = () => <AccountSettings onGpayPanelWidthChange={setGpayPanelWidth} accounts={accounts} autoDraft={autoDraft} autoDrafts={autoDrafts} autoOpen={autoOpen} browse={browse} cardAccounts={cardAccounts} cardDraft={cardDraft} cardDrafts={cardDrafts} editAccountName={editAccountName} editingAccountId={editingAccountId} gpayAutoOpen={gpayAutoOpen} gpayConfig={gpayConfig} gpayDraftPath={gpayDraftPath} gpayMessage={gpayMessage} gpaySweeping={gpaySweeping} gpayUserName={gpayUserName} handleDeleteAccount={handleDeleteAccount} handleImportNow={handleImportNow} handleOpenNamePicker={handleOpenNamePicker} handleSaveAutoImport={handleSaveAutoImport} handleSaveCardSettings={handleSaveCardSettings} handleSaveGPayAutoImport={handleSaveGPayAutoImport} handleSaveGPayUserName={handleSaveGPayUserName} handleSweepGPay={handleSweepGPay} handleToggleAutoImport={handleToggleAutoImport} handleToggleGPayAutoImport={handleToggleGPayAutoImport} handleUpdateAccount={handleUpdateAccount} canEdit={canEdit} canManageServer={canManageServer} loadBrowse={loadBrowse} onlyLinkCreatedByMe={onlyLinkCreatedByMe} openBrowse={openBrowse} openBrowseGPay={openBrowseGPay} openHistory={openHistory} setAutoDraft={setAutoDraft} setAutoOpen={setAutoOpen} setBrowse={setBrowse} setCardDraft={setCardDraft} setCardDrafts={setCardDrafts} setEditAccountName={setEditAccountName} setEditingAccountId={setEditingAccountId} setGpayAutoOpen={setGpayAutoOpen} setGpayConfig={setGpayConfig} setGpayDraftPath={setGpayDraftPath} setGpayMessage={setGpayMessage} setGpayUserName={setGpayUserName} setOnlyLinkCreatedByMe={setOnlyLinkCreatedByMe} setParticipantList={setParticipantList} setShowPw={setShowPw} setSplitDisplayFilter={setSplitDisplayFilter} showPw={showPw} splitDisplayFilter={splitDisplayFilter} sweeping={sweeping} />;
 
   const renderCategories = () => <CategorySettings activeSubCatInputId={activeSubCatInputId} categories={categories} editCatName={editCatName} editCatNameError={editCatNameError} editingCatId={editingCatId} handleAddCategory={handleAddCategory} handleAddSubCategory={handleAddSubCategory} handleDeleteCategory={handleDeleteCategory} handleDeleteSubCategory={handleDeleteSubCategory} handleUpdateCategory={handleUpdateCategory} canEdit={canEdit} newCatName={newCatName} newCatNameError={newCatNameError} newSubCatName={newSubCatName} newSubCatNameError={newSubCatNameError} setActiveSubCatInputId={setActiveSubCatInputId} setEditCatName={setEditCatName} setEditCatNameError={setEditCatNameError} setEditingCatId={setEditingCatId} setNewCatName={setNewCatName} setNewCatNameError={setNewCatNameError} setNewSubCatName={setNewSubCatName} setNewSubCatNameError={setNewSubCatNameError} />;
 
   const renderTags = () => <TagSettings editTagName={editTagName} editTagNameError={editTagNameError} editingTagId={editingTagId} handleAddTag={handleAddTag} handleDeleteTag={handleDeleteTag} handleUpdateTag={handleUpdateTag} canEdit={canEdit} newTagError={newTagError} newTagName={newTagName} setEditTagName={setEditTagName} setEditTagNameError={setEditTagNameError} setEditingTagId={setEditingTagId} setNewTagError={setNewTagError} setNewTagName={setNewTagName} tags={tags} />;
 
   return (
-    <div className="settings-page">
+    <div className="settings-page" style={{ marginRight: gpayPanelWidth, transition: "margin-right 0.2s ease" }}>
       <div className="settings-shell">
         {/* ── Section rail: search + all sections visible at once ── */}
         <aside className="settings-rail">
