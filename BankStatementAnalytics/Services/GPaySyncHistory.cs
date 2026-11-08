@@ -57,23 +57,24 @@ public partial class GPayTakeoutService
         }
     }
 
-    public async Task<object> SyncHistoryAsync(long userId, string? profileId, int page = 0)
+    public async Task<object> SyncHistoryAsync(long userId, string? profileId, int page = 0, int pageSize = 10)
     {
         profileId = string.IsNullOrWhiteSpace(profileId) || profileId == "default" ? null : profileId;
         if (profileId != null) _ = await GetProfileAsync(userId, profileId);
-        if (page < 0) throw new ArgumentException("Invalid history page.");
+        if (page < 0 || pageSize < 1 || pageSize > 100) throw new ArgumentException("Invalid history page.");
         using var session = Common.Framework.Data.DbHelper.GetSession();
         var prefix = SyncPrefix(profileId);
         var query = session.Query<GPayEvidenceRecord>().Where(r => r.OwnerUserId == userId && r.Kind == "SyncHistory" && r.SourceKey.StartsWith(prefix));
         var total = await query.CountAsync();
-        var records = await query.OrderByDescending(r => r.Id).Skip(page * 10).Take(10).ToListAsync();
+        page = Math.Min(page, Math.Max(0, (total - 1) / pageSize));
+        var records = await query.OrderByDescending(r => r.Id).Skip(page * pageSize).Take(pageSize).ToListAsync();
         var runs = records.Select(record => { var run = JsonSerializer.Deserialize<GPaySyncRun>(record.Payload, GPayEvidenceService.Json)!; run.Id = record.Id; run.Changes.Clear(); return run; }).ToList();
-        return new { Runs = runs, Total = total, Page = page, PageSize = 10 };
+        return new { Runs = runs, Total = total, Page = page, PageSize = pageSize };
     }
 
-    public async Task<object> SyncDetailsAsync(long userId, string? profileId, int id, int page = 0)
+    public async Task<object> SyncDetailsAsync(long userId, string? profileId, int id, int page = 0, int pageSize = 50)
     {
-        if (page < 0) throw new ArgumentException("Invalid change page.");
+        if (page < 0 || pageSize < 1 || pageSize > 100) throw new ArgumentException("Invalid change page.");
         profileId = string.IsNullOrWhiteSpace(profileId) || profileId == "default" ? null : profileId;
         using var session = Common.Framework.Data.DbHelper.GetSession();
         var prefix = SyncPrefix(profileId);
@@ -82,7 +83,8 @@ public partial class GPayTakeoutService
         var run = JsonSerializer.Deserialize<GPaySyncRun>(record.Payload, GPayEvidenceService.Json)!;
         run.Id = record.Id;
         var total = run.Changes.Count;
-        run.Changes = run.Changes.Skip(page * 50).Take(50).ToList();
-        return new { Run = run, Total = total, Page = page, PageSize = 50 };
+        page = Math.Min(page, Math.Max(0, (total - 1) / pageSize));
+        run.Changes = run.Changes.Skip(page * pageSize).Take(pageSize).ToList();
+        return new { Run = run, Total = total, Page = page, PageSize = pageSize };
     }
 }

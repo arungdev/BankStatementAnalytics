@@ -22,11 +22,11 @@ public partial class GPayTakeoutService
             .Where(decision => decision.Accept && sourceIds.Contains(decision.RecordId)).ToList();
     }
 
-    public async Task<object> ProfileDetailsAsync(long userId, string? profileId, string section, int page = 0, string search = "")
+    public async Task<object> ProfileDetailsAsync(long userId, string? profileId, string section, int page = 0, string search = "", int pageSize = 50)
     {
         profileId = string.IsNullOrWhiteSpace(profileId) || profileId == "default" ? null : profileId;
         if (profileId != null) _ = await GetProfileAsync(userId, profileId);
-        if (page < 0 || (search?.Length ?? 0) > 200) throw new ArgumentException("Invalid details request.");
+        if (page < 0 || pageSize < 1 || pageSize > 100 || (search?.Length ?? 0) > 200) throw new ArgumentException("Invalid details request.");
         using var session = Common.Framework.Data.DbHelper.GetSession();
         var rows = new List<GPayProfileDetailRow>();
         if (section == "groups") {
@@ -65,6 +65,7 @@ public partial class GPayTakeoutService
         else throw new ArgumentException("Unknown profile detail section.");
         if (!string.IsNullOrWhiteSpace(search)) rows = rows.Where(row =>
             string.Join(" ", new[] { row.Title, row.Detail, row.Status }.Concat(row.Members ?? new List<string>())).Contains(search.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
-        return new { Records = rows.OrderByDescending(row => row.Date).ThenBy(row => row.Title).Skip(page * 50).Take(50).ToList(), Total = rows.Count, Page = page, PageSize = 50 };
+        page = Math.Min(page, Math.Max(0, (rows.Count - 1) / pageSize));
+        return new { Records = rows.OrderByDescending(row => row.Date).ThenBy(row => row.Title).Skip(page * pageSize).Take(pageSize).ToList(), Total = rows.Count, Page = page, PageSize = pageSize };
     }
 }

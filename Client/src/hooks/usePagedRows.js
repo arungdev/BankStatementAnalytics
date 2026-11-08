@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import api from '../api/client';
+import usePagePreference from './usePagePreference';
+import { preferenceValidators } from '../utils/viewPreferences';
 
-export default function usePagedRows(url) {
+export default function usePagedRows(url, preferenceId = 'transaction-drilldown') {
+  const [pageSize, setPageSize] = usePagePreference('tables', preferenceId, 20, { validate: preferenceValidators.pageSize });
   const [attempt, setAttempt] = useState(0);
   const [selection, setSelection] = useState({ url: null, page: 1, pageSize: 20 });
   const [response, setResponse] = useState({ key: null, url: null, data: null, error: null });
   const page = selection.url === url ? selection.page : 1;
-  const pageSize = selection.pageSize;
   const key = `${url}|${page}|${pageSize}|${attempt}`;
   useEffect(() => {
     if (!url) return;
@@ -24,7 +26,7 @@ export default function usePagedRows(url) {
     page: data?.page ?? page, pageSize, pageKey: response.key,
     loading: Boolean(url && response.key !== key), error: response.key === key ? response.error : null,
     onPageChange: value => setSelection({ url, page: value, pageSize }),
-    onPageSizeChange: value => setSelection({ url, page: 1, pageSize: value }),
+    onPageSizeChange: value => { setPageSize(value); setSelection({ url, page: 1, pageSize: value }); },
     onRetry: () => setAttempt(value => value + 1)
   };
 }

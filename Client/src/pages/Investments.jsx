@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators } from '../utils/viewPreferences';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { FiRefreshCw, FiLock, FiCheckCircle, FiClock, FiEdit2, FiTrash2 } from 'react-icons/fi';
 import api from '../api/client';
@@ -89,7 +91,7 @@ export default function Investments() {
   const [loading, setLoading] = useState(true);
 
   const [selected, setSelected] = useState(null);   // { kind, ...deposit }
-  const [drawerWidth, setDrawerWidth] = useState(460);
+  const [drawerWidth, setDrawerWidth] = usePagePreference('investments', 'drawerWidth', 460, { validate: preferenceValidators.width });
   const [txns, setTxns] = useState([]);
   const [loadingTxns, setLoadingTxns] = useState(false);
   const [form, setForm] = useState(null);           // editable metadata

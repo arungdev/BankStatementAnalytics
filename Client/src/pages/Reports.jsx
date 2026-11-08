@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators } from '../utils/viewPreferences';
 import PaginatedTable from '../components/PaginatedTable';
 import { useState, useCallback, useMemo } from "react";
 import { useOutletContext } from 'react-router-dom';
@@ -168,7 +170,7 @@ export default function Reports() {
   // period or account closes it (derived, rather than an effect that resets state).
   const [openTile, setOpenTile]       = useState(null); // key into TILES
   const [openTileKey, setOpenTileKey] = useState('');
-  const [drawerWidth, setDrawerWidth] = useState(400);
+  const [drawerWidth, setDrawerWidth] = usePagePreference('reports', 'drawerWidth', 400, { validate: preferenceValidators.width });
   const [txUrl, setTxUrl] = useState(null);
 
   // "All accounts" → every owned account id; otherwise the single selected id.
@@ -210,7 +212,7 @@ export default function Reports() {
 
   const paramsKey = `${type}|${period}|${accountIdsParam}`;
   const trayOpen  = openTile != null && openTileKey === paramsKey;
-  const txPage = usePagedRows(trayOpen ? txUrl : null);
+  const txPage = usePagedRows(trayOpen ? txUrl : null, 'reports-transactions');
   const { items: txList, loading: txLoading, error: txError } = txPage;
 
   const closeTray = useCallback(() => {
@@ -516,7 +518,7 @@ export default function Reports() {
                   <p style={{ margin: 0, fontSize: '13px', color: T.muted }}>No spending in this period.</p>
                 ) : (
                   <div className="table-responsive">
-                    <PaginatedTable style={s.table}>
+                    <PaginatedTable preferenceId="reports-summary-1" style={s.table}>
                     <thead>
                       <tr>
                         <th style={s.th(false)}>Category</th>
@@ -590,7 +592,7 @@ export default function Reports() {
                     (all accounts{type === 'year' ? ', limits × months elapsed' : ''})
                   </span>
                 </p>
-                <PaginatedTable style={s.table}>
+                <PaginatedTable preferenceId="reports-summary-2" style={s.table}>
                   <thead>
                     <tr>
                       <th style={s.th(false)}>Category</th>
@@ -632,7 +634,7 @@ export default function Reports() {
                   Bills Paid
                   <span style={{ fontWeight: 500, color: T.muted, marginLeft: '6px' }}>(all accounts)</span>
                 </p>
-                <PaginatedTable style={s.table}>
+                <PaginatedTable preferenceId="reports-summary-3" style={s.table}>
                   <thead>
                     <tr>
                       <th style={s.th(false)}>Bill</th>
@@ -678,7 +680,7 @@ export default function Reports() {
                     </div>
                   ))}
                 </div>
-                <PaginatedTable style={s.table}>
+                <PaginatedTable preferenceId="reports-summary-4" style={s.table}>
                   <thead>
                     <tr>
                       <th style={s.th(false)}>Deposit</th>

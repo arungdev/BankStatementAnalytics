@@ -321,7 +321,7 @@ export default function UploadStatement({ onUploaded, showHistory = true, accoun
           <div>
             <h2 style={{ fontSize: 'var(--text-lg)', color: 'var(--text-main)', marginBottom: 'var(--space-4)', marginTop: 0 }}>Upload History</h2>
             <div className="table-responsive">
-              <PaginatedTable>
+              <PaginatedTable preferenceId="upload-history">
                 <thead>
                   <tr>
                     <th>File</th>

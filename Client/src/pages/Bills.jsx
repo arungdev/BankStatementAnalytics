@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators, oneOf } from '../utils/viewPreferences';
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiCheck, FiX, FiTrash2, FiEdit2, FiCalendar, FiPlus } from "react-icons/fi";
@@ -39,13 +41,13 @@ export default function Bills() {
   const [subscriptions, setSubscriptions] = useState([]);
   const [subSummary, setSubSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("due");
+  const [activeTab, setActiveTab] = usePagePreference('bills', 'tab', 'due', { scope: 'workspace', validate: oneOf('due', 'bills', 'suggestions', 'subscriptions') });
   const [editing, setEditing] = useState(null); // bill being edited
   const [selectedBill, setSelectedBill] = useState(null); // bill/suggestion whose transactions are shown
   const [selectedKind, setSelectedKind] = useState("bill"); // "bill" | "suggestion"
   const [billTxns, setBillTxns] = useState([]);
   const [loadingTxns, setLoadingTxns] = useState(false);
-  const [drawerWidth, setDrawerWidth] = useState(450);
+  const [drawerWidth, setDrawerWidth] = usePagePreference('bills', 'drawerWidth', 450, { validate: preferenceValidators.width });
 
   const load = useCallback(() => {
     return Promise.all([

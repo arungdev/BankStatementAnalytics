@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators } from '../utils/viewPreferences';
 import useAsyncResource from '../hooks/useAsyncResource';
 import RequestError from '../components/RequestError';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -135,9 +137,9 @@ const Trends = () => {
   // ── Drill-down modal state ─────────────────────────────────────────────
   const [drillDown, setDrillDown]           = useState(null);
   const [drillUrl, setDrillUrl] = useState(null);
-  const drillPage = usePagedRows(drillUrl);
+  const drillPage = usePagedRows(drillUrl, 'trends-transactions');
   const { items: drillTransactions, loading: drillLoading, error: drillError } = drillPage;
-  const [drillWidth, setDrillWidth]         = useState(720);
+  const [drillWidth, setDrillWidth]         = usePagePreference('trends', 'drawerWidth', 720, { validate: preferenceValidators.width });
 
   // ── Helper: Date → "yyyy-MM-dd" string in local time ──────────────────
   const toLocalDate = (d) =>

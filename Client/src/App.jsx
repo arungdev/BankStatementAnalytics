@@ -1,8 +1,10 @@
+import usePagePreference from './hooks/usePagePreference';
+import { oneOf } from './utils/viewPreferences';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState, lazy, Suspense } from "react";
 import api from "./api/client";
 import { useAccount } from "./context/useAccount";
-import { Modal, useAuth, usePersistedState } from "@common/client";
+import { Modal, useAuth } from "@common/client";
 import { usePrivacy } from "./context/usePrivacy";
 import { FiHelpCircle, FiSearch } from "react-icons/fi";
 import CreateAccount from "./components/CreateAccount";
@@ -165,17 +167,17 @@ function Layout() {
   // Insights now uses the globally selected account (same as Trends), so it
   // only lifts its own date range and group-by here.
   const [insightRange, setInsightRange] = usePersistedRange('insightRange');
-  const [insightGroupBy, setInsightGroupBy] = usePersistedState('insightGroupBy', 'byCategory');
+  const [insightGroupBy, setInsightGroupBy] = usePagePreference('insights', 'groupBy', 'byCategory', { legacyKey: 'insightGroupBy', validate: oneOf('byCategory', 'byMerchant', 'byTag', 'byForex') });
 
   // ── Trends filter state (lifted so header row & page share it) ────────
-  const [trendsPeriod, setTrendsPeriod] = usePersistedState('trendsPeriod', 'week');
+  const [trendsPeriod, setTrendsPeriod] = usePagePreference('trends', 'period', 'week', { legacyKey: 'trendsPeriod', validate: oneOf('day', 'week', 'month', 'billing_month') });
   const [trendsRange, setTrendsRange] = usePersistedRange('trendsRange');
 
   // ── Transactions filter state (lifted so header row & page share it) ──
   const [transactionsRange, setTransactionsRange] = usePersistedRange('transactionsRange');
 
-  const [reportType, setReportType] = usePersistedState('reportType', 'month');
-  const [reportPeriod, setReportPeriod] = usePersistedState('reportPeriod', '');
+  const [reportType, setReportType] = usePagePreference('reports', 'type', 'month', { legacyKey: 'reportType', validate: oneOf('month', 'year', 'annual') });
+  const [reportPeriod, setReportPeriod] = usePagePreference('reports', `period-${reportType}`, '', { legacyKey: 'reportPeriod' });
   const [searchOpen, setSearchOpen] = useState(false);
 
   // Global Ctrl+K / Cmd+K listener

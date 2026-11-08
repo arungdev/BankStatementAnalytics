@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators, oneOf } from '../utils/viewPreferences';
 import { useCallback, useEffect, useState } from "react";
 import { FiArrowRight, FiCheck, FiCheckCircle, FiX } from "react-icons/fi";
 import api from "../api/client";
@@ -84,9 +86,9 @@ export default function Transfers() {
   const [dismissed, setDismissed] = useState(loadDismissed);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState("suggestions");
+  const [activeTab, setActiveTab] = usePagePreference('transfers', 'tab', 'suggestions', { validate: oneOf('suggestions', 'marked') });
   const [selected, setSelected] = useState(null);
-  const [drawerWidth, setDrawerWidth] = useState(460);
+  const [drawerWidth, setDrawerWidth] = usePagePreference('transfers', 'drawerWidth', 460, { validate: preferenceValidators.width });
 
   const load = useCallback(() => {
     return Promise.all([

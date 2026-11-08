@@ -1,13 +1,22 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators, oneOf } from '../utils/viewPreferences';
 import { useState } from 'react';
 import { FiSearch, FiUsers, FiChevronRight, FiChevronDown, FiPlus, FiUserPlus, FiTrash2, FiDownload } from 'react-icons/fi';
 import { currencyFormatter, maskName, formatDate } from '../utils/format';
 import { getGroupDisplayMembers, isImportedGPayGroup } from '../utils/groupMembers';
 import { usePrivacy } from '../context/usePrivacy';
+import Pagination from './Pagination';
 
-export default function GPayGroupList({ groups, profiles = [], onOpen, onExpense, onAddSplit, onAddMember, onDelete }) {
+export default function GPayGroupList({ groups, profiles = [], preferenceScope = 'all', onOpen, onExpense, onAddSplit, onAddMember, onDelete }) {
   usePrivacy();
-  const [search, setSearch] = useState('');
-  const [source, setSource] = useState('all');
+  const preferenceId = `gpay-groups-${preferenceScope}`;
+  const [search, setSearch] = usePagePreference(preferenceId, 'search', '', { scope: 'workspace' });
+  const [source, setSource] = usePagePreference(preferenceId, 'source', 'all', { scope: 'workspace', validate: oneOf('all', 'imported', 'custom') });
+  const [pageSize, setPageSize] = usePagePreference(preferenceId, 'pageSize', 20, { scope: 'workspace', validate: preferenceValidators.pageSize });
+  const [page, setPage] = useState(1);
+  const viewKey = JSON.stringify([preferenceId, search, source, pageSize]);
+  const [previousViewKey, setPreviousViewKey] = useState(viewKey);
+  if (previousViewKey !== viewKey) { setPreviousViewKey(viewKey); setPage(1); }
   const [expanded, setExpanded] = useState(new Set());
   const query = search.trim().toLowerCase();
   const filtered = groups.filter(group => {
@@ -16,6 +25,9 @@ export default function GPayGroupList({ groups, profiles = [], onOpen, onExpense
     return (!query || searchable.includes(query)) && (source === 'all' || (source === 'imported' ? imported : !imported));
   });
   const toggle = id => setExpanded(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
   return <div className="gpay-group-list">
     <div className="gpay-list-toolbar">
       <label className="gpay-group-search"><FiSearch /><input aria-label="Search groups, members or expenses" placeholder="Search groups, members or expenses…" value={search} onChange={event => setSearch(event.target.value)} /></label>
@@ -23,7 +35,7 @@ export default function GPayGroupList({ groups, profiles = [], onOpen, onExpense
       <span className="gpay-list-count">{filtered.length} of {groups.length} groups</span>
     </div>
     {filtered.length === 0 && <div className="gpay-list-empty"><FiSearch /><h3>No matching groups</h3><p>Try another name or change the source filter.</p><button className="btn btn--outline" onClick={() => { setSearch(''); setSource('all'); }}>Clear filters</button></div>}
-    {filtered.map(group => {
+    {filtered.slice(start, start + pageSize).map(group => {
       const imported = isImportedGPayGroup(group), members = getGroupDisplayMembers(group), splits = group.splits || [], open = expanded.has(group.id);
       const lastDate = splits.map(s => s.date).filter(Boolean).sort().at(-1) || group.createdOn;
       return <article className="gpay-list-card" key={group.id}>
@@ -52,5 +64,6 @@ export default function GPayGroupList({ groups, profiles = [], onOpen, onExpense
         </div>}
       </article>;
     })}
+    <Pagination currentPage={currentPage} totalPages={totalPages} itemsPerPage={pageSize} currentCount={Math.min(pageSize, filtered.length - start)} totalCount={filtered.length} startIndex={start} itemLabel="groups" onPageChange={setPage} onItemsPerPageChange={setPageSize} />
   </div>;
 }

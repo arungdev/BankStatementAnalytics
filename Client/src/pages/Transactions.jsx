@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators, oneOf } from '../utils/viewPreferences';
 import { canEditWorkspace } from '../utils/workspacePermissions';
 import useAsyncResource from '../hooks/useAsyncResource';
 import { useEffect, useState, useRef, useCallback } from "react";
@@ -6,7 +8,7 @@ import api from "../api/client";
 import useTransactions from "../hooks/useTransactions";
 import RequestError from "../components/RequestError";
 import { buildTransactionParams } from "../utils/transactionQuery";
-import { Avatar, Badge, Button, Drawer, EmptyState, Tabs, useAuth, usePersistedState } from "@common/client";
+import { Avatar, Badge, Button, Drawer, EmptyState, Tabs, useAuth } from "@common/client";
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { FiDownload, FiFileText, FiRotateCcw, FiFilter, FiSearch, FiAlertCircle, FiScissors, FiTag, FiUsers } from "react-icons/fi";
@@ -69,6 +71,7 @@ export default function Transactions() {
   const isAllAccounts = !linkedAccountId && selectedAccountId === ALL_ACCOUNTS;
   const effectiveAccountId = linkedAccountId || (isAllAccounts ? (accounts.length > 0 ? 0 : null) : selectedAccountId);
   const accountScope = isAllAccounts ? accounts.map(a => a.id).join(',') : String(effectiveAccountId ?? '');
+  const preferenceScope = isAllAccounts ? 'all' : effectiveAccountId ?? 'pending';
   const accountById = new Map(accounts.map(a => [a.id, a]));
   const accountLabel = (accountId, fallback = '') => {
     const a = accountById.get(accountId);
@@ -93,12 +96,12 @@ export default function Transactions() {
 
   // Pagination state (itemsPerPage persists across reloads; page resets to 1)
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = usePersistedState('transactionsPerPage', 10);
+  const [itemsPerPage, setItemsPerPage] = usePagePreference('transactions', 'pageSize', 10, { scope: preferenceScope, legacyKey: 'transactionsPerPage', validate: preferenceValidators.pageSize });
 
   // ── Column sort ───────────────────────────────────────────────────────
   // Server-side (the list is server-paginated); date-descending is the default.
-  const [sortBy, setSortBy] = useState('date');
-  const [sortDir, setSortDir] = useState('desc');
+  const [sortBy, setSortBy] = usePagePreference('transactions', 'sortBy', 'date', { scope: preferenceScope, validate: oneOf('date', 'merchant', 'category', 'amount') });
+  const [sortDir, setSortDir] = usePagePreference('transactions', 'sortDir', 'desc', { scope: preferenceScope, validate: oneOf('asc', 'desc') });
   const toggleSort = (col) => {
     if (sortBy === col) {
       setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
@@ -111,17 +114,17 @@ export default function Transactions() {
   };
 
   // Quick filter: show only transactions with no category yet
-  const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
+  const [uncategorizedOnly, setUncategorizedOnly] = usePagePreference('transactions', 'uncategorizedOnly', false, { scope: preferenceScope });
   const toggleUncategorized = () => {
     setUncategorizedOnly(v => !v);
     setCurrentPage(1);
   };
 
   // Quick filter: min/max transaction amount range
-  const [minAmount, setMinAmount] = useState(null);
-  const [maxAmount, setMaxAmount] = useState(null);
+  const [minAmount, setMinAmount] = usePagePreference('transactions', 'minAmount', null, { scope: preferenceScope, validate: preferenceValidators.amount });
+  const [maxAmount, setMaxAmount] = usePagePreference('transactions', 'maxAmount', null, { scope: preferenceScope, validate: preferenceValidators.amount });
   // Quick filter: specific category name ('' = all).
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = usePagePreference('transactions', 'category', '', { scope: preferenceScope });
   // Column header dropdown: which header menu is open ('category' | 'amount' | null).
   const [headerMenu, setHeaderMenu] = useState(null);
   const headerMenuRef = useRef(null);
@@ -144,14 +147,17 @@ export default function Transactions() {
   };
 
   // Search — searchInput follows the textbox, search is its debounced value used for fetching
-  const linkedSearch = searchParams.get('search') ?? searchParams.get('q') ?? '';
-  const [searchInput, setSearchInput] = useState(linkedSearch);
-  const [search, setSearch] = useState(linkedSearch.trim());
-  const [previousLinkedSearch, setPreviousLinkedSearch] = useState(linkedSearch);
-  if (previousLinkedSearch !== linkedSearch) {
-    setPreviousLinkedSearch(linkedSearch);
-    setSearchInput(linkedSearch);
-    setSearch(linkedSearch.trim());
+  const linkedSearch = searchParams.get('search') ?? searchParams.get('q');
+  const [searchInput, setSearchInput] = usePagePreference('transactions', 'search', '', { scope: preferenceScope });
+  const [search, setSearch] = useState(searchInput.trim());
+  const linkedSearchKey = JSON.stringify([preferenceScope, linkedSearch, linkedUploadId]);
+  const [previousLinkedSearch, setPreviousLinkedSearch] = useState(null);
+  if (previousLinkedSearch !== linkedSearchKey) {
+    setPreviousLinkedSearch(linkedSearchKey);
+    if (linkedSearch !== null) { setSearchInput(linkedSearch); setSearch(linkedSearch.trim()); }
+    if (linkedSearch !== null || linkedUploadId) {
+      setUncategorizedOnly(false); setSelectedCategory(''); setMinAmount(null); setMaxAmount(null);
+    }
     setCurrentPage(1);
   }
   useEffect(() => {
@@ -174,7 +180,7 @@ export default function Transactions() {
 
   // Sidebar state
   const [selectedTx, setSelectedTx] = useState(null);
-  const [sidebarWidth, setSidebarWidth] = useState(450);
+  const [sidebarWidth, setSidebarWidth] = usePagePreference('transactions', 'drawerWidth', 450, { validate: preferenceValidators.width });
   const [tags, setTags] = useState([]);
   const [recentTags, setRecentTags] = useState([]);
   const [manageTagsModalOpen, setManageTagsModalOpen] = useState(false);
@@ -238,6 +244,7 @@ export default function Transactions() {
   const showNewTransactions = (upload) => {
     closeUploadHistory();
     setSelectedTx(null);
+    setSearchInput(''); setSearch(''); setUncategorizedOnly(false); setSelectedCategory(''); setMinAmount(null); setMaxAmount(null);
     setUploadFilter({ id: upload.id, fileName: upload.fileName, accountId: effectiveAccountId });
     setCurrentPage(1);
   };
@@ -321,6 +328,7 @@ export default function Transactions() {
   const [previousAccountId, setPreviousAccountId] = useState(effectiveAccountId);
   if (previousAccountId !== effectiveAccountId) {
     setPreviousAccountId(effectiveAccountId);
+    setSearch((linkedSearch ?? searchInput).trim());
     setSelectedTx(null); setTagEditRowId(null); setNoteEditRowId(null); setCurrentPage(1);
   }
 
@@ -899,6 +907,7 @@ export default function Transactions() {
         <Button onClick={handleExportCSV} style={{ fontSize: 'var(--text-sm)' }}>
           <FiDownload size={14} /> Export CSV
         </Button>
+        {(searchInput || uncategorizedOnly || selectedCategory || minAmount != null || maxAmount != null) && <Button onClick={() => { setSearchInput(''); setSearch(''); setUncategorizedOnly(false); setSelectedCategory(''); setMinAmount(null); setMaxAmount(null); setCurrentPage(1); }}>Clear table filters</Button>}
         <Button
           variant={uncategorizedOnly ? 'primary' : 'secondary'}
           onClick={toggleUncategorized}

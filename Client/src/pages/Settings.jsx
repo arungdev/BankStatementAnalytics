@@ -31,6 +31,7 @@ import { getUpdateStatus, getUpdateInstallation, checkForUpdates, downloadUpdate
 import { getUpdateOutcome, isInstallingUpdate } from "../utils/updateProgress";
 import { REMINDERS_ENABLED_KEY, REMINDER_WINDOW_KEY, sendTestNotification } from "../hooks/useBillReminders";
 import { readGPayPreference } from '../utils/gpayPreferences';
+import usePagePreference from '../hooks/usePagePreference';
 
 import "./Settings.css";
 
@@ -196,14 +197,17 @@ export default function Settings() {
   const canManageServer = isAdmin && !authenticationOptions.cloudGoogleOnly;
   const { preference, setPreference, fontSize, setFontSize } = useTheme();
   const { maskAmounts, setMaskAmounts, maskNamesEnabled, setMaskNamesEnabled } = usePrivacy();
-  const activeTab = searchParams.get('tab') || 'accounts';
-  const setActiveTab = (tab) =>
+  const [rememberedTab, setRememberedTab] = usePagePreference('settings', 'section', 'accounts', { scope: 'workspace', validate: value => SECTIONS.some(section => section.id === value) });
+  const activeTab = searchParams.get('tab') || rememberedTab;
+  const setActiveTab = (tab) => {
+    setRememberedTab(tab);
     setSearchParams(tab === 'accounts' ? {} : { tab }, { replace: true });
+  };
   const [categories, setCategories] = useState([]);
 
   // Search across every setting (see SETTINGS_INDEX). While a query is typed the
   // panel is replaced by results, so one box covers the whole page.
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = usePagePreference('settings', 'search', '', { scope: 'workspace' });
   const searchRef = useRef(null);
   // Anchor of the card to scroll to + flash after jumping from a result.
   const [highlight, setHighlight] = useState(null);

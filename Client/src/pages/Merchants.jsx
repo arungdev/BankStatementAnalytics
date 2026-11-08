@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators, oneOf } from '../utils/viewPreferences';
 import { canEditWorkspace } from '../utils/workspacePermissions';
 import useAsyncResource from '../hooks/useAsyncResource';
 import RequestError from '../components/RequestError';
@@ -12,6 +14,7 @@ import { getToken } from "../theme/chartTheme";
 import { currencyFormatter, isAmountMasked, MASKED_AMOUNT, maskName } from "../utils/format";
 import { validateCategoryName, findExistingName } from "../utils/categoryName";
 import CategoryPicker from "../components/CategoryPicker";
+import Pagination from '../components/Pagination';
 import { useAccount } from "../context/useAccount";
 import { ALL_ACCOUNTS } from "../components/AccountFilter";
 import { usePrivacy } from "../context/usePrivacy";
@@ -77,17 +80,17 @@ export default function Merchants() {
   }), [theme]);
 
 
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = usePagePreference('merchants', 'search', '');
   // Quick filter, driven by both the "Uncategorized" button and the summary
   // tiles: 'all' | 'uncategorized' | 'categorized'.
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = usePagePreference('merchants', 'categoryFilter', 'all', { validate: oneOf('all', 'uncategorized', 'categorized') });
   // Quick filter: show only merchants that have merged aliases (from the "Merged groups" tile).
-  const [mergedOnly, setMergedOnly] = useState(false);
+  const [mergedOnly, setMergedOnly] = usePagePreference('merchants', 'mergedOnly', false);
   // Quick filter: min/max spent amount range.
-  const [minSpent, setMinSpent] = useState(null);
-  const [maxSpent, setMaxSpent] = useState(null);
+  const [minSpent, setMinSpent] = usePagePreference('merchants', 'minSpent', null, { validate: preferenceValidators.amount });
+  const [maxSpent, setMaxSpent] = usePagePreference('merchants', 'maxSpent', null, { validate: preferenceValidators.amount });
   // Quick filter: specific category name ('' = all).
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = usePagePreference('merchants', 'category', '');
   // Column header dropdown: which header menu is open ('category' | 'spent' | null).
   const [headerMenu, setHeaderMenu] = useState(null);
   const headerMenuRef = useRef(null);
@@ -100,7 +103,9 @@ export default function Merchants() {
   const [editForm, setEditForm] = useState({ friendlyName: '', notes: '', category: '', subCategory: '', shiftToNextMonth: false });
   // Column sort: null keeps the API's own order (transaction count desc).
   // Clicking a header cycles default direction → reversed → back to API order.
-  const [listSort, setListSort] = useState(null); // { col, dir } | null
+  const [listSort, setListSort] = usePagePreference('merchants', 'sort', null, { validate: value => value === null || value && ['merchant', 'category', 'identifiers', 'transactions', 'spent'].includes(value.col) && ['asc', 'desc'].includes(value.dir) }); // { col, dir } | null
+  const [merchantPage, setMerchantPage] = useState(1);
+  const [merchantPageSize, setMerchantPageSize] = usePagePreference('merchants', 'pageSize', 20, { validate: preferenceValidators.pageSize });
   const toggleListSort = (col) => {
     setListSort(prev => {
       const defaultDir = (col === 'merchant' || col === 'category') ? 'asc' : 'desc';
@@ -111,7 +116,7 @@ export default function Merchants() {
   };
   // Row whose inline note input is open (same inline-edit UX as the Transactions page).
   const [noteEditRowId, setNoteEditRowId] = useState(null);
-  const [sidebarWidth, setSidebarWidth] = useState(460);
+  const [sidebarWidth, setSidebarWidth] = usePagePreference('merchants', 'drawerWidth', 460, { validate: preferenceValidators.width });
   const [categoriesList, setCategoriesList] = useState([]);
   // Most-used category values (names), ranked by usage — drives the CategoryPicker
   // "Frequently used" group, same as the Transactions page.
@@ -149,6 +154,9 @@ export default function Merchants() {
   const { selectedAccountId } = useAccount();
   const isAllAccounts = !selectedAccountId || selectedAccountId === ALL_ACCOUNTS;
   const accountQuery = isAllAccounts ? '' : `?accountId=${selectedAccountId}`;
+  const listViewKey = JSON.stringify([accountQuery, searchQuery, categoryFilter, mergedOnly, minSpent, maxSpent, selectedCategory, listSort, merchantPageSize]);
+  const [previousListViewKey, setPreviousListViewKey] = useState(listViewKey);
+  if (previousListViewKey !== listViewKey) { setPreviousListViewKey(listViewKey); setMerchantPage(1); setSelectedIds([]); }
 
   // Suggestions refresh together with the list: merging or categorizing changes
   // what's left to suggest. The endpoint isn't account-scoped (categorization is
@@ -763,6 +771,10 @@ export default function Merchants() {
     });
   }
 
+  const merchantTotalPages = Math.max(1, Math.ceil(filteredData.length / merchantPageSize));
+  const currentMerchantPage = Math.min(merchantPage, merchantTotalPages);
+  const merchantStart = (currentMerchantPage - 1) * merchantPageSize;
+  const visibleMerchants = filteredData.slice(merchantStart, merchantStart + merchantPageSize);
   const categorizedCount = data.filter(m => m.category).length;
   const linkedCount = data.filter(m => (m.aliases?.length || 0) > 0).length;
 
@@ -786,7 +798,7 @@ export default function Merchants() {
     return owner === selected;
   }) || [];
 
-  const allSelected = filteredData.length > 0 && selectedIds.length === filteredData.length;
+  const allSelected = visibleMerchants.length > 0 && visibleMerchants.every(merchant => selectedIds.includes(merchant.id));
 
   const fmtShort = (v) =>
     isAmountMasked() ? MASKED_AMOUNT :
@@ -1104,7 +1116,8 @@ export default function Merchants() {
                 type="checkbox"
                 className="mrc-check"
                 checked={allSelected}
-                onChange={(e) => setSelectedIds(e.target.checked ? filteredData.map(c => c.id) : [])}
+                aria-label="Select merchants on this page"
+                onChange={(e) => setSelectedIds(previous => e.target.checked ? [...new Set([...previous, ...visibleMerchants.map(merchant => merchant.id)])] : previous.filter(id => !visibleMerchants.some(merchant => merchant.id === id)))}
               />
             </label>
           )}
@@ -1238,7 +1251,7 @@ export default function Merchants() {
               }
             />
           ) : (
-            filteredData.map(merchant => {
+            visibleMerchants.map(merchant => {
               const display = maskName(merchant.friendlyName || merchant.name) || "-";
               const hasOriginal = merchant.friendlyName && merchant.name !== merchant.friendlyName;
               const upiCount = merchant.upiIds?.length || 0;
@@ -1372,6 +1385,7 @@ export default function Merchants() {
       </div>
 
       {/* Merge Modal */}
+      <Pagination currentPage={currentMerchantPage} totalPages={merchantTotalPages} itemsPerPage={merchantPageSize} currentCount={visibleMerchants.length} totalCount={filteredData.length} startIndex={merchantStart} itemLabel="merchants" onPageChange={setMerchantPage} onItemsPerPageChange={setMerchantPageSize} />
       <Modal
         open={showMergeModal}
         onClose={() => setShowMergeModal(false)}

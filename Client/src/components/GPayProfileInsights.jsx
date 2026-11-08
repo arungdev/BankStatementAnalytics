@@ -3,6 +3,9 @@ import { Avatar, Drawer } from '@common/client';
 import { FiArrowLeft, FiCheckCircle, FiChevronRight, FiClock, FiGift, FiLink, FiRefreshCw, FiSearch, FiUsers, FiXCircle } from 'react-icons/fi';
 import api from '../api/client';
 import useAsyncResource from '../hooks/useAsyncResource';
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators } from '../utils/viewPreferences';
+import Pagination from './Pagination';
 import { currencyFormatterFull, maskName } from '../utils/format';
 import { usePrivacy } from '../context/usePrivacy';
 import './GPayProfileInsights.css';
@@ -20,9 +23,14 @@ export default function GPayProfileInsights({ config, syncing, onPanelWidthChang
   const [selection, setSelection] = useState(null);
   const [detailPage, setDetailPage] = useState(0);
   const [activeRow, setActiveRow] = useState(null);
-  const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
-  const [sidebarWidth, setSidebarWidth] = useState(480);
+  const searchScope = `gpay-insights-${profileId}-${selection?.section || selection?.type || 'details'}`;
+  const [search, setSearch] = usePagePreference(searchScope, 'search', '', { scope: 'workspace' });
+  const [query, setQuery] = useState(search);
+  const [previousSearchScope, setPreviousSearchScope] = useState(searchScope);
+  if (previousSearchScope !== searchScope) { setPreviousSearchScope(searchScope); setQuery(search); setDetailPage(0); }
+  const [sidebarWidth, setSidebarWidth] = usePagePreference('gpay-insights', 'drawerWidth', 480, { scope: 'workspace', validate: preferenceValidators.width });
+  const [historySize, setHistorySize] = usePagePreference(`gpay-${profileId}`, 'historyPageSize', 10, { scope: 'workspace', validate: preferenceValidators.pageSize });
+  const [detailSize, setDetailSize] = usePagePreference(`gpay-${profileId}-${selection?.section || selection?.type || 'details'}`, 'detailPageSize', 50, { scope: 'workspace', validate: preferenceValidators.pageSize });
   const list = useRef(null), rowIndex = useRef(0);
   const historyList = useRef(null), historyRowId = useRef(null);
   const trigger = useRef(null), back = useRef(null);
@@ -36,7 +44,7 @@ export default function GPayProfileInsights({ config, syncing, onPanelWidthChang
     const timer = setTimeout(() => { setQuery(search); setDetailPage(0); }, 250);
     return () => clearTimeout(timer);
   }, [search]);
-  const loadHistory = useCallback(async signal => (await api.get(`${root}/sync-history`, { params: { profileId, page: historyPage }, signal })).data, [profileId, historyPage]);
+  const loadHistory = useCallback(async signal => (await api.get(`${root}/sync-history`, { params: { profileId, page: historyPage, pageSize: historySize }, signal })).data, [profileId, historyPage, historySize]);
   const history = useAsyncResource(loadHistory, { runs: [], total: 0 });
   const reloadHistory = history.retry;
   useEffect(() => { reloadHistory(); }, [syncing, config?.lastSyncUtc, reloadHistory]);
@@ -45,10 +53,11 @@ export default function GPayProfileInsights({ config, syncing, onPanelWidthChang
     return () => clearInterval(interval);
   }, [reloadHistory]);
   const loadDetails = useCallback(async signal => {
+    void syncing; // Refresh open details when a sync starts or completes.
     if (!selection || selection.type === 'history') return null;
     const url = selection.type === 'sync' ? `${root}/sync-history/${selection.id}` : `${root}/details`;
-    return (await api.get(url, { params: { profileId, section: selection.section, page: detailPage, search: query || undefined }, signal })).data;
-  }, [selection, profileId, detailPage, syncing, query]);
+    return (await api.get(url, { params: { profileId, section: selection.section, page: detailPage, pageSize: detailSize, search: query || undefined }, signal })).data;
+  }, [selection, profileId, detailPage, detailSize, syncing, query]);
   const details = useAsyncResource(loadDetails, null);
   const reloadDetails = details.retry;
   useEffect(() => {
@@ -79,7 +88,7 @@ export default function GPayProfileInsights({ config, syncing, onPanelWidthChang
     return () => window.removeEventListener('keydown', escape);
   }, [selection, close, viewport]);
   useEffect(() => { if (activeRow) back.current?.focus(); }, [activeRow]);
-  const open = (event, next) => { trigger.current = event.currentTarget; setDetailPage(0); setActiveRow(null); setSearch(''); setQuery(''); setSelection(next); };
+  const open = (event, next) => { trigger.current = event.currentTarget; setDetailPage(0); setActiveRow(null); setSelection(next); };
   const text = value => maskAmounts ? 'Hidden in privacy mode' : maskName(String(value || ''));
   const metrics = [
     ['groups', config?.totalGroups || 0, 'Groups'], ['splits', config?.totalSplits || 0, 'Splits'],
@@ -116,7 +125,7 @@ export default function GPayProfileInsights({ config, syncing, onPanelWidthChang
           <div ref={historyList} className="gpay-history-panel-list">{history.hasLoaded && !history.error && history.data.runs.map(item => <button type="button" key={item.id} data-sync-id={item.id} className="gpay-sync-history-row" onClick={() => { historyRowId.current = item.id; setDetailPage(0); setSelection({ type: 'sync', id: item.id, fromHistory: true }); }}>
             <span><strong>{date(item.startedUtc)}</strong><small>{item.trigger}</small><small className="gpay-history-file">{text(item.fileName || 'Folder check')}</small><small>{item.added} added · {item.updated} updated · {item.bankLinks} linked</small></span><span className={`gpay-sync-status is-${item.status.toLowerCase()}`}>{item.status}</span><FiChevronRight size={16} />
           </button>)}</div>
-          {history.data.total > 10 && <div className="gpay-insight-pagination"><button type="button" className="btn small" disabled={history.loading || historyPage === 0} onClick={() => setHistoryPage(page => page - 1)}>Previous</button><span>Page {historyPage + 1} of {Math.ceil(history.data.total / 10)}</span><button type="button" className="btn small" disabled={history.loading || (historyPage + 1) * 10 >= history.data.total} onClick={() => setHistoryPage(page => page + 1)}>Next</button></div>}
+          <Pagination currentPage={(history.data.page ?? historyPage) + 1} totalPages={Math.max(1, Math.ceil(history.data.total / historySize))} itemsPerPage={historySize} currentCount={history.data.runs.length} totalCount={history.data.total} startIndex={(history.data.page ?? historyPage) * historySize} itemLabel="sync runs" loading={history.loading} onPageChange={page => setHistoryPage(page - 1)} onItemsPerPageChange={size => { setHistorySize(size); setHistoryPage(0); }} />
         </> : activeRow ? <>
           <div className="gpay-record-hero"><Avatar name={rowName(activeRow)} size={52} />
             {activeRow.amount != null && <strong className={`gpay-record-amount${selection?.section === 'cashback' ? ' is-credit' : ''}`}>{currencyFormatterFull.format(activeRow.amount)}</strong>}
@@ -144,7 +153,7 @@ export default function GPayProfileInsights({ config, syncing, onPanelWidthChang
             <div ref={list} className="gpay-insight-list">{rows.map((row, index) => <button type="button" className="gpay-insight-row" key={`${detailPage}-${index}`} onClick={() => { rowIndex.current = index; setActiveRow(row); }} aria-label={`View details for ${rowName(row)}`}>
               <Avatar name={rowName(row)} size={38} /><span className="gpay-insight-row-main"><strong>{rowName(row)}</strong><small>{row.action ? `${row.action} · ${row.kind}` : row.date ? date(row.date) : row.status}</small>{!isSync && <span>{row.members ? `${row.members.length} members` : text(row.detail || row.status)}</span>}</span><span className="gpay-insight-row-end">{row.amount != null && <strong>{currencyFormatterFull.format(row.amount)}</strong>}<FiChevronRight size={16} /></span>
             </button>)}</div>
-            {details.data?.total > 50 && <div className="gpay-insight-pagination"><button type="button" className="btn small" disabled={detailPage === 0} onClick={() => setDetailPage(page => page - 1)}>Previous</button><span>Page {detailPage + 1} of {Math.ceil(details.data.total / 50)}</span><button type="button" className="btn small" disabled={(detailPage + 1) * 50 >= details.data.total} onClick={() => setDetailPage(page => page + 1)}>Next</button></div>}
+            <Pagination currentPage={(details.data?.page ?? detailPage) + 1} totalPages={Math.max(1, Math.ceil((details.data?.total || 0) / detailSize))} itemsPerPage={detailSize} currentCount={rows.length} totalCount={details.data?.total || 0} startIndex={(details.data?.page ?? detailPage) * detailSize} itemLabel="records" loading={details.loading} onPageChange={page => setDetailPage(page - 1)} onItemsPerPageChange={size => { setDetailSize(size); setDetailPage(0); }} />
           </>}
         </>}
       </section>

@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators } from '../utils/viewPreferences';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import {
@@ -253,7 +255,7 @@ export default function Overview() {
   // switching accounts closes it (derived, rather than an effect that resets state).
   const [openTile, setOpenTile]         = useState(null); // key into TILES
   const [openTileScope, setOpenTileScope] = useState('');
-  const [drawerWidth, setDrawerWidth]   = useState(420);
+  const [drawerWidth, setDrawerWidth]   = usePagePreference('overview', 'drawerWidth', 420, { validate: preferenceValidators.width });
   const [tileRows, setTileRows]         = useState([]);
   const [tileStats, setTileStats]       = useState({ total: 0, credits: 0, debits: 0 });
   const [tileHasMore, setTileHasMore]   = useState(false);

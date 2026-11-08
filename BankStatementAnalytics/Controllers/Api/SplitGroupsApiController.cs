@@ -349,12 +349,12 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(result);
         }
         [HttpGet("gpay-profiles")] public async Task<IActionResult> GPayProfiles() => Ok(await _takeoutService.ListProfilesAsync(CurrentUserId));
-        [HttpGet("gpay-profiles/sync-history")] public async Task<IActionResult> GPaySyncHistory(string? profileId = null, int page = 0) =>
-            Ok(await _takeoutService.SyncHistoryAsync(CurrentUserId, profileId, page));
-        [HttpGet("gpay-profiles/sync-history/{id:int}")] public async Task<IActionResult> GPaySyncDetails(int id, string? profileId = null, int page = 0) =>
-            Ok(await _takeoutService.SyncDetailsAsync(CurrentUserId, profileId, id, page));
-        [HttpGet("gpay-profiles/details")] public async Task<IActionResult> GPayProfileDetails(string section, string? profileId = null, int page = 0, string search = "") =>
-            Ok(await _takeoutService.ProfileDetailsAsync(CurrentUserId, profileId, section, page, search));
+        [HttpGet("gpay-profiles/sync-history")] public async Task<IActionResult> GPaySyncHistory(string? profileId = null, int page = 0, int pageSize = 10) =>
+            Ok(await _takeoutService.SyncHistoryAsync(CurrentUserId, profileId, page, pageSize));
+        [HttpGet("gpay-profiles/sync-history/{id:int}")] public async Task<IActionResult> GPaySyncDetails(int id, string? profileId = null, int page = 0, int pageSize = 50) =>
+            Ok(await _takeoutService.SyncDetailsAsync(CurrentUserId, profileId, id, page, pageSize));
+        [HttpGet("gpay-profiles/details")] public async Task<IActionResult> GPayProfileDetails(string section, string? profileId = null, int page = 0, string search = "", int pageSize = 50) =>
+            Ok(await _takeoutService.ProfileDetailsAsync(CurrentUserId, profileId, section, page, search, pageSize));
         [HttpPost("gpay-profiles")] public async Task<IActionResult> AddGPayProfile(CreateGPayProfileRequest request)
         {
             try { return Ok(await _takeoutService.CreateProfileAsync(CurrentUserId, request)); }

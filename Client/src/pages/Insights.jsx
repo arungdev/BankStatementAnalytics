@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators } from '../utils/viewPreferences';
 import PaginatedTable from '../components/PaginatedTable';
 import { useState, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -110,7 +112,7 @@ export default function Insights() {
   const { theme } = useTheme();
 
   const [trayRequested, setTrayOpen]         = useState(false);
-  const [drawerWidth, setDrawerWidth]   = useState(400);
+  const [drawerWidth, setDrawerWidth]   = usePagePreference('insights', 'drawerWidth', 400, { validate: preferenceValidators.width });
   const [selectedItem, setSelectedItem] = useState(null);
   const [txUrl, setTxUrl] = useState(null);
   const [trayScope, setTrayScope] = useState(null);
@@ -162,7 +164,7 @@ export default function Insights() {
 
   const currentScope = JSON.stringify([accountIdsParam, range.start, range.end, groupBy]);
   const trayOpen = trayRequested && trayScope === currentScope;
-  const txPage = usePagedRows(trayOpen ? txUrl : null);
+  const txPage = usePagedRows(trayOpen ? txUrl : null, 'insights-transactions');
   const { items: txList, loading: txLoading, error: txError } = txPage;
 
   const activeTab     = GROUP_TABS.find(g => g.key === groupBy);
@@ -446,7 +448,7 @@ export default function Insights() {
                 </button>
               </div>
               <div className="table-responsive" style={s.tableScroll}>
-              <PaginatedTable style={s.table}>
+              <PaginatedTable preferenceId="insights-breakdown" style={s.table}>
                 <thead>
                   <tr>
                     <th style={s.th(false)}>#</th>

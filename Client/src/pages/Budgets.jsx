@@ -1,3 +1,5 @@
+import usePagePreference from '../hooks/usePagePreference';
+import { preferenceValidators } from '../utils/viewPreferences';
 import { useState, useEffect, useCallback } from 'react';
 import { FiPlus, FiEdit2, FiTrash2, FiCalendar, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import api from '../api/client';
@@ -173,7 +175,7 @@ export default function Budgets() {
   // and the fmt.format() amounts stay stale until the next unrelated render.
   usePrivacy();
   const [month, setMonth] = useState('');
-  const [monthsAgo, setMonthsAgo] = useState(0); // 0 = this month, 1 = last month, …
+  const [monthsAgo, setMonthsAgo] = usePagePreference('budgets', 'monthsAgo', 0, { scope: 'workspace', validate: value => Number.isInteger(value) && value >= 0 && value <= 1200 }); // 0 = this month, 1 = last month, …
   const [monthOptions, setMonthOptions] = useState([{ monthsAgo: 0, label: 'This month' }]);
   const [budgets, setBudgets] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -190,7 +192,7 @@ export default function Budgets() {
   const [drillTotal, setDrillTotal] = useState(0);
   const [drillLoading, setDrillLoading] = useState(false);
   const [drillError, setDrillError] = useState(null);
-  const [drillWidth, setDrillWidth] = useState(440);
+  const [drillWidth, setDrillWidth] = usePagePreference('budgets', 'drawerWidth', 440, { validate: preferenceValidators.width });
 
   const load = useCallback(() => {
     return Promise.all([

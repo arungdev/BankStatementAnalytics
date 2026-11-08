@@ -16,6 +16,8 @@ import LinkedTransactionDrawer from '../components/LinkedTransactionDrawer';
 import './Splits.css';
 import { isImportedGPayGroup, isImportedGPayExpense } from "../utils/groupMembers";
 import { gpayPreferenceKey, readGPayPreference } from '../utils/gpayPreferences';
+import usePagePreference from '../hooks/usePagePreference';
+import { oneOf } from '../utils/viewPreferences';
 import { createSplitGroup, updateSplitMember, linkTransactionToMember, unlinkTransactionFromMember, deleteSplitMember, deleteSplitGroup, getCandidateTransactions, createBillGroup, deleteBillGroup, addBillGroupMember, importTakeoutPath, importTakeoutUpload, getSplitGroupById } from "../api/splits";
 
 const fmtDate = (d) =>
@@ -62,11 +64,11 @@ export default function Splits() {
   );
 
   // Navigation tab: 'billGroups' (GPay Style), 'splits' (All Confirmed Splits), 'suggestions' (Auto-detected)
-  const [activeTab, setActiveTab] = useState('billGroups');
+  const [activeTab, setActiveTab] = usePagePreference('splits', 'tab', 'billGroups', { scope: 'workspace', validate: oneOf('billGroups', 'splits', 'suggestions', 'evidence') });
 
   // GPay Group Chat state
   const [selectedBillGroupId, setSelectedBillGroupId] = useState(null);
-  const [groupViewSubTab, setGroupViewSubTab] = useState('chat'); // 'chat' or 'expenses'
+  const [groupViewSubTab, setGroupViewSubTab] = usePagePreference('splits', 'groupTab', 'chat', { scope: 'workspace', validate: oneOf('chat', 'expenses') });
   const [selectedSplitDetail, setSelectedSplitDetail] = useState(null);
   const [linkedTransaction, setLinkedTransaction] = useState(null);
   const [activityPanelWidth, setActivityPanelWidth] = useState(0);
@@ -84,7 +86,10 @@ export default function Splits() {
   const { data: splitData, loading, error: loadError, retry: loadData } = useAsyncResource(loadSplits,
     { allBillGroups: [], suggestions: [], allGroups: [], participantSuggestions: [], gpayProfiles: [], takeoutStatus: null });
   const { allBillGroups, suggestions, allGroups, participantSuggestions, gpayProfiles, takeoutStatus } = splitData;
-  const [gpayProfileId, setGpayProfileId] = useState('all');
+  const [gpayProfileId, setGpayProfileId] = usePagePreference('splits', 'gpayProfile', 'all', { scope: 'workspace' });
+  const [previousGpayProfileId, setPreviousGpayProfileId] = useState(null);
+  if (previousGpayProfileId !== gpayProfileId) { setPreviousGpayProfileId(gpayProfileId); setSplitFilter(readGPayPreference('split_filter', gpayProfileId, 'all')); }
+  if (!loading && !loadError && !['all', 'custom', 'default'].includes(gpayProfileId) && !gpayProfiles.some(profile => profile.id === gpayProfileId)) setGpayProfileId('all');
   const groups = useMemo(() => allGroups.filter(group => gpayProfileId === 'all' || (gpayProfileId === 'custom' ? !isImportedGPayExpense(group) : isImportedGPayExpense(group) && (group.gPayProfileId || 'default') === gpayProfileId)), [allGroups, gpayProfileId]);
   const billGroups = useMemo(() => allBillGroups.filter(group => gpayProfileId === 'all' || (gpayProfileId === 'custom' ? !isImportedGPayGroup(group) : isImportedGPayGroup(group) && (group.gPayProfileId || 'default') === gpayProfileId)), [allBillGroups, gpayProfileId]);
   const [busy, setBusy] = useState(false);
@@ -218,7 +223,7 @@ export default function Splits() {
       if (active) setSplitLinkError({ key: location.key, message: 'Could not open the linked expense. It may have been removed or is unavailable.' });
     });
     return () => { active = false; };
-  }, [location.key, location.search, splitLinkAttempt]);
+  }, [location.key, location.search, splitLinkAttempt, setActiveTab, setGpayProfileId]);
 
   // Summary stats
   const stats = useMemo(() => {
@@ -867,7 +872,7 @@ export default function Splits() {
               </button>
             </div>
           ) : (
-            <GPayGroupList
+            <GPayGroupList preferenceScope={gpayProfileId}
               groups={billGroups}
               profiles={gpayProfiles}
               onOpen={group => { setSelectedBillGroupId(group.id); setGroupViewSubTab('chat'); }}
@@ -998,7 +1003,7 @@ export default function Splits() {
 
                     {/* Participants table */}
                     <div className="splits-participant-table" tabIndex={0} aria-label="Participants, scroll to see more" style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: '8px', overflow: 'auto' }}>
-                      <PaginatedTable style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <PaginatedTable preferenceId="split-members" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
                           <tr style={{ background: 'var(--bg-subtle, #f9fafb)', textAlign: 'left', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
                             <th style={{ padding: '8px 12px', fontWeight: 600 }}>Participant</th>
@@ -1883,7 +1888,7 @@ export default function Splits() {
                     Top Imported Groups ({importResult.groups.length})
                   </div>
                   <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid var(--border, #e5e7eb)', borderRadius: '8px' }}>
-                    <PaginatedTable style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <PaginatedTable preferenceId="split-participants" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                       <thead>
                         <tr style={{ background: 'var(--bg-subtle, #f9fafb)', textAlign: 'left', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
                           <th style={{ padding: '8px 12px' }}>Group Name</th>
@@ -2127,7 +2132,7 @@ export default function Splits() {
                 Participants &amp; Settlements ({(activeSplitDetail.members || []).filter(m => !isSelfMember(m)).length + 1})
               </div>
               <div style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: '8px', overflow: 'hidden' }}>
-                <PaginatedTable style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <PaginatedTable preferenceId="split-candidates" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-subtle, #f9fafb)', textAlign: 'left', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
                       <th style={{ padding: '8px 12px' }}>Member</th>

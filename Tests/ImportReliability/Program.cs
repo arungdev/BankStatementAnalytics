@@ -271,6 +271,12 @@ var historyRuns = historyJson.GetProperty("Runs").EnumerateArray().ToList();
 Check(historyRuns.Count == 2 && historyRuns.All(run => run.GetProperty("Status").GetString() == "Success"), "each upload has a separate successful history entry");
 Check(historyRuns[0].GetProperty("Added").GetInt32() == 0 && historyRuns[0].GetProperty("Updated").GetInt32() == 0 && historyRuns[0].GetProperty("Unchanged").GetInt32() == 1, "no-op sync history records unchanged sources rather than reporting updates");
 var firstHistoryId = historyRuns[1].GetProperty("Id").GetInt32();
+var singleHistoryPage = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.SyncHistoryAsync(101, syncProfile.ProfileId, pageSize: 1));
+Check(singleHistoryPage.GetProperty("Runs").GetArrayLength() == 1 && singleHistoryPage.GetProperty("Total").GetInt32() == 2, "history respects the selected page size while retaining its total");
+var clampedHistoryPage = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.SyncHistoryAsync(101, syncProfile.ProfileId, page: 999, pageSize: 1));
+Check(clampedHistoryPage.GetProperty("Page").GetInt32() == 1 && clampedHistoryPage.GetProperty("Runs").GetArrayLength() == 1, "restored history pagination clamps to the last available page");
+try { await gpay.SyncHistoryAsync(101, syncProfile.ProfileId, pageSize: 10000); throw new Exception("unbounded history page size accepted"); }
+catch (ArgumentException) { Check(true, "history rejects unbounded page sizes"); }
 var syncDetailsJson = System.Text.Json.JsonSerializer.SerializeToElement(await gpay.SyncDetailsAsync(101, syncProfile.ProfileId, firstHistoryId));
 var historyChanges = syncDetailsJson.GetProperty("Run").GetProperty("Changes").EnumerateArray().ToList();
 Check(historyChanges.Any(change => change.GetProperty("Kind").GetString() == "Split" && change.GetProperty("Description").GetString() == "History lunch")

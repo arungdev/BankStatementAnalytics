@@ -6,6 +6,8 @@ import { getCandidateTransactions } from '../api/splits';
 import './GPayTakeoutReview.css';
 import GPayActivityTable from './GPayActivityTable';
 import GPayActivityDrawer from './GPayActivityDrawer';
+import usePagePreference from '../hooks/usePagePreference';
+import { oneOf, preferenceValidators } from '../utils/viewPreferences';
 
 const root = '/split-groups/evidence';
 let matchingRequest = null;
@@ -30,7 +32,7 @@ export default function GPayTakeoutReview({ onRefresh, onTransaction, onPanelWid
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [viewport, setViewport] = useState(() => window.innerWidth);
-  const [sidebarWidth, setSidebarWidth] = useState(450);
+  const [sidebarWidth, setSidebarWidth] = usePagePreference('gpay-activity', 'drawerWidth', 450, { scope: 'workspace', validate: preferenceValidators.width });
   const recordTrigger = useRef(null);
   useEffect(() => {
     onPanelWidthChange?.(selectedRecord && viewport > 1024 ? sidebarWidth : 0);
@@ -41,12 +43,18 @@ export default function GPayTakeoutReview({ onRefresh, onTransaction, onPanelWid
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, []);
-  const [settlementFilter,setSettlementFilter] = useState('active'), [tab, setTab] = useState('activities'), [search, setSearch] = useState(''), [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(20);
-  const [sort, setSort] = useState({ field: 'date', direction: 'desc' });
+  const [settlementFilter,setSettlementFilter] = usePagePreference(`gpay-${profileId}`, 'settlements', 'active', { scope: 'workspace', validate: oneOf('active', 'to_collect', 'owed', 'history', 'all') });
+  const [tab, setTab] = usePagePreference(`gpay-${profileId}`, 'tab', 'activities', { scope: 'workspace', validate: oneOf('activities', 'orders', 'rewards', 'vouchers') });
+  const viewId = `gpay-${profileId}-${tab}`;
+  const [search, setSearch] = usePagePreference(viewId, 'search', '', { scope: 'workspace' });
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = usePagePreference(viewId, 'pageSize', 20, { scope: 'workspace', validate: preferenceValidators.pageSize });
+  const [sort, setSort] = usePagePreference(viewId, 'sort', { field: 'date', direction: 'desc' }, { scope: 'workspace', validate: value => value && ['date', 'name', 'amount'].includes(value.field) && ['asc', 'desc'].includes(value.direction) });
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [loadingRecords, setLoadingRecords] = useState(true);
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  const [previousViewId, setPreviousViewId] = useState(viewId);
+  if (previousViewId !== viewId) { setPreviousViewId(viewId); setDebouncedSearch(search); setPage(0); }
   const pagedSection = ['activities', 'orders', 'rewards', 'vouchers'].includes(tab);
   const queryKey = JSON.stringify([tab, page, pageSize, profileId, debouncedSearch, sort, refreshVersion]);
   const hasData = data !== null;
@@ -112,7 +120,7 @@ export default function GPayTakeoutReview({ onRefresh, onTransaction, onPanelWid
       link.href = url; link.download = 'gpay-reconciliation.json'; link.click(); URL.revokeObjectURL(url);
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   };
-  const changeTab = key => { setTab(key); setPage(0); setSearch(''); setDebouncedSearch(''); setSort({ field: 'date', direction: 'desc' }); setMatching(null); setAllocation(null); setSelectedRecord(null); };
+  const changeTab = key => { setTab(key); setPage(0); setMatching(null); setAllocation(null); setSelectedRecord(null); };
   const selectRecord = (record, row) => { recordTrigger.current = row.querySelector('.gpay-activity-detail-link'); setSelectedRecord({ record, kind: tab }); };
   const closeRecord = () => { setSelectedRecord(null); recordTrigger.current?.focus(); };
   const openBank = bank => onTransaction?.({ ...bankKey(bank), expenseTitle: matching?.title || allocation?.title || 'Takeout source', participantName: matching?.participantName || allocation?.participantName });
