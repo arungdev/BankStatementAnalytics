@@ -1,0 +1,10 @@
+{
+  "name": "framework-consumer-beta",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node smoke.mjs" },
+  "dependencies": {
+    "@common/client": "file:../../../Client/vendor/common-client",
+    "axios": "^1.17.0", "react": "^19.2.6", "react-dom": "^19.2.6", "react-icons": "^5.6.0"
+  }
+}
