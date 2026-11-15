@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 rem ============================================================================
 rem Packages the current Publish\ output as a portable ZIP into Setup\.
 rem
-rem Called by the repo-root build-installer.bat after the installer is compiled,
+rem Called by the repo-root build-release.bat after the installer is compiled,
 rem so both artifacts come from the same publish. Can also be run on its own to
 rem repackage an existing Publish\ folder without republishing.
 rem
@@ -17,7 +17,7 @@ call "%~dp0installer.config.bat"
 
 if not exist "%PUBLISH_DIR%" (
     echo ERROR: Publish folder not found: %PUBLISH_DIR%
-    echo        Run build-installer.bat ^(or build.bat^) first.
+    echo        Run build-release.bat ^(or build-app.bat^) first.
     exit /b 1
 )
 

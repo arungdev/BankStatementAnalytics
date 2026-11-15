@@ -53,6 +53,12 @@ namespace BankStatementAnalytics.Services.Pdf
 
         public string ExtractNormalizedText(byte[] pdfBytes, Bank bank, string? password)
         {
+            if (bank == Bank.SBI)
+            {
+                using var sbiDocument = OpenDocument(pdfBytes, password);
+                EnsureTextLayer(sbiDocument);
+                return SbiTableReader.Extract(sbiDocument);
+            }
             var profile = PdfTableProfiles.For(bank);
             using var doc = OpenDocument(pdfBytes, password);
             EnsureTextLayer(doc);
@@ -108,6 +114,12 @@ namespace BankStatementAnalytics.Services.Pdf
         /// </summary>
         public IEnumerable<string> DumpAssignedCells(byte[] pdfBytes, Bank bank, string? password)
         {
+            if (bank == Bank.SBI)
+            {
+                foreach (var row in ExtractNormalizedText(pdfBytes, bank, password).Split('\n'))
+                    yield return "DATA  " + row.Replace(CellSeparator, '|');
+                yield break;
+            }
             var profile = PdfTableProfiles.For(bank);
             using var doc = OpenDocument(pdfBytes, password);
 

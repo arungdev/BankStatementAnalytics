@@ -3,7 +3,7 @@
 ; Common.Framework/Installer/Framework.iss engine — see that folder's
 ; README.md for the full macro contract.
 ;
-; MyAppVersion is passed in from build-installer.bat (read from the .csproj's
+; MyAppVersion is passed in from build-release.bat (read from the .csproj's
 ; <Version>), so it doesn't need to be hand-edited here on every release.
 
 #define MyAppName      "Bank Statement Analytics"

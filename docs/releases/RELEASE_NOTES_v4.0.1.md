@@ -25,7 +25,7 @@ are still rejected: clear the application's stale site cookies, start a fresh HT
 flow in the same browser, and do not reopen an old callback URL. Do not bypass Chrome's
 Dangerous-site warning; address Search Console issues first.
 
-Build with `build-installer.bat` for all three versioned artifacts and the matching
+Build with `build-release.bat` for all three versioned artifacts and the matching
 Docker Hub image. Existing PostgreSQL upgrade/backup safeguards remain in place.
 Existing data is not automatically assigned to a new Google account; any intentional
 data migration requires a separate reviewed operation.

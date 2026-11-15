@@ -129,10 +129,10 @@ in `Client/`. Compile the product `.iss` with Inno Setup when validating install
 Release version: **v4.0.0**. See [release artifacts and upgrade prerequisites](docs/releases/RELEASE_NOTES_v4.0.0.md)
 for changes, upgrade requirements, and remaining publication checks.
 
-- **Single-file EXE** — `build.bat` (repo root) publishes a self-contained
+- **Single-file EXE** — `build-app.bat` (repo root) publishes a self-contained
   win-x64 executable to `Publish\`, bundling the built SPA (and the embedded
   PostgreSQL runtime when available).
-- **V4 release bundle** — `build-installer.bat` opens a menu for local/publish mode,
+- **V4 release bundle** — `build-release.bat` opens a menu for local/publish mode,
   version selection, image TAR export and optional offline cloud ZIP. Local builds
   are saved in `Setup/Candidates/<version>` and do not upload. Explicit publish mode
   publishes and verifies the Docker image. See [build options and project layout](docs/PROJECT-STRUCTURE.md).

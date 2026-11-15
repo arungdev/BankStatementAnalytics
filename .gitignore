@@ -52,3 +52,6 @@ Client/node_modules/
 # Private local analysis and verification notes
 /.local-analysis/
 /.local-docker/
+
+# Temporary HTTP session cookie jars
+/cookies.txt

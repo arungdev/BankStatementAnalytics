@@ -370,6 +370,7 @@ static void RunPdfExtractHarness(string[] args)
             .Where(t => string.IsNullOrWhiteSpace(t.PendingCounterPartyName))
             .ToList();
         Console.WriteLine($"Unresolved merchant: {unresolved.Count} row(s)");
+            BankStatementAnalytics.EnumClass.Bank.SBI => new SbiPdfParser(),
         foreach (var t in unresolved.Take(10))
             Console.WriteLine($"  {t.TransactionDate:dd/MM/yyyy}  {t.TransactionType}  {t.Amount,10:0.00}  {t.Description}");
 

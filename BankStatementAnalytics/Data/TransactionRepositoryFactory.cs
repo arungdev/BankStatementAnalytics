@@ -8,6 +8,7 @@ namespace BankStatementAnalytics.Data
         {
             Bank.IOB => new IobTransactionRepository(),
             Bank.HDFC => new HdfcTransactionRepository(),
+            Bank.SBI => new HdfcTransactionRepository(),
             _ => throw new NotSupportedException($"No repository for bank: {bank}")
         };
     }

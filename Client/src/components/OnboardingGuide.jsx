@@ -17,7 +17,7 @@ const STEPS = [
     text: 'Everything starts with an account — one for each bank or credit card you want to track.',
     points: [
       'Use the “+ Add” button in the account filter, or Settings → Accounts.',
-      'Supported banks: HDFC, HDFC Credit Card, and IOB.',
+      'Supported banks: HDFC, HDFC Credit Card, IOB, and SBI.',
       'Credit cards get a limit and statement day, plus their own utilization and billing-cycle view.',
     ],
   },

@@ -21,6 +21,7 @@ namespace BankStatementAnalytics.Services
     {
         public static readonly List<BankParserConfig> Parsers = new()
         {
+            new() { Bank = Bank.SBI, FileExt = ".pdf", ParserType = typeof(SbiPdfParser) },
             new() { Bank = Bank.HDFC,           FileExt = ".txt", ParserType = typeof(HdfcTransactionParser)   },
             new() { Bank = Bank.IOB,             FileExt = ".txt", ParserType = typeof(OpTransactionParser)     },
             new() { Bank = Bank.HDFCCreditCard,  FileExt = ".csv", ParserType = typeof(HdfcCreditCardParser)   },

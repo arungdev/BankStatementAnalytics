@@ -469,6 +469,7 @@ export default function RulesManager() {
                   <option value="">Any Bank</option>
                   <option value="HDFC">HDFC</option>
                   <option value="IOB">IOB</option>
+                  <option value="SBI">SBI</option>
                   <option value="HDFCCreditCard">HDFC Credit Card</option>
                 </select>
               </div>

@@ -17,7 +17,7 @@ All active setup samples and current instructions use reserved documentation
 values such as ubuntu@203.0.113.10, billing.example.com and admin@example.com.
 Actual publishing configuration continues targeting the configured Docker repository.
 
-Run build-installer.bat to generate the EXE, portable ZIP, single cloud ZIP and
+Run build-release.bat to generate the EXE, portable ZIP, single cloud ZIP and
 matching versioned Docker image. The existing encrypted backup, PostgreSQL upgrade,
 HTTPS and diagnostic safeguards remain in effect. No real Google credentials,
 recovery private keys or customer data are included in the cloud ZIP.

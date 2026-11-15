@@ -21,24 +21,24 @@ The root BAT files are deliberately kept as easy-to-find launchers. Dockerfile, 
 
 ## Build options
 
-Run `build-installer.bat` without arguments for the menu:
+Run `build-release.bat` without arguments for the menu:
 
-1. Choose local build or build and publish to Docker Hub.
-2. Keep the current version, find the next unused version when publishing, or enter a version such as `4.0.0`.
-3. Choose whether to create an offline cloud ZIP with its Docker image.
-4. Optionally save a standalone Docker image TAR.
-5. Review the choices and start the build.
+1. Choose **Build one standalone app EXE** for a single self-contained app file in `Publish/`, **Build packages** for installer and deployment archives, or **Update installed app** to build a local installer and run it elevated for the default Program Files installation.
+2. For package builds, choose a local build or build and publish to Docker Hub. The update option always uses a local build.
+3. Keep the current version, find the next unused version when publishing, or enter a version such as `4.0.0`.
+4. Choose whether to create an offline cloud ZIP with its Docker image.
+5. Optionally save a standalone Docker image TAR, then review the choices and start the build.
 
-Every build creates the Windows installer EXE, portable ZIP and online cloud setup ZIP. Local builds never push. Publishing uses the existing Docker login and never overwrites an already published version when Keep/custom version is selected. Automatic version selection advances to an unused patch version.
+Release package builds create the Windows installer EXE, portable ZIP and online cloud setup ZIP. Local builds never push. Publishing uses the existing Docker login and never overwrites an already published version when Keep/custom version is selected. Automatic version selection advances to an unused patch version.
 
 Command-line options remain available:
 
 ```bat
-build-installer.bat -SkipPush
-build-installer.bat -SkipPush -Version 4.0.0 -Offline
-build-installer.bat -SkipPush -ExportImage
-build-installer.bat -Publish
-build-installer.bat -Publish -Version 4.1.0 -KeepVersion
+build-release.bat -SkipPush
+build-release.bat -SkipPush -Version 4.0.0 -Offline
+build-release.bat -SkipPush -ExportImage
+build-release.bat -Publish
+build-release.bat -Publish -Version 4.1.0 -KeepVersion
 ```
 
 For daily local Google login testing, use `Local-Docker.bat` instead of building installers. See [local Docker instructions](../deploy/LOCAL-DOCKER.md).

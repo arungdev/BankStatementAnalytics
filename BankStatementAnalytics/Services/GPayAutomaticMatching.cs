@@ -171,7 +171,6 @@ public sealed partial class GPayEvidenceService
         var unmatchedReasons = new Dictionary<int, string>();
         var payeeEvidence = new Dictionary<string, string>();
         var valueDateMatches = new HashSet<string>();
-        var nameMismatchMatches = new HashSet<string>();
         foreach (var (record, payload) in activities)
         {
             if (duplicateCopies.Contains(record.Id))
@@ -224,14 +223,7 @@ public sealed partial class GPayEvidenceService
                     if (agrees && bank.TransactionDate.Date != activity.Timestamp.Date) valueDateMatches.Add(record.Id + "|" + BankKey(bank));
                     return agrees;
                 }).ToList();
-            // If names/IDs differ, allow a link only when amount, direction, date,
-            // account and transfer checks leave exactly one bank candidate. Cross-
-            // activity competition is checked below before any link is proposed.
-            if (payeeMatches.Count == 0 && eligible.Count == 1)
-            {
-                payeeMatches.Add(eligible[0]);
-                nameMismatchMatches.Add(record.Id + "|" + BankKey(eligible[0]));
-            }
+            // Uniqueness cannot override conflicting payee or source identifiers.
             candidates[record.Id] = payeeMatches;
         }
         var competingSources = candidates.SelectMany(pair => pair.Value.Select(bank => (Key: BankKey(bank), Id: pair.Key)))
@@ -249,9 +241,7 @@ public sealed partial class GPayEvidenceService
             {
                 var bank = matches[0];
                 var key = recordId + "|" + BankKey(bank);
-                var reason = nameMismatchMatches.Contains(key)
-                    ? "Unique exact amount, direction, date and source account match; bank payee name differs from GPay."
-                    : valueDateMatches.Contains(key)
+                var reason = valueDateMatches.Contains(key)
                     ? $"Unique UPI payment with exact amount and direction; the bank value date ({bank.ValueDate:dd MMM yyyy}) matches GPay, while its transaction date is {bank.TransactionDate:dd MMM yyyy}."
                     : "Unique payment on the same date with exact amount, direction and available account/payee information.";
                 if (payeeEvidence.TryGetValue(key, out var evidence)) reason += " Payee evidence: " + evidence + ".";
@@ -298,14 +288,8 @@ public sealed partial class GPayEvidenceService
                 || (activity.Type == "Received" ? bank.Credit : bank.Debit) != activity.Amount
                 || (activity.Type == "Received" ? bank.Debit : bank.Credit) != 0) continue;
             var payeeAgrees = ActivityPayeeAgrees(activity, bank, payload.ProfileId, aliases, out _);
-            if (!payeeAgrees)
-            {
-                var currentPlan = PlanAutomaticActivityMatches(records.Where(record => record.Kind != "Decision").Concat(current).ToList(), accounts, banks);
-                if (!currentPlan.TryGetValue(recordId, out var uniquePlan) || uniquePlan.Status != "Ready"
-                    || uniquePlan.Bank == null || TxKey(uniquePlan.Bank.AccountId, uniquePlan.Bank.BankReference, uniquePlan.Bank.BankType, uniquePlan.Bank.TransactionType) != BankKey(bank)) continue;
-            }
-            var method = !payeeAgrees ? "AutomaticUniqueAmountDate"
-                : bank.TransactionDate.Date == activity.Timestamp.Date ? "AutomaticSameDay" : "AutomaticValueDate";
+            if (!payeeAgrees) continue;
+            var method = bank.TransactionDate.Date == activity.Timestamp.Date ? "AutomaticSameDay" : "AutomaticValueDate";
             var request = new ReviewSourceRequest { RecordId = recordId, Accept = true, AccountId = link.AccountId, BankReference = link.BankReference, BankType = link.BankType, TransactionType = link.TransactionType, MatchMethod = method };
             if (!ActivityIds(bank.Note).Contains(activity.RefId ?? ""))
             {

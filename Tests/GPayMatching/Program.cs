@@ -50,6 +50,7 @@ var valueTransfer = ValueBank(); valueTransfer.TransferGroupId = Guid.NewGuid();
 Check(Plan(banks: [valueTransfer])[1].Bank == null, "own-account transfers remain excluded from value-date matching");
 Check(Plan([Source(state: "Failed")], [ValueBank()])[1].Status == "Not eligible", "failed payments remain excluded from value-date matching");
 Check(Plan([Source(payee: "Different Person")], [ValueBank()])[1].Bank == null, "value-date matching cannot override a conflicting named payee");
+Check(Plan([Source(suffix: "7720", payee: "Different Person")], [ValueBank()])[1].Bank == null, "exact account hint and unique value-date amount cannot override a conflicting payee");
 var wrongValueSource = ValueBank(); wrongValueSource.Note = "GPay: Received (Ref: another-source)";
 Check(Plan(banks: [wrongValueSource])[1].Bank == null, "value-date matching cannot override a conflicting source identifier");
 var valueDecision = Decision(1, true); var valueRequest = JsonSerializer.Deserialize<ReviewSourceRequest>(valueDecision.Payload)!;
@@ -63,6 +64,7 @@ Check(Plan([Source(suffix: "9999")])[1].Bank == null, "source bank suffix is enf
 Check(Plan([Source(suffix: "7720")])[1].Status == "Ready", "matching account suffix is accepted");
 Check(Plan([Source(payee: "Arun Kumar")])[1].Status == "Ready", "available payee agrees with bank details");
 Check(Plan([Source(payee: "Different Person")])[1].Bank == null, "conflicting payee blocks automatic linking");
+Check(Plan([Source(suffix: "7720", payee: "Different Person")])[1].Bank == null, "exact account hint and unique same-day amount cannot override a conflicting payee");
 Check(Plan([Source(payee: "Arun")], [Bank(description: "UPI/Varun")])[1].Bank == null, "payee matches whole tokens, not substrings");
 BankTransaction IobPayee(string name, string reference = "BANK-A") => Bank(reference, description: $"UPI/130307216789/CR/{name}/UTI/UPI");
 Check(Plan([Source(suffix: "7720", payee: "VENKAtesh Vasudevan")], [IobPayee("VENKATESH VASU")])[1].Status == "Ready", "actual Venkatesh IOB name truncation matches with exact account and payment facts");

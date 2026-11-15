@@ -30,4 +30,4 @@ Your domain must point to the server. Open provider inbound TCP 22 for SSH and 8
 
 For a missing correlation cookie, clear this application's stale site cookies and start a new HTTPS Google flow in the same browser. Do not reopen an old callback URL or bypass a Dangerous-site warning. Safe diagnostic categories are logged as GoogleOAuth FailureCategory without tokens or provider response bodies.
 
-To publish the next application release, run build-installer.bat in the development project. It chooses the next unused patch version automatically and synchronizes the EXE, portable ZIP, cloud ZIP and Docker tag. Running this cloud Setup.bat only installs its packaged version; it does not increment versions.
+To publish the next application release, run build-release.bat in the development project. It chooses the next unused patch version automatically and synchronizes the EXE, portable ZIP, cloud ZIP and Docker tag. Running this cloud Setup.bat only installs its packaged version; it does not increment versions.

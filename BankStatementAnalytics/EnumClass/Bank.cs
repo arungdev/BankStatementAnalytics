@@ -4,6 +4,7 @@
     {
         HDFC,
         HDFCCreditCard,
-        IOB
+        IOB,
+        SBI
     }
 }

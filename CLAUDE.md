@@ -10,7 +10,7 @@ BankStatementAnalytics is a personal finance app that parses bank statement expo
 - `Client/` — the React 19 + Vite frontend (pages: Overview, Transactions, Trends, Insights, Merchants, Reports, Budgets, Bills, Investments, Transfers, Settings, Upload).
 - `Common.Client` — a **private, separate repo** holding the app-agnostic React layer (design tokens, UI primitives, theming, API client, auth shell). Same arrangement as `Common.Framework`: the app never compiles its source, it depends on the prebuilt bundle committed at `Client/vendor/common-client/` via `"@common/client": "file:./vendor/common-client"`. A local `Common.Client/` working copy is gitignored (author only) and rebuilt with `npm run release` there, which rebuilds `dist/` and re-vendors it. **Do not edit `Client/vendor/common-client/` — it is generated output.** See "The Client/Common.Client boundary" below.
 - `Common.Framework` — a **private, separate repo** providing `DbHelper`, `NHibernateManager`, `Auth`, `Web`, and `Logging`. It is **not** part of a clone: the backend compiles against the vendored prebuilt DLL at `BankStatementAnalytics/lib/Common.Framework.dll` (a `<Reference>`, not a `ProjectReference`). A local `Common.Framework/` working copy is gitignored — present on the author's machine only, used to rebuild that DLL and to supply the embedded-PostgreSQL bundle. Never assume its source is available; treat it as a shared library whose changes affect other consumers.
-- `Publish/` — output of the self-contained single-file EXE build (`build.bat`); not source.
+- `Publish/` — output of the self-contained single-file EXE build (`build-app.bat`); not source.
 
 ## Commands
 
@@ -33,15 +33,15 @@ Client also has an optional local Node server (`Client/server/index.js`, `npm ru
 
 Single-file production EXE (from repo root):
 ```
-build.bat
+build-app.bat
 ```
 This runs `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true` from `BankStatementAnalytics/`, outputting to `Publish/`. The `.csproj` has an MSBuild target (`BuildReactClient`) that only runs `npm ci && npm run build` in `Client/` **when Configuration == Release** — in Debug/dev, the API and Vite dev server run as two separate processes and you must start the client yourself.
 
-Release artifacts (from repo root): `build-installer.bat` publishes once and emits **two** things into `Setup/` — the Inno Setup installer (via the shared `Common.Framework/Installer` engine) and a portable ZIP (`BankStatementAnalytics-Portable-<version>.zip`, built by `BankStatementAnalytics/Installer/build-portable.{bat,ps1}`, also runnable on its own to repackage an existing `Publish/`). The portable ZIP is the same publish output plus the `pgsql` bundle and a generated README, minus the service scripts — no service, no writes outside the extracted folder, because `AppPaths.ResolveWritableAppDataDirectory()` already puts `Data\`/`Uploads\`/`Logs\` next to the exe and `EmbeddedPostgresManager` picks a free port per data directory. Its one collision point with an installed copy is the HTTP port (`Urls` in `appsettings.json`, 5080 for both).
+Release artifacts (from repo root): `build-release.bat` publishes once and emits **two** things into `Setup/` — the Inno Setup installer (via the shared `Common.Framework/Installer` engine) and a portable ZIP (`BankStatementAnalytics-Portable-<version>.zip`, built by `BankStatementAnalytics/Installer/build-portable.{bat,ps1}`, also runnable on its own to repackage an existing `Publish/`). The portable ZIP is the same publish output plus the `pgsql` bundle and a generated README, minus the service scripts — no service, no writes outside the extracted folder, because `AppPaths.ResolveWritableAppDataDirectory()` already puts `Data\`/`Uploads\`/`Logs\` next to the exe and `EmbeddedPostgresManager` picks a free port per data directory. Its one collision point with an installed copy is the HTTP port (`Urls` in `appsettings.json`, 5080 for both).
 
 Docker (from repo root): `docker compose up --build` builds the image and runs it against a `postgres:16-alpine` service on port 8080. The image sets `Database__Embedded=false` because the bundled embedded PostgreSQL ships Windows binaries; the compose file supplies the connection string. The Dockerfile deliberately does not copy `Common.Framework/` — see above. `Common.Client/` is likewise excluded (`.dockerignore`); the image needs only `Client/vendor/common-client/`, which `COPY Client/ Client/` already brings in.
 
-Cloning fresh: nothing extra is needed — `dotnet build` works from a plain clone against the vendored DLL, and `npm install` in `Client/` resolves `@common/client` from the committed `Client/vendor/common-client/`. Only two things require the private repo (author only): `build-installer.bat`, and the ~150 MB embedded-PostgreSQL bundle that the csproj's `CopyPgsqlBundle` target copies when present (silently skipped when absent, in which case point the app at your own PostgreSQL).
+Cloning fresh: nothing extra is needed — `dotnet build` works from a plain clone against the vendored DLL, and `npm install` in `Client/` resolves `@common/client` from the committed `Client/vendor/common-client/`. Only two things require the private repo (author only): `build-release.bat`, and the ~150 MB embedded-PostgreSQL bundle that the csproj's `CopyPgsqlBundle` target copies when present (silently skipped when absent, in which case point the app at your own PostgreSQL).
 
 ## Architecture
 

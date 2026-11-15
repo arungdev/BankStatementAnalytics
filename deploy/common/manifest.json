@@ -12,7 +12,7 @@
                           "path":  "backup-key.ps1"
                       },
                       {
-                          "sha256":  "d196090298628512a462f4b23333c108b7c0ba6e9af8fae1e594115f01222c91",
+                          "sha256":  "ce7640c790dfbefa9b15061901a7be395829927154993a22550e2585780f7dea",
                           "path":  "build-menu.ps1"
                       },
                       {

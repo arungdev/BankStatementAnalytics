@@ -48,6 +48,11 @@ namespace BankStatementAnalytics.Controllers.Api
         // Per-bank guidance on where to export the supported statement file.
         private static object? DownloadGuide(Bank bank) => bank switch
         {
+            Bank.SBI => new
+            {
+                label = "State Bank of India (.pdf)",
+                steps = new[] { "Upload your SBI account statement PDF.", "Enter the PDF password if the statement is protected." }
+            },
             Bank.HDFC => new
             {
                 label = "HDFC Bank (.txt / .pdf)",
@@ -101,6 +106,7 @@ namespace BankStatementAnalytics.Controllers.Api
             Bank.HDFC => "HDFC",
             Bank.HDFCCreditCard => "HDFC Credit Card",
             Bank.IOB => "IOB",
+            Bank.SBI => "State Bank of India (SBI)",
             _ => bank.ToString()
         };
 

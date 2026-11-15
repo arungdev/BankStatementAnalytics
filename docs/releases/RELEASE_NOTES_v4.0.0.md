@@ -2,7 +2,7 @@
 
 ## Distribution
 
-Run `build-installer.bat` from Windows to run the regression checks, publish a fresh
+Run `build-release.bat` from Windows to run the regression checks, publish a fresh
 self-contained Windows application, build its EXE installer and portable ZIP,
 build/publish `arungs125/bankstatementanalytics:4.0.0`, verify anonymous Docker Hub
 access, and generate one cloud deployment ZIP. Run `docker login` once beforehand.
@@ -27,7 +27,7 @@ All output is built in a fresh `.build/releases` folder. Existing `Publish` data
 and previous Setup versions remain untouched. Failed builds retain diagnostic
 staging output but do not copy a complete release into Setup.
 
-`build-installer.bat -SkipPush` creates local candidates in
+`build-release.bat -SkipPush` creates local candidates in
 `Setup/Candidates/4.0.0`; it does not publish an image. The cloud ZIP from such a
 candidate cannot deploy an unpublished image. Old ZIPs and offline TARs are not
 silently relabelled as V4.

@@ -1,5 +1,6 @@
 @{
     ProjectFile = 'BankStatementAnalytics/BankStatementAnalytics.csproj'
+    StandaloneBuildCommand = 'build-app.bat'
     InstallerScript = 'BankStatementAnalytics/Installer/BankStatementAnalytics.iss'
     PortableScript = 'BankStatementAnalytics/Installer/build-portable.ps1'
     PgBundleDir = 'Common.Framework/Installer/PgBundle'
