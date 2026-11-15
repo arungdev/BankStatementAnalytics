@@ -20,7 +20,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] int accountId,
             [FromQuery] string? accountIds = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             // Resolve the accounts to aggregate: either the comma-separated
             // "All accounts" list or a single accountId, filtered to owned.
@@ -86,7 +86,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] int skip = 0,
             [FromQuery] int take = RecentPageSize)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
@@ -121,7 +121,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] int skip = 0,
             [FromQuery] int take = TilePageSize)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
@@ -234,7 +234,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (string.IsNullOrWhiteSpace(accountIds))
                 return BadRequest("accountIds is required.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var ids = AccountAccess.FilterOwned(accountIds, ownedIds);
@@ -357,7 +357,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (string.IsNullOrWhiteSpace(accountIds))
                 return BadRequest("accountIds is required.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var ids = AccountAccess.FilterOwned(accountIds, ownedIds);

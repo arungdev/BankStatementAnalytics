@@ -77,7 +77,7 @@ public partial class GPaySplitService
         DateTime? startDate, DateTime? endDate)
     {
         var groups = await GetGroupsAsync(userId);
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var allocations = await session.Query<GPaySettlementAllocation>().Where(a => a.OwnerUserId == userId).ToListAsync();
         return SharedBillInsights.Summarize(groups, allocations, accountIds, startDate, endDate);
     }
@@ -85,7 +85,7 @@ public partial class GPaySplitService
     public async Task<List<SharedBillTransactionContext>?> GetSharedBillTransactionContextAsync(long userId,
         long accountId, string reference, string bankType, string transactionType)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var ownedIds = AccountAccess.OwnedIdSet(session, userId);
         if (!ownedIds.Contains(accountId) || !await session.Query<BankTransaction>().AnyAsync(t =>
             t.AccountId == accountId && t.BankReference == reference && t.BankType == bankType && t.TransactionType == transactionType)) return null;

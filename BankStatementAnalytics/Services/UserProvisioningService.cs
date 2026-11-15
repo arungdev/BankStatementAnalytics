@@ -15,6 +15,7 @@ namespace BankStatementAnalytics.Services
     {
         public static void SeedDefaultsForUser(long userId)
         {
+            using var tenantScope=Tenancy.AppTenantRuntime.EnterUser(userId,provision:true);
             SeedDefaultCategories(userId);
             SeedDefaultTags(userId);
         }
@@ -27,7 +28,7 @@ namespace BankStatementAnalytics.Services
         /// install has nothing to backfill, so the caller should seed fresh defaults instead).
         /// </summary>
         public static bool BackfillOwnerlessDataTo(long userId) =>
-            TenantData.BackfillOwnerlessTo(userId,
+            !Tenancy.AppTenantRuntime.Enabled && TenantData.BackfillOwnerlessTo(userId,
                 typeof(Account), typeof(Merchant), typeof(Category), typeof(Tag));
 
         /// <summary>
@@ -39,9 +40,11 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public static void PurgeUserData(long userId)
         {
+            // Called only by the authorized deletion hook; inactive accounts must remain deletable.
+            using var tenantScope=Tenancy.AppTenantRuntime.EnterUser(userId,allowInactive:true);
             var storedFileNames = new List<string>();
 
-            using (var session = DbHelper.GetSession())
+            using (var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession())
             using (var tx = session.BeginTransaction())
             {
                 var accountIds = session.Query<Account>()
@@ -80,7 +83,7 @@ namespace BankStatementAnalytics.Services
                 foreach (var category in session.Query<Category>().Where(c => c.OwnerUserId == userId))
                     session.Delete(category);
 
-                session.CreateQuery("delete from ExternalLogin where UserId = :id").SetParameter("id", userId).ExecuteUpdate();
+                if (!Tenancy.AppTenantRuntime.Enabled) session.CreateQuery("delete from ExternalLogin where UserId = :id").SetParameter("id", userId).ExecuteUpdate();
                 foreach (var entity in new[] { nameof(GPaySettlementAllocation), nameof(SplitGroupMember), nameof(SplitGroup),
                     nameof(BillGroupMember), nameof(BillGroup), nameof(GPayEvidenceRecord), nameof(TransactionSplit),
                     nameof(CategorizationRule), nameof(SavingsGoal), nameof(Budget), nameof(Deposit), nameof(RecurringBill), nameof(Tag), nameof(Account) })
@@ -88,6 +91,10 @@ namespace BankStatementAnalytics.Services
                         .SetParameter("id", userId).ExecuteUpdate();
 
                 tx.Commit();
+            }
+            if (Tenancy.AppTenantRuntime.Enabled) {
+                using var shared=Common.Framework.Data.DbHelper.GetSession(); using var sharedTx=shared.BeginTransaction();
+                shared.CreateQuery("delete from ExternalLogin where UserId = :id").SetParameter("id",userId).ExecuteUpdate(); sharedTx.Commit();
             }
 
             // Best-effort file cleanup after the DB commit; a leftover file is harmless.
@@ -104,7 +111,7 @@ namespace BankStatementAnalytics.Services
         {
             try
             {
-                using var session = DbHelper.GetSession();
+                using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
                 using var tx = session.BeginTransaction();
 
                 var defaultTags = new List<string>
@@ -128,7 +135,7 @@ namespace BankStatementAnalytics.Services
         {
             try
             {
-                using var session = DbHelper.GetSession();
+                using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
                 using var tx = session.BeginTransaction();
 
                 // Broad default taxonomy tuned for everyday spending patterns in India

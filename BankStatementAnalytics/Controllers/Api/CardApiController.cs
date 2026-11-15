@@ -23,10 +23,10 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{accountId}/statement-dates")]
         public IActionResult GetStatementDates(int accountId)
         {
-            var account = DbHelper.GetById<Account>((long)accountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)accountId);
             if (account is null || !Owns(account) || account.BankName != Bank.HDFCCreditCard)
                 return NotFound();
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var statements = session.Query<CardStatementSummary>()
                 .Where(s => s.AccountId == accountId && s.StatementDate != null)
                 .OrderBy(s => s.StatementDate).ToList();
@@ -40,11 +40,11 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{accountId}/summary")]
         public IActionResult GetSummary(int accountId)
         {
-            var account = DbHelper.GetById<Account>((long)accountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)accountId);
             if (account is null || !Owns(account) || account.BankName != Bank.HDFCCreditCard)
                 return NotFound();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var summary = LatestSummary(session, accountId);
             var txns = LoadCardTransactions(session, accountId, account.BankName);
@@ -151,13 +151,13 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{accountId}/cycles")]
         public IActionResult GetCycles(int accountId, [FromQuery] int count = 6)
         {
-            var account = DbHelper.GetById<Account>((long)accountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)accountId);
             if (account is null || !Owns(account) || account.BankName != Bank.HDFCCreditCard)
                 return NotFound();
 
             count = Math.Clamp(count, 1, 24);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var summary = LatestSummary(session, accountId);
             var statementDay = summary?.StatementDate?.Day ?? account.StatementDay;
@@ -211,7 +211,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPut("{accountId}/settings")]
         public async System.Threading.Tasks.Task<IActionResult> UpdateSettings(int accountId, [FromBody] CardSettingsRequest request)
         {
-            var account = DbHelper.GetById<Account>((long)accountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)accountId);
             if (account is null || !Owns(account) || account.BankName != Bank.HDFCCreditCard)
                 return NotFound();
 
@@ -225,7 +225,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 if (request.SharedLimitAccountId == account.Id)
                     return BadRequest("A card cannot share its own limit.");
 
-                var target = DbHelper.GetById<Account>(request.SharedLimitAccountId.Value);
+                var target = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>(request.SharedLimitAccountId.Value);
                 if (target is null || !Owns(target) || target.BankName != Bank.HDFCCreditCard)
                     return BadRequest("The linked card must be one of your credit card accounts.");
 
@@ -240,7 +240,7 @@ namespace BankStatementAnalytics.Controllers.Api
             }
 
             // Re-pointing a card that others share with would orphan their links.
-            using (var session = DbHelper.GetSession())
+            using (var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession())
             {
                 var hasDependents = session.Query<Account>()
                     .Any(a => a.SharedLimitAccountId == account.Id);
@@ -251,7 +251,7 @@ namespace BankStatementAnalytics.Controllers.Api
             account.CreditLimit = request.CreditLimit;
             account.StatementDay = request.StatementDay;
             account.SharedLimitAccountId = request.SharedLimitAccountId;
-            await DbHelper.UpdateAsync(account);
+            await BankStatementAnalytics.Tenancy.AppDatabase.UpdateAsync(account);
 
             return Ok(new { account.Id, account.CreditLimit, account.StatementDay, account.SharedLimitAccountId });
         }
@@ -261,7 +261,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("upcoming")]
         public IActionResult GetUpcoming([FromQuery] int withinDays = 7)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var cardAccounts = session.Query<Account>()
                 .Where(a => a.OwnerUserId == CurrentUserId && a.BankName == Bank.HDFCCreditCard)

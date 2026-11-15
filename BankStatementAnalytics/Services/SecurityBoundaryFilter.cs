@@ -15,6 +15,9 @@ public sealed class SecurityBoundaryFilter(IConfiguration configuration, IWebHos
         var request = context.HttpContext.Request;
         var path = request.Path.Value?.ToLowerInvariant() ?? "";
         var publicHosting = configuration.GetValue<bool>("Deployment:PublicHosting");
+        if (Tenancy.AppTenantRuntime.Enabled && path.StartsWith("/api/backup")) {
+            context.Result=new ObjectResult(new {message="Use tenant backup endpoints or operator database backups in schema tenancy mode."}) {StatusCode=403}; return;
+        }
         if (GoogleCloudMode.PublicOnly(context.HttpContext, configuration) &&
             (path is "/api/auth/login" or "/api/auth/register" or "/api/auth/setup" or "/api/auth/change-password"
                 || path == "/api/auth/users" && HttpMethods.IsPost(request.Method) || path.EndsWith("/reset-password")))

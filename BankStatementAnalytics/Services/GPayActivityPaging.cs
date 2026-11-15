@@ -21,7 +21,7 @@ public sealed partial class GPayEvidenceService
         if (page < 0 || pageSize < 1 || pageSize > 100 || sort is not ("date" or "name" or "amount") || direction is not ("asc" or "desc"))
             throw new ArgumentException("Invalid pagination or sorting options.");
 
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var result = await ReadActivityPageAsync(session, userId, kind, page, pageSize, profileId, search, sort, direction);
         var pageRecords = result.Records;
         var totalCount = result.TotalCount;

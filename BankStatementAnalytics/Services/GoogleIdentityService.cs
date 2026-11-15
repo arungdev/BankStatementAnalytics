@@ -19,10 +19,12 @@ public sealed class GoogleIdentityService
         try
         {
             using var session = DbHelper.GetSession();
+            using var transaction = session.BeginTransaction();
+            if (Tenancy.AppTenantRuntime.Enabled)
+                await session.CreateSQLQuery("select pg_advisory_xact_lock(hashtextextended(:identityKey,2))").SetParameter("identityKey",key).ExecuteUpdateAsync();
             var identity = await session.GetAsync<ExternalLogin>(key);
             AppUser user;
             var created = identity == null;
-            using (var transaction = session.BeginTransaction())
             {
                 if (identity == null)
                 {
@@ -45,6 +47,7 @@ public sealed class GoogleIdentityService
                 await transaction.CommitAsync();
             }
             if (created) UserProvisioningService.SeedDefaultsForUser(user.Id);
+            else if (Tenancy.AppTenantRuntime.Enabled) { using var scope=Tenancy.AppTenantRuntime.EnterUser(user.Id,provision:true); }
             return user;
         }
         finally { Creation.Release(); }

@@ -18,7 +18,7 @@ namespace BankStatementAnalytics.Services
 
         public ForecastResult GenerateForecast(long userId, int? accountId = null, string? accountIds = null, int daysAhead = 60)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, userId);
             var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId ?? 0);

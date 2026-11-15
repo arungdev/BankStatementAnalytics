@@ -26,7 +26,7 @@ namespace BankStatementAnalytics.Services
         /// <summary>Unconfirmed debit↔credit pairs across the user's accounts, newest first.</summary>
         public List<TransferPairView> DetectSuggestions(long userId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accounts = OwnedAccountLabels(session, userId);
             if (accounts.Count < 2)
@@ -76,7 +76,7 @@ namespace BankStatementAnalytics.Services
         /// <summary>Confirmed transfer pairs (rows sharing a TransferGroupId), newest first.</summary>
         public List<TransferPairView> GetMarked(long userId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accounts = OwnedAccountLabels(session, userId);
             if (accounts.Count == 0)
@@ -105,7 +105,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<Guid?> MarkPairAsync(long userId, TransferLegKey fromLeg, TransferLegKey toLeg)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var owned = AccountAccess.OwnedIdSet(session, userId);
             if (!owned.Contains(fromLeg.AccountId) || !owned.Contains(toLeg.AccountId)
@@ -132,7 +132,7 @@ namespace BankStatementAnalytics.Services
         /// <summary>Unlinks a confirmed pair so both rows count in analytics again.</summary>
         public async Task<bool> UnmarkAsync(long userId, Guid groupId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var owned = AccountAccess.OwnedIds(session, userId);
             var legs = session.Query<BankTransaction>()

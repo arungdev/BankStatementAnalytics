@@ -11,7 +11,7 @@ namespace BankStatementAnalytics.Services
     {
         public List<DuplicateAlert> DetectDuplicates(long userId, int lookbackDays = 90)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = AccountAccess.OwnedIds(session, userId);
             if (accountIds.Count == 0)

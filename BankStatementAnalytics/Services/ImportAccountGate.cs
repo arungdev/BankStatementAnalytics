@@ -4,22 +4,23 @@ namespace BankStatementAnalytics.Services;
 public static class ImportAccountGate
 {
     private sealed class Entry { public readonly SemaphoreSlim Semaphore = new(1, 1); public int Users; }
-    private static readonly Dictionary<long, Entry> Entries = new();
+    private static readonly Dictionary<(Guid,long), Entry> Entries = new();
     private static readonly object Sync = new();
 
     public static async Task<IDisposable> AcquireAsync(long accountId)
     {
+        var key=(Tenancy.AppTenantRuntime.Enabled ? Tenancy.AppTenantRuntime.Context.TenantId : Guid.Empty,accountId);
         Entry entry;
         lock (Sync)
         {
-            if (!Entries.TryGetValue(accountId, out entry!)) Entries[accountId] = entry = new Entry();
+            if (!Entries.TryGetValue(key, out entry!)) Entries[key] = entry = new Entry();
             entry.Users++;
         }
         await entry.Semaphore.WaitAsync();
-        return new Lease(accountId, entry);
+        return new Lease(key, entry);
     }
 
-    private sealed class Lease(long accountId, Entry entry) : IDisposable
+    private sealed class Lease((Guid,long) accountId, Entry entry) : IDisposable
     {
         private int _disposed;
         public void Dispose()

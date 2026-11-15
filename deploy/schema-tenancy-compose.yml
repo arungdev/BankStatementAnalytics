@@ -1,0 +1,10 @@
+# Explicit opt-in only. Rehearse migration and back up the database and key ring first.
+services:
+  bankstatementanalytics:
+    environment:
+      Tenancy__Enabled: 'true'
+      Tenancy__OperatorConnectionString: Host=db;Port=5432;Database=bankstatements;Username=bsa_operator
+      Tenancy__OperatorPasswordFile: /run/secrets/db_operator_password
+      Tenancy__MaximumPoolSize: '2'
+    secrets:
+      - db_operator_password

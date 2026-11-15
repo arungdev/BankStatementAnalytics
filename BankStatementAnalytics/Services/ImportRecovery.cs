@@ -11,7 +11,7 @@ public static class ImportRecovery
     // Complete are committed together, so Pending never contains committed rows.
     public static void RecoverPending()
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var pending = session.Query<Upload>().Where(u => u.ImportStatus == "Pending" || u.ImportStatus == "Deleting").ToList();
         foreach (var upload in pending)
         {
@@ -30,7 +30,7 @@ public static class ImportRecovery
 
     public static void ProtectLegacyPasswords(StatementPasswordProtector protector)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         using var transaction = session.BeginTransaction();
         foreach (var account in session.Query<Account>().Where(a => a.StatementPassword != null).ToList())
             if (!string.IsNullOrEmpty(account.StatementPassword) && !protector.IsProtected(account.StatementPassword))

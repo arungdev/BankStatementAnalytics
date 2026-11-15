@@ -35,7 +35,7 @@ namespace BankStatementAnalytics.Services
 
         public DepositSummary GetSummary(long userId, IReadOnlyCollection<long>? scope = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = ScopedAccountIds(session, userId, scope);
             var summary = new DepositSummary();
@@ -163,7 +163,7 @@ namespace BankStatementAnalytics.Services
         public DepositPeriodSummary GetContributionsInPeriod(
             long userId, DateTime start, DateTime end, IReadOnlyCollection<long>? scope = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var result = new DepositPeriodSummary();
             var accountIds = ScopedAccountIds(session, userId, scope);
@@ -229,7 +229,7 @@ namespace BankStatementAnalytics.Services
         public List<DepositTxn> GetTransactions(
             long userId, string kind, string matchKey, IReadOnlyCollection<long>? scope = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = ScopedAccountIds(session, userId, scope);
             if (accountIds.Count == 0 || string.IsNullOrWhiteSpace(matchKey))

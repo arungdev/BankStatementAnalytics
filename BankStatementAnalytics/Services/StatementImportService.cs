@@ -72,7 +72,7 @@ namespace BankStatementAnalytics.Services
             // it would report a password failure for a statement already imported
             // (the watch folder still holds the source file, and the password used
             // for a manual upload is never persisted to the account).
-            using (var checkSession = DbHelper.GetSession())
+            using (var checkSession = BankStatementAnalytics.Tenancy.AppDatabase.GetSession())
             {
                 bool alreadyUploaded = checkSession.Query<Upload>()
                     .Any(u => u.AccountId == accountId && u.FileHash == fileHash);
@@ -134,7 +134,7 @@ namespace BankStatementAnalytics.Services
             // makes manual/watch-folder races safe across processes too.
             try
             {
-                using var session = DbHelper.GetSession();
+                using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
                 using var reservation = session.BeginTransaction();
                 await session.SaveAsync(upload);
                 await session.SaveAsync(tx);
@@ -142,7 +142,7 @@ namespace BankStatementAnalytics.Services
             }
             catch
             {
-                using var check = DbHelper.GetSession();
+                using var check = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
                 var reserved = check.Query<Upload>().FirstOrDefault(u => u.AccountId == accountId && u.FileHash == fileHash);
                 if (reserved != null && reserved.Id != upload.Id)
                     return new StatementImportResult { Outcome = ImportOutcome.Duplicate,
@@ -162,7 +162,7 @@ namespace BankStatementAnalytics.Services
             {
                 if (retainOriginal) await File.WriteAllBytesAsync(path, bytes);
                 var prepared = _textService.Prepare(bytes, fileName, accountId, upload.Id, format, password);
-                using var session = DbHelper.GetSession();
+                using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
                 using var import = session.BeginTransaction();
                 // Serialize overlapping statements for this account; otherwise
                 // two different files can both discover the same row as new.
@@ -181,7 +181,7 @@ namespace BankStatementAnalytics.Services
             {
                 // A lost connection during commit has an uncertain outcome. Never
                 // delete a completed import: its status committed with its rows.
-                using var session = DbHelper.GetSession();
+                using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
                 var stored = await session.GetAsync<Upload>(upload.Id);
                 if (stored?.ImportStatus == "Complete")
                     return new StatementImportResult { Outcome = ImportOutcome.Success, Upload = stored,

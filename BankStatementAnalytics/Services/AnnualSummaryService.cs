@@ -11,7 +11,7 @@ namespace BankStatementAnalytics.Services
     {
         public AnnualSummaryReport GenerateAnnualSummary(long userId, int year, int? accountId = null, string? accountIds = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, userId);
             var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId ?? 0);

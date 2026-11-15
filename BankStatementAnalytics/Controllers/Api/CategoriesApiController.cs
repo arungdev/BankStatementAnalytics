@@ -43,7 +43,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public IActionResult GetAll()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var categories = session.Query<Category>()
                 .Where(x => x.OwnerUserId == CurrentUserId)
                 .FetchMany(x => x.SubCategories)
@@ -70,7 +70,7 @@ namespace BankStatementAnalytics.Controllers.Api
             // of "frequently used" chips — clamp rather than 500 on a hand-edited URL.
             limit = Math.Clamp(limit, 1, 50);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = session.Query<Account>()
                 .Where(a => a.OwnerUserId == CurrentUserId)
@@ -108,7 +108,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!TryNormalizeName(req?.Name, "Category", out var name, out var error))
                 return BadRequest(error);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             if (NameTaken(session, name))
@@ -127,7 +127,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!TryNormalizeName(req?.Name, "Category", out var name, out var error))
                 return BadRequest(error);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var category = session.Get<Category>(id);
@@ -158,7 +158,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var category = session.Get<Category>(id);
@@ -176,7 +176,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!TryNormalizeName(req?.Name, "Sub-category", out var name, out var error))
                 return BadRequest(error);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var category = session.Get<Category>(id);
@@ -206,7 +206,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (target.Length == 0)
                 return BadRequest("Sub-category name is required.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var category = session.Get<Category>(id);

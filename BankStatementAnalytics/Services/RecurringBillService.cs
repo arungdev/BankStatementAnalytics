@@ -40,7 +40,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public List<BillCandidate> DetectCandidates(long userId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = OwnedAccountIds(session, userId);
             if (accountIds.Count == 0)
@@ -200,7 +200,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public List<BillView> GetConfirmedBillViews(long userId, bool upcomingOnly = false, int withinDays = 7)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var bills = session.Query<RecurringBill>()
                 .Where(b => b.OwnerUserId == userId && b.Status == "Confirmed")
@@ -320,7 +320,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public List<BillTransaction> GetMatchingTransactions(long userId, RecurringBill bill)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = OwnedAccountIds(session, userId);
             if (accountIds.Count == 0)
@@ -369,7 +369,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public List<BillPeriodView> GetPaymentsInPeriod(long userId, DateTime start, DateTime end)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var bills = session.Query<RecurringBill>()
                 .Where(b => b.OwnerUserId == userId && b.Status == "Confirmed")

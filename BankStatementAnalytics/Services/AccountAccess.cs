@@ -11,7 +11,7 @@ namespace BankStatementAnalytics.Services
     /// <summary>
     /// Central place for resolving which accounts the current user owns and which of a set of
     /// requested account ids are actually theirs. Replaces the copy-pasted
-    /// <c>DbHelper.GetAll&lt;Account&gt;().Where(a =&gt; a.OwnerUserId == ...)</c> whole-table scans
+    /// <c>BankStatementAnalytics.Tenancy.AppDatabase.GetAll&lt;Account&gt;().Where(a =&gt; a.OwnerUserId == ...)</c> whole-table scans
     /// (now filtered server-side) and the duplicated comma-separated accountIds parsing across
     /// the dashboard/trends/budgets/reports/statement controllers.
     /// </summary>
@@ -33,7 +33,7 @@ namespace BankStatementAnalytics.Services
         /// <summary>Owned account ids as a set, opening a short-lived session of its own.</summary>
         public static async Task<HashSet<long>> OwnedIdSetAsync(long userId)
         {
-            var ids = await DbHelper.QueryAsync<Account, long>(a => a.OwnerUserId == userId, a => a.Id);
+            var ids = await BankStatementAnalytics.Tenancy.AppDatabase.QueryAsync<Account, long>(a => a.OwnerUserId == userId, a => a.Id);
             return ids.ToHashSet();
         }
 

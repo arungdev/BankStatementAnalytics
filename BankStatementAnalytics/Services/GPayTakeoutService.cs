@@ -31,7 +31,7 @@ namespace BankStatementAnalytics.Services
 
         public static async Task<HashSet<string>> GetConfiguredUserNamesAsync(long userId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             return await GPayEvidenceService.OwnerNames(session, userId);
         }
 
@@ -41,7 +41,7 @@ namespace BankStatementAnalytics.Services
                 ? await GetProfileAsync(userId, profileId) : await LoadPrimaryConfigAsync(userId);
 
             // Populate current stats from database
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var billGroups = await session.Query<BillGroup>().Where(b => b.OwnerUserId == userId && b.GPayProfileId == config.ProfileId).ToListAsync();
             var splits = await session.Query<SplitGroup>().Where(s => s.OwnerUserId == userId && s.GPayProfileId == config.ProfileId).ToListAsync();
             var matchedCount = splits.Count(s => s.ParentBankReference != null) +
@@ -156,8 +156,9 @@ namespace BankStatementAnalytics.Services
         {
             if (SecurityRuntime.PublicHosting) return;
             await SweepAdditionalProfilesAsync(stoppingToken);
-            using var session = DbHelper.GetSession();
+            using var session = Common.Framework.Data.DbHelper.GetSession();
             var users = await session.Query<AppUser>().Where(user => user.IsActive && user.Role == AppRole.Admin).Select(user => user.Id).ToListAsync(stoppingToken);
+            if (Tenancy.AppTenantRuntime.Enabled) users=users.Where(id=>id==Tenancy.AppTenantRuntime.CurrentUserId).ToList();
             foreach (var userId in users)
             {
                 stoppingToken.ThrowIfCancellationRequested();
@@ -248,7 +249,7 @@ namespace BankStatementAnalytics.Services
 
             // Share the configuration/deletion gate so a profile cannot disappear during import.
             using var gate = await ImportAccountGate.AcquireAsync(-userId);
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             // 1. Identify the user's identity / name
             var ownedAccounts = await session.Query<Account>()

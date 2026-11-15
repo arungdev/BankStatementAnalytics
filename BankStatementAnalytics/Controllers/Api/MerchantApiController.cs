@@ -48,7 +48,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public IActionResult GetAll([FromQuery] long accountId = 0, [FromQuery] string? accountIds = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var (status, scopeIds) = AccountAccess.ResolveScope(ownedAccountIds, accountIds, accountId);
@@ -103,7 +103,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{id}")]
         public IActionResult GetById(int id, [FromQuery] long accountId = 0, [FromQuery] string? accountIds = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var merchantEntity = session.Query<Merchant>()
                 .Where(x => x.Id == id)
@@ -180,7 +180,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateMerchantRequest request)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var merchantEntity = session.Get<Merchant>(id);
@@ -222,7 +222,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request?.Ids == null || !request.Ids.Any())
                 return BadRequest("Invalid request.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var ids = request.Ids.Distinct().ToList();
@@ -252,7 +252,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("category-suggestions")]
         public IActionResult CategorySuggestions()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var merchants = session.Query<Merchant>()
                 .Where(m => m.OwnerUserId == CurrentUserId)
@@ -274,7 +274,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request?.Items == null || !request.Items.Any())
                 return BadRequest("Invalid request.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var byId = request.Items
@@ -308,7 +308,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request == null || request.SecondaryIds == null || !request.SecondaryIds.Any())
                 return BadRequest("Invalid request.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var primary = session.Query<Merchant>()
@@ -395,7 +395,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request == null || string.IsNullOrWhiteSpace(request.AliasName))
                 return BadRequest("Invalid request.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var primary = session.Get<Merchant>(request.PrimaryId);

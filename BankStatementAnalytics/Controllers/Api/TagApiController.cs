@@ -47,7 +47,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public IActionResult GetAll()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var tags = session.Query<Tag>()
                 .Where(t => t.OwnerUserId == CurrentUserId)
                 .OrderBy(t => t.Name)
@@ -112,7 +112,7 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             limit = Math.Clamp(limit, 1, 50);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = session.Query<Account>()
                 .Where(a => a.OwnerUserId == CurrentUserId)
@@ -157,7 +157,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!TryNormalizeName(req?.Name, out var name, out var error))
                 return BadRequest(error);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             if (NameTaken(session, name))
@@ -176,7 +176,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (!TryNormalizeName(req?.Name, out var name, out var error))
                 return BadRequest(error);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var tag = session.Get<Tag>(id);
@@ -229,7 +229,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(long id)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var tag = session.Get<Tag>(id);

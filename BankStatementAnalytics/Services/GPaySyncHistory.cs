@@ -33,7 +33,7 @@ public partial class GPayTakeoutService
         profileId = string.IsNullOrWhiteSpace(profileId) || profileId == "default" ? null : profileId;
         if (profileId != null) _ = await GetProfileAsync(userId, profileId);
         var run = new GPaySyncRun { ProfileId = profileId, Trigger = trigger, FileName = Path.GetFileName(fileName) };
-        using (var session = Common.Framework.Data.DbHelper.GetSession()) using (var tx = session.BeginTransaction()) {
+        using (var session = Tenancy.AppDatabase.GetSession()) using (var tx = session.BeginTransaction()) {
             var record = new GPayEvidenceRecord { OwnerUserId = userId, Kind = "SyncHistory", SourceKey = SyncPrefix(profileId) + Guid.NewGuid().ToString("N"), Payload = JsonSerializer.Serialize(run) };
             await session.SaveAsync(record); run.Id = record.Id;
             await tx.CommitAsync();
@@ -50,7 +50,7 @@ public partial class GPayTakeoutService
             run.Added = run.Changes.Count(change => change.Action == "Added");
             run.Updated = run.Changes.Count(change => change.Action == "Updated");
             run.BankLinks = run.Changes.Count(change => change.Action == "Linked");
-            using var session = Common.Framework.Data.DbHelper.GetSession(); using var tx = session.BeginTransaction();
+            using var session = Tenancy.AppDatabase.GetSession(); using var tx = session.BeginTransaction();
             var record = await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(r => r.Id == run.Id && r.OwnerUserId == userId && r.Kind == "SyncHistory");
             if (record != null) { record.Payload = JsonSerializer.Serialize(run); await session.UpdateAsync(record); }
             await tx.CommitAsync();
@@ -62,7 +62,7 @@ public partial class GPayTakeoutService
         profileId = string.IsNullOrWhiteSpace(profileId) || profileId == "default" ? null : profileId;
         if (profileId != null) _ = await GetProfileAsync(userId, profileId);
         if (page < 0 || pageSize < 1 || pageSize > 100) throw new ArgumentException("Invalid history page.");
-        using var session = Common.Framework.Data.DbHelper.GetSession();
+        using var session = Tenancy.AppDatabase.GetSession();
         var prefix = SyncPrefix(profileId);
         var query = session.Query<GPayEvidenceRecord>().Where(r => r.OwnerUserId == userId && r.Kind == "SyncHistory" && r.SourceKey.StartsWith(prefix));
         var total = await query.CountAsync();
@@ -76,7 +76,7 @@ public partial class GPayTakeoutService
     {
         if (page < 0 || pageSize < 1 || pageSize > 100) throw new ArgumentException("Invalid change page.");
         profileId = string.IsNullOrWhiteSpace(profileId) || profileId == "default" ? null : profileId;
-        using var session = Common.Framework.Data.DbHelper.GetSession();
+        using var session = Tenancy.AppDatabase.GetSession();
         var prefix = SyncPrefix(profileId);
         var record = await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(r => r.OwnerUserId == userId && r.Kind == "SyncHistory" && r.Id == id && r.SourceKey.StartsWith(prefix))
             ?? throw new ArgumentException("Sync history not found for this profile.");

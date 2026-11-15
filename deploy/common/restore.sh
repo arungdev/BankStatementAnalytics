@@ -32,6 +32,13 @@ elif [[ "${REQUIRE_BACKUP_ENCRYPTION:-false}" == true && "${ALLOW_LEGACY_PLAINTE
 fi
 test -s "$backup_dir/files.tar.gz"
 if [[ -n "${DB_SERVICE:-}" ]]; then test -s "$backup_dir/database.dump"; fi
+if [[ -n "${DB_SERVICE:-}" ]]; then
+    schema_listing="$(docker compose exec -T "$DB_SERVICE" pg_restore --list < "$backup_dir/database.dump")" || { echo 'Invalid database dump; refusing to change the database.' >&2; exit 2; }
+    if grep -Eq ' SCHEMA - tn_[a-f0-9]{32} ' <<< "$schema_listing"; then
+        echo 'Schema tenancy snapshot detected. Use the documented operator restore workflow to restore tenant roles, grants and Data Protection keys; this legacy restore command will not drop the database.' >&2
+        exit 2
+    fi
+fi
 if [[ -f "$backup_dir/project.env" ]]; then
     for key in APP_SERVICE DB_NAME DB_USER DATA_ROOT DATA_DIRECTORIES; do
         saved="$(grep "^${key}=" "$backup_dir/project.env" | tr -d '\r' || true)"

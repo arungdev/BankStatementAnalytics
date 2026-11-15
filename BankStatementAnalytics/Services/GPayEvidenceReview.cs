@@ -10,7 +10,7 @@ public sealed partial class GPayEvidenceService
 {
     public async Task<object> Workspace(long userId)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var records = await session.Query<GPayEvidenceRecord>().Where(r => r.OwnerUserId == userId && r.Kind != "SyncHistory").ToListAsync();
         var groups = await session.Query<SplitGroup>().Where(g => g.OwnerUserId == userId).ToListAsync();
         var members = await session.Query<SplitGroupMember>().Where(m => m.OwnerUserId == userId).ToListAsync();
@@ -84,7 +84,7 @@ public sealed partial class GPayEvidenceService
 
     public async Task ApplyRepair(long userId, int recordId, string expected)
     {
-        using var session = DbHelper.GetSession(); using var transaction = session.BeginTransaction();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession(); using var transaction = session.BeginTransaction();
         var record = await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(r => r.Id == recordId && r.OwnerUserId == userId && r.Kind == "Expense") ?? throw new ArgumentException("Source expense not found.");
         var p = JsonSerializer.Deserialize<EvidencePayload>(record.Payload, Json)!;
         var e = JsonSerializer.Deserialize<GPayExpenseItem>(p.Data, Json)!;
@@ -120,7 +120,7 @@ public sealed partial class GPayEvidenceService
 
     public async Task UndoRepair(long userId, int auditId)
     {
-        using var session=DbHelper.GetSession();using var tx=session.BeginTransaction();
+        using var session=BankStatementAnalytics.Tenancy.AppDatabase.GetSession();using var tx=session.BeginTransaction();
         var record=await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(r=>r.OwnerUserId==userId&&r.Id==auditId&&r.Kind=="RepairAudit")??throw new ArgumentException("Repair audit not found.");
         var audit=JsonSerializer.Deserialize<JsonElement>(record.Payload);
         var id=audit.GetProperty("SplitId").GetInt32();
@@ -146,7 +146,7 @@ public sealed partial class GPayEvidenceService
     public async Task AddOwnerAlias(long userId, string alias)
     {
         alias = Normalize(alias); if (alias.Length < 2 || alias.Length > 250) throw new ArgumentException("Enter an exact owner display name, 2–250 characters.");
-        using var session = DbHelper.GetSession(); using var tx = session.BeginTransaction();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession(); using var tx = session.BeginTransaction();
         var key = Hash(alias); if (!await session.Query<GPayEvidenceRecord>().AnyAsync(r => r.OwnerUserId == userId && r.Kind == "OwnerAlias" && r.SourceKey == key))
             await session.SaveAsync(new GPayEvidenceRecord { OwnerUserId = userId, Kind = "OwnerAlias", SourceKey = key, Payload = JsonSerializer.Serialize(alias) });
         await tx.CommitAsync();

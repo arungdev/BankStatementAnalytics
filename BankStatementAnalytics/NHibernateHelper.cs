@@ -54,6 +54,39 @@ namespace BankStatementAnalytics
                     {
                         mapper.AddMapping<AppUserMap>();
                         mapper.AddMapping<ExternalLoginMap>();
+                        if (!Tenancy.AppTenantRuntime.Enabled) AddFinancialMappings(mapper);
+                    }, null,
+                    isPostgres
+                        ? db =>
+                        {
+                            db.ConnectionString = isEmbedded ? EmbeddedPostgresManager.ConnectionString : config["Database:PostgresConnectionString"];
+                            db.Driver<NHibernate.Driver.NpgsqlDriver>();
+                            db.Dialect<NHibernate.Dialect.PostgreSQL83Dialect>();
+                        }
+                        : null,
+                    configureMigrations: Tenancy.AppTenantRuntime.Enabled ? null : AppMigrations.Register);
+
+                    if (!Tenancy.AppTenantRuntime.Enabled) CreateExpressionIndexes();
+
+                    return NHibernateManager.SessionFactory;
+                }
+                catch (Exception ex)
+                {
+                    Log.Exception(ex);
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Layers config the same way the ASP.NET host does: base file, then the
+        /// environment-specific override, then environment variables. This lets a
+        /// Development override change the DB provider, and lets secrets like the
+        /// Postgres password come from an env var (Database__PostgresConnectionString)
+        /// instead of being committed in appsettings.json.
+        /// </summary>
+        public static void AddFinancialMappings(NHibernate.Mapping.ByCode.ModelMapper mapper)
+        {
                         mapper.AddMapping<AccountMap>();
                         mapper.AddMapping<MerchantUpiMap>();
                         mapper.AddMapping<MerchantMap>();
@@ -77,36 +110,8 @@ namespace BankStatementAnalytics
                         mapper.AddMapping<GPaySettlementAllocationMap>();
                         mapper.AddMapping<BillGroupMap>();
                         mapper.AddMapping<BillGroupMemberMap>();
-                    }, null,
-                    isPostgres
-                        ? db =>
-                        {
-                            db.ConnectionString = isEmbedded ? EmbeddedPostgresManager.ConnectionString : config["Database:PostgresConnectionString"];
-                            db.Driver<NHibernate.Driver.NpgsqlDriver>();
-                            db.Dialect<NHibernate.Dialect.PostgreSQL83Dialect>();
-                        }
-                        : null,
-                    configureMigrations: AppMigrations.Register);
-
-                    CreateExpressionIndexes();
-
-                    return NHibernateManager.SessionFactory;
-                }
-                catch (Exception ex)
-                {
-                    Log.Exception(ex);
-                    throw;
-                }
-            }
         }
 
-        /// <summary>
-        /// Layers config the same way the ASP.NET host does: base file, then the
-        /// environment-specific override, then environment variables. This lets a
-        /// Development override change the DB provider, and lets secrets like the
-        /// Postgres password come from an env var (Database__PostgresConnectionString)
-        /// instead of being committed in appsettings.json.
-        /// </summary>
         private static IConfigurationRoot BuildConfig(string appDir)
         {
             var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";

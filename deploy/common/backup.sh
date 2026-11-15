@@ -21,7 +21,13 @@ cleanup() {
 trap cleanup EXIT
 # Application is stopped for BOTH snapshots so DB, uploads and keys agree.
 if [[ -n "${DB_SERVICE:-}" ]]; then
-    docker compose exec -T "$DB_SERVICE" pg_dump -U "$DB_USER" -d "$DB_NAME" -Fc > "$backup_dir/database.dump"
+    dump_user="$DB_USER"
+    has_tenants="$(docker compose exec -T "$DB_SERVICE" psql -X -U "$DB_USER" -d "$DB_NAME" -Atc "select exists(select 1 from pg_namespace where nspname ~ '^tn_[a-f0-9]{32}$')")"
+    if [[ "$has_tenants" == t ]]; then
+        [[ -n "${DB_OPERATOR_USER:-}" ]] || { echo 'Schema tenancy backups require a separate database operator.' >&2; exit 2; }
+        dump_user="$DB_OPERATOR_USER"
+    fi
+    docker compose exec -T "$DB_SERVICE" pg_dump -U "$dump_user" -d "$DB_NAME" -Fc > "$backup_dir/database.dump"
 fi
 cp deploy/project.env "$backup_dir/project.env"
 docker compose run --rm --no-deps -T --entrypoint tar "$APP_SERVICE" \

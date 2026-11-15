@@ -46,7 +46,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{id}/transactions")]
         public IActionResult GetBillTransactions(int id)
         {
-            var bill = DbHelper.GetById<RecurringBill>(id);
+            var bill = BankStatementAnalytics.Tenancy.AppDatabase.GetById<RecurringBill>(id);
             if (bill is null || !Owns(bill)) return NotFound();
 
             return Ok(_service.GetMatchingTransactions(CurrentUserId, bill));
@@ -83,7 +83,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 ? RecurringBillService.BuildManualKey(req.Name)
                 : req.MatchKey.Trim();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var bill = new RecurringBill
@@ -120,7 +120,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (req == null || string.IsNullOrWhiteSpace(req.MatchKey))
                 return BadRequest("matchKey is required.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var matchKey = req.MatchKey.Trim();
@@ -151,7 +151,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] BillDto req)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var bill = session.Get<RecurringBill>(id);
@@ -174,7 +174,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var bill = session.Get<RecurringBill>(id);

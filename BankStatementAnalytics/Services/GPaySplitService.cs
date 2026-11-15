@@ -43,7 +43,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public List<GPaySplitSuggestionDto> DetectCandidates(long userId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = AccountAccess.OwnedIds(session, userId);
             if (accountIds.Count == 0) return new List<GPaySplitSuggestionDto>();
@@ -325,7 +325,7 @@ namespace BankStatementAnalytics.Services
         {
             var userNames = await GPayTakeoutService.GetConfiguredUserNamesAsync(userId);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var groups = await session.Query<SplitGroup>()
                 .Where(g => g.OwnerUserId == userId)
                 .OrderByDescending(g => g.Date)
@@ -341,7 +341,7 @@ namespace BankStatementAnalytics.Services
         {
             var userNames = await GPayTakeoutService.GetConfiguredUserNamesAsync(userId);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var group = await session.Query<SplitGroup>()
                 .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerUserId == userId);
 
@@ -353,7 +353,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<SplitGroupDetailDto> CreateGroupAsync(long userId, CreateSplitGroupRequest req)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             string? groupName = req.GroupName;
@@ -442,7 +442,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<SplitGroupDetailDto?> UpdateGroupAsync(long userId, int groupId, UpdateSplitGroupRequest req)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var group = await session.Query<SplitGroup>()
@@ -470,7 +470,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<SplitGroupMemberDto?> AddMemberAsync(long userId, int groupId, AddSplitMemberRequest req)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var group = await session.Query<SplitGroup>()
@@ -519,7 +519,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<SplitGroupMemberDto?> UpdateMemberAsync(long userId, int groupId, int memberId, UpdateSplitMemberRequest req)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var member = await session.Query<SplitGroupMember>()
@@ -558,7 +558,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<SplitGroupMemberDto?> LinkTransactionToMemberAsync(long userId, int groupId, int memberId, LinkTransactionRequest req)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var member = await session.Query<SplitGroupMember>()
@@ -609,7 +609,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<SplitGroupMemberDto?> UnlinkTransactionFromMemberAsync(long userId, int groupId, int memberId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var member = await session.Query<SplitGroupMember>()
@@ -641,7 +641,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<bool> DeleteMemberAsync(long userId, int groupId, int memberId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var member = await session.Query<SplitGroupMember>()
@@ -669,7 +669,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<bool> DeleteGroupAsync(long userId, int groupId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var group = await session.Query<SplitGroup>()
@@ -694,7 +694,7 @@ namespace BankStatementAnalytics.Services
             string? search = null,
             int limit = 50)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var accountIds = AccountAccess.OwnedIds(session, userId);
             if (accountIds.Count == 0) return new List<CandidateTransactionDto>();
 
@@ -755,7 +755,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<List<ParticipantSuggestionDto>> GetParticipantSuggestionsAsync(long userId, string? search = null, int limit = 20)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var accountIds = AccountAccess.OwnedIds(session, userId);
 
             var querySearch = search?.Trim().ToLowerInvariant();
@@ -872,7 +872,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<List<BillGroupDto>> GetBillGroupsAsync(long userId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var groups = await session.Query<BillGroup>()
                 .Where(g => g.OwnerUserId == userId)
@@ -983,7 +983,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<BillGroupDto> CreateBillGroupAsync(long userId, CreateBillGroupRequest req)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var group = new BillGroup
@@ -1025,7 +1025,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<BillGroupDto?> UpdateBillGroupAsync(long userId, int groupId, UpdateBillGroupRequest req)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var group = await session.Query<BillGroup>()
@@ -1049,7 +1049,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<bool> DeleteBillGroupAsync(long userId, int groupId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var group = await session.Query<BillGroup>()
@@ -1083,7 +1083,7 @@ namespace BankStatementAnalytics.Services
         {
             if (string.IsNullOrWhiteSpace(req.Name)) return null;
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var group = await session.Query<BillGroup>()
@@ -1116,7 +1116,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public async Task<bool> RemoveBillGroupMemberAsync(long userId, int groupId, int memberId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var member = await session.Query<BillGroupMember>()

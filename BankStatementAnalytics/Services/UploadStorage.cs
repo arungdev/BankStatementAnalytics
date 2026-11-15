@@ -7,8 +7,9 @@ namespace BankStatementAnalytics.Services
     // before this layout existed (flat GUID names) still resolve.
     public static class UploadStorage
     {
-        public static string Root =>
+        public static string BaseRoot =>
             Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Uploads");
+        public static string Root => Tenancy.AppTenantRuntime.Enabled ? Path.Combine(BaseRoot,Tenancy.AppTenantRuntime.Context.TenantId.ToString("N")) : BaseRoot;
 
         public static string AccountFolderName(Account account)
         {

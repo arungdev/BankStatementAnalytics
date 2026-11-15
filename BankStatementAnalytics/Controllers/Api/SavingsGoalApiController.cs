@@ -17,7 +17,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public async Task<IActionResult> GetGoals()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var goals = await session.Query<SavingsGoal>()
                 .Where(g => g.OwnerUserId == CurrentUserId)
@@ -68,7 +68,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("summary")]
         public async Task<IActionResult> GetSummary()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var goals = await session.Query<SavingsGoal>()
                 .Where(g => g.OwnerUserId == CurrentUserId && g.Status == "Active")
@@ -98,7 +98,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (req.TargetAmount <= 0)
                 return BadRequest("Target amount must be greater than zero.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var goal = new SavingsGoal
@@ -130,7 +130,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (req.TargetAmount <= 0)
                 return BadRequest("Target amount must be greater than zero.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var goal = await session.GetAsync<SavingsGoal>(id);
@@ -158,7 +158,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (req == null || req.Amount <= 0)
                 return BadRequest("Contribution amount must be greater than zero.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var goal = await session.GetAsync<SavingsGoal>(id);
@@ -181,7 +181,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var goal = await session.GetAsync<SavingsGoal>(id);

@@ -11,7 +11,7 @@ public sealed partial class GPayEvidenceService
 {
     public async Task<object> Candidates(long userId, int? memberId, int? recordId, int days = 7)
     {
-        using var session = DbHelper.GetSession(); var names = await OwnerNames(session, userId);
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession(); var names = await OwnerNames(session, userId);
         decimal amount; DateTime date; bool credit; string? counterparty = null; string? suffix = null; string? sourceProfileId = null;
         if (memberId.HasValue) {
             var m = await session.Query<SplitGroupMember>().FirstOrDefaultAsync(m => m.Id == memberId && m.OwnerUserId == userId) ?? throw new ArgumentException("Participant not found.");
@@ -57,7 +57,7 @@ public sealed partial class GPayEvidenceService
     public async Task ReviewSourceMatch(long userId, ReviewSourceRequest req)
     {
         req.MatchMethod = "Manual";
-        using var session = DbHelper.GetSession(); using var transaction = session.BeginTransaction();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession(); using var transaction = session.BeginTransaction();
         var source = await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(r => r.Id == req.RecordId && r.OwnerUserId == userId) ?? throw new ArgumentException("Source not found.");
         var key = Hash($"{source.Id}|{req.AccountId}|{req.BankReference}|{req.BankType}|{req.TransactionType}");
         if (req.Accept) {

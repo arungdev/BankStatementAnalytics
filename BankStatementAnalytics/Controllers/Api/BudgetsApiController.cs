@@ -20,7 +20,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public async Task<IActionResult> GetBudgets([FromQuery] int monthsAgo = 0)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIds(session, CurrentUserId);
 
@@ -64,7 +64,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("months")]
         public async Task<IActionResult> GetMonths()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
 
@@ -100,7 +100,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("suggestions")]
         public async Task<IActionResult> GetSuggestions()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIds(session, CurrentUserId);
             if (ownedIds.Count == 0)
@@ -144,7 +144,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{id}/transactions")]
         public async Task<IActionResult> GetBudgetTransactions(int id, [FromQuery] int monthsAgo = 0)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var budget = session.Get<Budget>(id);
             if (!Owns(budget)) return NotFound();
@@ -229,7 +229,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var category = req.Category.Trim();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var exists = session.Query<Budget>()
@@ -259,7 +259,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (req == null || req.MonthlyLimit <= 0)
                 return BadRequest("MonthlyLimit must be greater than zero.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var budget = session.Get<Budget>(id);
@@ -278,7 +278,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var budget = session.Get<Budget>(id);

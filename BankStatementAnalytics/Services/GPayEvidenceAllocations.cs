@@ -11,7 +11,7 @@ public sealed partial class GPayEvidenceService
     public async Task Allocate(long userId, AllocateRepaymentRequest req)
     {
         if (req.Amount <= 0 || decimal.Round(req.Amount, 2) != req.Amount) throw new ArgumentException("Allocation must be positive and in whole paise.");
-        using var session = DbHelper.GetSession(); using var transaction = session.BeginTransaction();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession(); using var transaction = session.BeginTransaction();
         var ids = AccountAccess.OwnedIds(session, userId);
         var payment = await session.Query<BankTransaction>().FirstOrDefaultAsync(t => ids.Contains(t.AccountId) && t.AccountId == req.AccountId && t.BankReference == req.BankReference && t.BankType == req.BankType && t.TransactionType == req.TransactionType && t.TransferGroupId == null) ?? throw new ArgumentException("Owned bank transaction not found.");
         await session.LockAsync(payment, LockMode.Upgrade);
@@ -38,7 +38,7 @@ public sealed partial class GPayEvidenceService
 
     public async Task RemoveAllocation(long userId, int id)
     {
-        using var session=DbHelper.GetSession();using var tx=session.BeginTransaction();
+        using var session=BankStatementAnalytics.Tenancy.AppDatabase.GetSession();using var tx=session.BeginTransaction();
         var a=await session.Query<GPaySettlementAllocation>().FirstOrDefaultAsync(a=>a.OwnerUserId==userId&&a.Id==id) ?? throw new ArgumentException("Allocation not found.");
         var m=await session.Query<SplitGroupMember>().FirstOrDefaultAsync(m=>m.OwnerUserId==userId&&m.Id==a.MemberId) ?? throw new ArgumentException("Participant not found.");
         await session.LockAsync(m.Group,LockMode.Upgrade); await session.LockAsync(m,LockMode.Upgrade);

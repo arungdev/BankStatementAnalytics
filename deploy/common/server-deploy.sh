@@ -40,6 +40,13 @@ fi
 }
 
 # Acquire the image before touching the running installation.
+if [[ -n "${DB_SERVICE:-}" && -f .env ]]; then
+    has_tenants="$(docker compose exec -T "$DB_SERVICE" psql -X -U "$DB_USER" -d "$DB_NAME" -Atc "select exists(select 1 from pg_namespace where nspname ~ '^tn_[a-f0-9]{32}$')")"
+    if [[ "$has_tenants" == t ]]; then
+        echo 'This installation uses schema tenancy. Use its explicit Compose/operator update workflow; this legacy launcher will not replace its configuration.' >&2
+        exit 2
+    fi
+fi
 image_archive="images/application-$version.tar"
 if [[ -s "$image_archive" ]]; then
     [[ -s "$image_archive.sha256" ]] || { echo 'Bundled image has no transfer checksum. Rerun the updated deployment launcher.' >&2; exit 1; }

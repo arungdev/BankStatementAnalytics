@@ -213,7 +213,7 @@ namespace BankStatementAnalytics.Services
         // ── Fetch BankName from Accounts table ────────────────────────────
         private static Bank GetBankName(int accountId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var account = session.Get<Account>((long)accountId);
             return account?.BankName ?? throw new InvalidOperationException($"Account {accountId} not found.");
         }

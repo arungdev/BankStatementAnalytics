@@ -17,6 +17,7 @@ public sealed class GoogleAuthApiController(IConfiguration config, IWebHostEnvir
     public IActionResult Options() => Ok(new
     {
         google = GoogleAuthentication.IsConfigured(config),
+          publicHosting = SecurityRuntime.PublicHosting,
         cloudGoogleOnly = GoogleCloudMode.Enabled(config),
         googleOnly = GoogleCloudMode.PublicOnly(HttpContext, config),
         allowRegistration = config.GetValue("Security:AllowRegistration", !SecurityRuntime.PublicHosting),

@@ -33,9 +33,9 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("accounts")]
         public async Task<IActionResult> GetAccounts()
         {
-            var accounts = await DbHelper.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId);
+            var accounts = await BankStatementAnalytics.Tenancy.AppDatabase.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             // Latest statement per credit card, fetched once for every card rather than
             // re-reading the summaries table inside the per-account loop. Ordered in SQL
@@ -114,7 +114,7 @@ namespace BankStatementAnalytics.Controllers.Api
      [FromQuery] decimal? maxAmount = null,
      [FromQuery] string? category = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             Account? account = null;
             IQueryable<BankTransaction> query;
@@ -131,7 +131,7 @@ namespace BankStatementAnalytics.Controllers.Api
             }
             else
             {
-                account = DbHelper.GetById<Account>((long)accountId);
+                account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)accountId);
                 if (account is null || !Owns(account))
                     return NotFound();
 
@@ -320,7 +320,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("uploads")]
         public IActionResult GetUploads([FromQuery] int? accountId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
 
@@ -400,11 +400,11 @@ namespace BankStatementAnalytics.Controllers.Api
         public async Task<IActionResult> RetryAutoImport(Guid historyId,
             [FromBody] RetryAutoImportRequest request)
         {
-            var history = DbHelper.GetById<ImportHistory>(historyId);
+            var history = BankStatementAnalytics.Tenancy.AppDatabase.GetById<ImportHistory>(historyId);
             if (history == null)
                 return NotFound();
 
-            var account = DbHelper.GetById<Account>((long)history.AccountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)history.AccountId);
             if (account is null || !Owns(account))
                 return NotFound();
 
@@ -439,23 +439,23 @@ namespace BankStatementAnalytics.Controllers.Api
                     history.Error = null;
                     history.CreatedAt = DateTime.UtcNow;
                     history.UploadId = result.Upload?.Id;
-                    await DbHelper.UpdateAsync(history);
+                    await BankStatementAnalytics.Tenancy.AppDatabase.UpdateAsync(history);
 
                     // Earlier attempts on the same file (recorded before failures were
                     // updated in place) are now resolved too — drop them, or the card
                     // this retry just cleared would come straight back.
-                    foreach (var stale in await DbHelper.QueryAsync<ImportHistory>(
+                    foreach (var stale in await BankStatementAnalytics.Tenancy.AppDatabase.QueryAsync<ImportHistory>(
                                  h => h.AccountId == history.AccountId
                                       && h.SourcePath == history.SourcePath
                                       && h.Status == "Failed"))
-                        await DbHelper.DeleteAsync(stale);
+                        await BankStatementAnalytics.Tenancy.AppDatabase.DeleteAsync(stale);
 
                     return Ok(new { result.Total, result.NewCount, duplicate = result.Outcome == ImportOutcome.Duplicate });
                 default:
                     // Still failing (e.g. wrong password) — refresh the message/time in place.
                     history.Error = result.Error;
                     history.CreatedAt = DateTime.UtcNow;
-                    await DbHelper.UpdateAsync(history);
+                    await BankStatementAnalytics.Tenancy.AppDatabase.UpdateAsync(history);
                     return BadRequest(new { message = result.Error ?? "Import failed." });
             }
         }
@@ -465,7 +465,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("auto-imports")]
         public IActionResult GetAutoImports([FromQuery] int? accountId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedAccountIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
 
@@ -521,7 +521,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [RequestFormLimits(MultipartBodyLengthLimit = 26_000_000)]
         public async Task<IActionResult> Upload(IFormFile file, [FromForm] int accountId, [FromForm] string? password = null)
         {
-            var account = DbHelper.GetById<Account>((long)accountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)accountId);
             if (account is null || !Owns(account))
                 return NotFound();
 
@@ -565,18 +565,18 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("upload/{id:guid}")]
         public async Task<IActionResult> DeleteUpload(Guid id, [FromServices] WatchFolderImportService watcher)
         {
-            var upload = DbHelper.GetById<Models.Upload>(id);
+            var upload = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Models.Upload>(id);
             if (upload == null)
                 return NotFound();
 
-            var uploadAccount = upload.AccountId.HasValue ? DbHelper.GetById<Account>((long)upload.AccountId.Value) : null;
+            var uploadAccount = upload.AccountId.HasValue ? BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)upload.AccountId.Value) : null;
             if (!Owns(uploadAccount))
                 return NotFound();
             if (upload.ImportStatus == "Pending")
                 return Conflict(new { message = "This statement is still importing. Wait for it to finish before reverting." });
 
             using var accountGate = await ImportAccountGate.AcquireAsync(uploadAccount!.Id);
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var currentUpload = await session.GetAsync<Models.Upload>(id);
             if (currentUpload == null) return NotFound();
             upload = currentUpload;
@@ -601,7 +601,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             UploadStorage.DeleteFile(upload.StoredName);
 
-            await DbHelper.DeleteAsync(upload);
+            await BankStatementAnalytics.Tenancy.AppDatabase.DeleteAsync(upload);
 
             // The watcher remembers files it already processed; forget them so a
             // reverted statement still sitting in the watch folder imports again

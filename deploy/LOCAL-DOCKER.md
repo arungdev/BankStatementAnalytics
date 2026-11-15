@@ -15,6 +15,8 @@ No server domain, SSH access, certificate email, Docker Hub upload or version ch
 
 ## Daily use
 
+Optional isolated PostgreSQL schema testing: stop the normal local Docker application first, then run `Local-Docker.bat -SchemaTenancy`. This uses a separate image/project and `.local-docker/schema` state, with separate persistent volumes. It does not convert your ordinary local database. Add `-SchemaTenancy` to subsequent start/stop commands for that project. Read [the migration and recovery guide](../docs/security/SCHEMA-TENANCY.md) before using this feature on existing data.
+
 ```bat
 Local-Docker.bat
 ```
@@ -30,6 +32,10 @@ Local-Docker.bat -Stop
 `-NoBuild` starts the existing local image; `-Reconfigure` asks for new Google credentials; `-Stop` stops local containers and keeps data. Do not use `docker compose down -v` on the local project unless you intend to delete its database.
 
 ## Configuration and troubleshooting
+
+### DBeaver database access
+
+Local Docker publishes PostgreSQL only on localhost. In DBeaver create a PostgreSQL connection with host `127.0.0.1`, port `15432` (or `15433` for `-SchemaTenancy`), database `bankstatements`, username `bsa_operator`. Copy the password from `.local-docker/db_operator_password.txt` (schema mode: `.local-docker/schema/db_operator_password.txt`). Keep this administrative connection private. Expand the database → Schemas → public → Tables; schema mode also has generated `tn_...` workspace schemas. The ordinary `bankstatements` login intentionally cannot view other workspaces. This port mapping applies only to local development; cloud PostgreSQL remains private.
 
 Settings, database secrets and the HTTPS certificate are kept in `.local-docker/`, excluded from Git and Docker image build context. Keep the directory private. Secrets are visible while entering as requested; avoid screenshots of them.
 

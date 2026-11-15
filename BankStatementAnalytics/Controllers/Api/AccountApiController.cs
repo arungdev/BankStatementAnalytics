@@ -24,7 +24,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{id}/supported-formats")]
         public IActionResult GetSupportedFormats(int id)
         {
-            var account = DbHelper.GetById<Account>((long)id);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)id);
             if (account is null || !Owns(account)) return NotFound();
 
             // Registry-driven so new parser registrations (e.g. PDF) flow to the
@@ -114,7 +114,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var accounts = (await DbHelper.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId))
+            var accounts = (await BankStatementAnalytics.Tenancy.AppDatabase.QueryAsync<Account>(a => a.OwnerUserId == CurrentUserId))
                 .Select(a => new { a.Id, a.AccountHolderName, a.BankName, a.StatementDay, MaskedAccountNumber = a.MaskedAccountNumber });
             return Ok(accounts);
         }
@@ -123,7 +123,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("{id}")]
         public IActionResult GetById(int id)
         {
-            var account = DbHelper.GetById<Account>((long)id);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)id);
             if (account is null || !Owns(account))
                 return NotFound();
 
@@ -142,7 +142,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest();
             if (request.SharedLimitAccountId.HasValue)
             {
-                var primary = DbHelper.GetById<Account>(request.SharedLimitAccountId.Value);
+                var primary = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>(request.SharedLimitAccountId.Value);
                 if (!Owns(primary) || primary!.BankName != Bank.HDFCCreditCard || request.BankName != Bank.HDFCCreditCard) return NotFound();
             }
             var account = new Account
@@ -153,7 +153,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 SharedLimitAccountId = request.SharedLimitAccountId, OwnerUserId = CurrentUserId
             };
 
-            await DbHelper.SaveAsync(account);
+            await BankStatementAnalytics.Tenancy.AppDatabase.SaveAsync(account);
 
             var dto = new { account.Id, account.AccountHolderName, account.BankName, account.StatementDay, MaskedAccountNumber = account.MaskedAccountNumber };
             return CreatedAtAction(nameof(GetById), new { id = account.Id }, dto);
@@ -163,7 +163,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateAccountRequest request)
         {
-            var account = DbHelper.GetById<Account>((long)id);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)id);
             if (account is null || !Owns(account))
                 return NotFound();
 
@@ -172,7 +172,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 return BadRequest(new { message = "Account name is required." });
 
             account.AccountHolderName = name;
-            await DbHelper.UpdateAsync(account);
+            await BankStatementAnalytics.Tenancy.AppDatabase.UpdateAsync(account);
 
             var dto = new { account.Id, account.AccountHolderName, account.BankName, account.StatementDay, MaskedAccountNumber = account.MaskedAccountNumber };
             return Ok(dto);
@@ -240,7 +240,7 @@ namespace BankStatementAnalytics.Controllers.Api
         public async Task<IActionResult> UpdateAutoImport(int id, [FromBody] UpdateAutoImportRequest request,
             [FromServices] WatchFolderImportService watcher)
         {
-            var account = DbHelper.GetById<Account>((long)id);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)id);
             if (account is null || !Owns(account))
                 return NotFound();
 
@@ -276,7 +276,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request?.Enabled != null)
                 account.WatchEnabled = request.Enabled;
 
-            await DbHelper.UpdateAsync(account);
+            await BankStatementAnalytics.Tenancy.AppDatabase.UpdateAsync(account);
 
             // A new password is exactly what a "password-protected"/"incorrect
             // password" failure was waiting for — clear the watcher's suppression so
@@ -303,11 +303,11 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var account = DbHelper.GetById<Account>((long)id);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)id);
             if (account is null || !Owns(account))
                 return NotFound();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var sessionTx = session.BeginTransaction();
 
             var transactions = session.Query<BankTransaction>()

@@ -29,7 +29,7 @@ namespace BankStatementAnalytics.Controllers.Api
         {
             var today = DateTime.Today;
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var bill = new RecurringBill
@@ -65,7 +65,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("notification")]
         public async Task<IActionResult> ClearNotifications()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var testBills = session.Query<RecurringBill>()

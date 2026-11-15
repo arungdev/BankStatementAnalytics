@@ -18,14 +18,15 @@ public partial class GPayTakeoutService
 {
     private async Task<GPayAutoImportConfigDto> LoadPrimaryConfigAsync(long userId)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var record = await session.Query<GPayEvidenceRecord>()
             .FirstOrDefaultAsync(r => r.OwnerUserId == userId && r.Kind == "PrimaryConfig");
         if (record != null) return JsonSerializer.Deserialize<GPayAutoImportConfigDto>(record.Payload, GPayEvidenceService.Json)!;
         // The old single-user file belongs only to the original user. Never share it
         // with other tenants; preserve it on disk as a migration safety copy.
         var legacy = GetConfigFilePath();
-        var firstUser = await session.Query<Common.Framework.Auth.AppUser>().OrderBy(u => u.Id).Select(u => u.Id).FirstOrDefaultAsync();
+        using var shared=Common.Framework.Data.DbHelper.GetSession();
+        var firstUser = await shared.Query<Common.Framework.Auth.AppUser>().OrderBy(u => u.Id).Select(u => u.Id).FirstOrDefaultAsync();
         if (userId == firstUser && File.Exists(legacy))
         {
             var config = JsonSerializer.Deserialize<GPayAutoImportConfigDto>(await File.ReadAllTextAsync(legacy), GPayEvidenceService.Json) ?? new();
@@ -36,7 +37,7 @@ public partial class GPayTakeoutService
     }
     public async Task<GPayAutoImportConfigDto> GetProfileAsync(long userId, string profileId)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var key = GPayEvidenceService.Hash(profileId);
         var record = await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(record => record.OwnerUserId == userId && record.Kind == "Profile" && record.SourceKey == key)
             ?? throw new ArgumentException("GPay profile not found.");
@@ -45,7 +46,7 @@ public partial class GPayTakeoutService
 
     public async Task<List<GPayProfileSummary>> ListProfilesAsync(long userId)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var records = await session.Query<GPayEvidenceRecord>().Where(record => record.OwnerUserId == userId && record.Kind == "Profile").ToListAsync();
         var profiles = new List<GPayProfileSummary> { new("default", "Primary GPay", null) };
         profiles.AddRange(records.Select(record => JsonSerializer.Deserialize<GPayAutoImportConfigDto>(record.Payload, GPayEvidenceService.Json)!)
@@ -69,7 +70,7 @@ public partial class GPayTakeoutService
         if (SecurityRuntime.PublicHosting && (config.WatchEnabled || !string.IsNullOrWhiteSpace(config.WatchFolderPath)))
             throw new ArgumentException("Server watch folders are disabled for public hosting. Upload your own export instead.");
         if (config.ProfileId != null && (string.IsNullOrWhiteSpace(config.UserName) || config.UserName.Length < 2 || config.UserName.Length > 250)) throw new ArgumentException("Enter your exact name in this GPay profile.");
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var owned = await session.Query<Account>().Where(account => account.OwnerUserId == userId).Select(account => account.Id).ToListAsync();
         if (config.BankAccountIds.Any(id => !owned.Contains(id))) throw new ArgumentException("A selected bank account is not owned by this user.");
         if (string.IsNullOrWhiteSpace(config.WatchFolderPath)) return;
@@ -91,7 +92,7 @@ public partial class GPayTakeoutService
         if (string.IsNullOrWhiteSpace(profileId) || profileId == "default")
             throw new ArgumentException("Primary GPay cannot be deleted.");
         using var gate = await ImportAccountGate.AcquireAsync(-userId);
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         using var transaction = session.BeginTransaction();
         var key = GPayEvidenceService.Hash(profileId);
         var record = await session.Query<GPayEvidenceRecord>().FirstOrDefaultAsync(r =>
@@ -125,7 +126,7 @@ public partial class GPayTakeoutService
         var snapshot = JsonSerializer.Deserialize<GPayAutoImportConfigDto>(JsonSerializer.Serialize(config))!;
         snapshot.Profiles.Clear();
         using var gate = await ImportAccountGate.AcquireAsync(-userId);
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         using var transaction = session.BeginTransaction();
         var kind = config.ProfileId == null ? "PrimaryConfig" : "Profile";
         var key = GPayEvidenceService.Hash(config.ProfileId ?? "primary-config");
@@ -138,7 +139,7 @@ public partial class GPayTakeoutService
 
     private async Task SweepAdditionalProfilesAsync(CancellationToken token)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var records = await session.Query<GPayEvidenceRecord>().Where(record => record.Kind == "Profile").ToListAsync(token);
         foreach (var record in records)
         {

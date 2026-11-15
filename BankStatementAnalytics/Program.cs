@@ -60,6 +60,7 @@ if (!string.IsNullOrWhiteSpace(configuredUrls) && string.IsNullOrEmpty(Environme
 
 var builder = WebApplication.CreateBuilder(args);
 SecurityRuntime.Configure(builder.Configuration);
+BankStatementAnalytics.Tenancy.AppTenantRuntime.Configure(builder.Configuration);
 AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
 
 // Run as a Windows service when launched by the SCM (see Installer/install-service.bat).
@@ -144,7 +145,7 @@ builder.Services.AddSingleton(new BackupOptions
 {
     AppName = "BankStatementAnalytics",
     DescribeDatabase = NHibernateHelper.Describe,
-    ResolveUploadsRoot = () => UploadStorage.Root,
+    ResolveUploadsRoot = () => UploadStorage.BaseRoot,
     DefaultDatabaseName = "bankstatements",
 });
 builder.Services.AddScoped<BackupService>();
@@ -204,9 +205,9 @@ builder.Services.AddControllers()
 
 // Cookie session auth + global "must be authenticated" fallback policy + Data Protection
 // keys persisted next to the DB (survives single-file extraction and app restarts).
-var keysDirectory = Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Data", "Keys");
+var keysDirectory = builder.Configuration["DataProtection:KeysDirectory"] ?? Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Data", "Keys");
 builder.Services.AddCookieSessionAuth(builder.Environment, keysDirectory, cookieName: "BankStatementAnalytics.Auth");
-builder.Services.AddSecureSessions(Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Sessions"));
+builder.Services.AddSecureSessions(builder.Configuration["Security:SessionsDirectory"] ?? Path.Combine(Common.Framework.AppPaths.ResolveWritableAppDataDirectory(), "Sessions"));
 builder.Services.AddGoogleSignIn(builder.Configuration);
 builder.Services.AddRateLimiter(options =>
 {
@@ -221,6 +222,12 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+BankStatementAnalytics.Tenancy.AppTenantRuntime.Initialize(app.Services, app.Configuration);
+if(args.Length>0 && args[0]=="schema-tenancy") {
+    await BankStatementAnalytics.Tenancy.TenantOperatorCommands.RunAsync(args);
+    await app.DisposeAsync();
+    return;
+}
 
 app.UseConfiguredProxy(app.Configuration);
 app.UseStrictApiOrigins(allowedOrigins, app.Environment.IsDevelopment());
@@ -260,6 +267,7 @@ app.UseApiExceptionHandling();
 
 // Gracefully stop the embedded PostgreSQL process (if it was started) on shutdown.
 app.Lifetime.ApplicationStopping.Register(() => Common.Framework.Data.EmbeddedPostgresManager.Stop());
+app.Lifetime.ApplicationStopped.Register(() => { if(BankStatementAnalytics.Tenancy.AppTenantRuntime.Enabled) BankStatementAnalytics.Tenancy.AppTenantRuntime.Sessions.Dispose(); });
 
 if (!app.Environment.IsDevelopment())
 {
@@ -283,6 +291,14 @@ app.UseRouting();
 app.UseRateLimiter();
 
 app.UseAuthentication();
+app.Use(async (context,next) => {
+    if (!BankStatementAnalytics.Tenancy.AppTenantRuntime.Enabled || context.User.Identity?.IsAuthenticated != true) { await next(); return; }
+    try {
+        var tenant = await BankStatementAnalytics.Tenancy.AppTenantRuntime.Store.ResolveAsync(context.User,context.RequestAborted);
+        using var scope = BankStatementAnalytics.Tenancy.AppTenantRuntime.Context.Enter(context.User,tenant);
+        await next();
+    } catch (UnauthorizedAccessException) { context.Response.StatusCode=403; await context.Response.WriteAsJsonAsync(new {message="Your private workspace is unavailable. Contact the server operator."}); }
+});
 
 app.UseRoleGate(options =>
 {
@@ -354,6 +370,7 @@ static void RunPdfExtractHarness(string[] args)
         {
             BankStatementAnalytics.EnumClass.Bank.HDFC => new HdfcPdfParser(),
             BankStatementAnalytics.EnumClass.Bank.IOB => new IobPdfParser(),
+            BankStatementAnalytics.EnumClass.Bank.SBI => new SbiPdfParser(),
             _ => new HdfcCreditCardPdfParser(),
         };
         // accountId 0: harness only inspects parse output, nothing is persisted.
@@ -370,7 +387,6 @@ static void RunPdfExtractHarness(string[] args)
             .Where(t => string.IsNullOrWhiteSpace(t.PendingCounterPartyName))
             .ToList();
         Console.WriteLine($"Unresolved merchant: {unresolved.Count} row(s)");
-            BankStatementAnalytics.EnumClass.Bank.SBI => new SbiPdfParser(),
         foreach (var t in unresolved.Take(10))
             Console.WriteLine($"  {t.TransactionDate:dd/MM/yyyy}  {t.TransactionType}  {t.Amount,10:0.00}  {t.Description}");
 

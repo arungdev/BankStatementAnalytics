@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$ProjectRoot, [switch]$Reconfigure, [switch]$NoBuild, [switch]$Stop)
+param([Parameter(Mandatory=$true)][string]$ProjectRoot, [switch]$Reconfigure, [switch]$NoBuild, [switch]$Stop, [switch]$SchemaTenancy)
 $ErrorActionPreference = 'Stop'
 function Invoke-LocalCommand([string]$Command, [string[]]$Arguments) {
     & $Command @Arguments
@@ -12,7 +12,8 @@ function New-LocalPassword {
 }
 try {
     $ProjectRoot = (Resolve-Path -LiteralPath $ProjectRoot).Path
-    $state = Join-Path $ProjectRoot '.local-docker'
+    $stateRelative=if($SchemaTenancy){'.local-docker/schema'}else{'.local-docker'}
+    $state = Join-Path $ProjectRoot $stateRelative
     $envPath = Join-Path $state 'local.env'
     $composePath = Join-Path $state 'compose.yml'
     foreach ($tool in @('docker','dotnet')) {
@@ -24,10 +25,16 @@ try {
     }
     $service = $config.APP_SERVICE
     if ($service -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_-]*$') { throw 'Invalid APP_SERVICE.' }
-    $image = "$($config.DEPLOY_DIRECTORY):local-google"
-    $projectName = "$($config.DEPLOY_DIRECTORY)-local-google"
+    $localTag=if($SchemaTenancy){'local-google-schema'}else{'local-google'}
+    $image = "$($config.DEPLOY_DIRECTORY):$localTag"
+    $projectName = "$($config.DEPLOY_DIRECTORY)-$localTag"
     $compose = @('compose','--project-name',$projectName,'--project-directory',$ProjectRoot,'--env-file',$envPath,
         '-f',(Join-Path $ProjectRoot 'docker-compose.yml'),'-f',(Join-Path $ProjectRoot 'deploy/google-compose.yml'),'-f',$composePath)
+    if($SchemaTenancy) {
+        $schemaCompose=Join-Path $ProjectRoot 'deploy/schema-tenancy-compose.yml'
+        if(-not(Test-Path $schemaCompose)){throw 'This application has no schema tenancy Compose configuration.'}
+        $compose=@('compose','--project-name',$projectName,'--project-directory',$ProjectRoot,'--env-file',$envPath,'-f',(Join-Path $ProjectRoot 'docker-compose.yml'),'-f',(Join-Path $ProjectRoot 'deploy/google-compose.yml'),'-f',$schemaCompose,'-f',$composePath)
+    }
     if ($Stop) {
         if (-not (Test-Path $composePath)) { throw 'Local Docker has not been configured yet.' }
         Invoke-LocalCommand docker ($compose + @('stop'))
@@ -64,7 +71,7 @@ try {
     }
     if (-not $values.LOCAL_CERT_PASSWORD) { $values.LOCAL_CERT_PASSWORD = New-LocalPassword }
     $values.APP_IMAGE = $config.DEPLOY_DIRECTORY
-    $values.APP_VERSION = 'local-google'
+    $values.APP_VERSION = $localTag
     $values.APP_DOMAIN = 'localhost'
     $envLines = foreach ($key in ($values.Keys | Sort-Object)) { "$key=$($values[$key])" }
     [IO.File]::WriteAllText($envPath,($envLines -join "`n") + "`n",$utf8)
@@ -72,6 +79,9 @@ try {
     Invoke-LocalCommand dotnet @('dev-certs','https','--trust','--export-path',(Join-Path $state 'devcert.pfx'),'--password',$values.LOCAL_CERT_PASSWORD)
     $override = @'
 services:
+  DB_SERVICE:
+    ports: !override
+      - "127.0.0.1:LOCAL_DB_PORT:5432"
   APP_SERVICE:
     pull_policy: never
     ports: !override
@@ -85,25 +95,34 @@ services:
       - local_devcert
 secrets:
   db_password:
-    file: ./.local-docker/db_password.txt
+    file: ./LOCAL_STATE/db_password.txt
   db_operator_password:
-    file: ./.local-docker/db_operator_password.txt
+    file: ./LOCAL_STATE/db_operator_password.txt
   google_client_secret:
-    file: ./.local-docker/google_client_secret.txt
+    file: ./LOCAL_STATE/google_client_secret.txt
   local_devcert:
-    file: ./.local-docker/devcert.pfx
+    file: ./LOCAL_STATE/devcert.pfx
 networks:
   proxy:
     ipam:
       config: !override
         - subnet: 172.30.59.0/24
 '@
-    [IO.File]::WriteAllText($composePath,$override.Replace('APP_SERVICE',$service).Replace("`r`n","`n") + "`n",$utf8)
+    $databasePort=if($SchemaTenancy){'15433'}else{'15432'}
+    # Stopped Compose projects retain their networks; the two local modes must not share a subnet.
+    $proxySubnet=if($SchemaTenancy){'172.30.60.0/24'}else{'172.30.59.0/24'}
+    [IO.File]::WriteAllText($composePath,$override.Replace('APP_SERVICE',$service).Replace('DB_SERVICE',$config.DB_SERVICE).Replace('LOCAL_DB_PORT',$databasePort).Replace('LOCAL_STATE',$stateRelative).Replace('172.30.59.0/24',$proxySubnet).Replace("`r`n","`n") + "`n",$utf8)
     Invoke-LocalCommand docker ($compose + @('config','--quiet'))
     Push-Location -LiteralPath $ProjectRoot
     try {
         if (-not $NoBuild) { Invoke-LocalCommand docker @('build','--platform','linux/amd64','-t',$image,'.') }
         Invoke-LocalCommand docker @('image','inspect',$image,'--format','{{.Id}}')
+        if($SchemaTenancy) {
+            Write-Host 'Using a separate schema-tenancy development database; the normal local Docker volumes are unchanged.'
+            Invoke-LocalCommand docker ($compose + @('up','-d','--no-build','--wait','--wait-timeout','180',$config.DB_SERVICE))
+            Invoke-LocalCommand docker ($compose + @('stop',$service))
+            Invoke-LocalCommand docker ($compose + @('run','--rm','--no-deps','-T',$service,'schema-tenancy','migrate','--stopped-writes'))
+        }
         Invoke-LocalCommand docker ($compose + @('up','-d','--no-build','--wait','--wait-timeout','180'))
         # Refresh certificate/secret mounts even when only a local file changed.
         Invoke-LocalCommand docker ($compose + @('up','-d','--no-deps','--force-recreate','--no-build','--wait','--wait-timeout','180',$service))

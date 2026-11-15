@@ -10,7 +10,7 @@ namespace BankStatementAnalytics.Data
     {
         public List<TransactionDto> GetByAccount(int accountId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             return session.CreateQuery(@"
                 select t from BankTransaction t

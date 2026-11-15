@@ -21,7 +21,7 @@ namespace BankStatementAnalytics.Services
             long accountId,
             string? upiId = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var ownerUserId = session.Get<Account>(accountId)?.OwnerUserId;
@@ -39,7 +39,7 @@ namespace BankStatementAnalytics.Services
         /// </summary>
         public void ResolveOrCreateBatch(long accountId, IReadOnlyCollection<BankTransaction> transactions)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
             ResolveOrCreateBatch(session, accountId, transactions);
             tx.Commit();

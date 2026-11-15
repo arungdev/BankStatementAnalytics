@@ -23,7 +23,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             // Resolve the set of accounts to aggregate: either the comma-separated
             // "All accounts" list or a single accountId. Both are filtered to owned.
@@ -135,7 +135,7 @@ namespace BankStatementAnalytics.Controllers.Api
                     // Fetch the account's statement day. Use the first id from the resolved set
                     // when accountId is 0 (e.g. "All accounts" view) as a fallback.
                     var accountIdToUse = accountId != 0 ? accountId : (ids.FirstOrDefault());
-                    var account = accountIdToUse != 0 ? DbHelper.GetById<Account>((long)accountIdToUse) : null;
+                    var account = accountIdToUse != 0 ? BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>((long)accountIdToUse) : null;
                     int? statementDay = account?.StatementDay;
 
                     if (statementDay == null)
@@ -189,7 +189,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
             [FromQuery] bool includeTransfers = false)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
@@ -252,7 +252,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string? accountIds = null,
             [FromQuery] int? year = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);

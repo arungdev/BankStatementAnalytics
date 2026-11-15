@@ -13,7 +13,7 @@ const SearchModal = lazy(() => import("./components/SearchModal"));
 const Settings = lazy(() => import("./pages/Settings"));
 import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
-import AccountFilter, { ALL_ACCOUNTS } from "./components/AccountFilter";
+import AccountFilter from "./components/AccountFilter";
 import NotificationBell from "./components/NotificationBell";
 import PrivacyToggle from "./components/PrivacyToggle";
 import Login from "./pages/Login";
@@ -76,7 +76,7 @@ function AuthGate() {
         path="/login"
         element={setupRequired ? <Navigate to="/setup" replace /> : (isAuthenticated && !new URLSearchParams(location.search).has('googleError') ? <Navigate to="/" replace /> : <Login />)}
       />
-      <Route element={setupRequired ? <Navigate to="/setup" replace /> : (isAuthenticated ? <Layout /> : <Navigate to="/login" replace />)}>
+      <Route element={setupRequired ? <Navigate to="/setup" replace /> : (isAuthenticated ? <Layout softwareUpdatesEnabled={!authenticationOptions.publicHosting} /> : <Navigate to="/login" replace />)}>
         <Route path="/" element={<Overview />} />
         <Route path="/trends" element={<Trends />} />
         <Route path="/transactions" element={<Transactions />} />
@@ -113,10 +113,10 @@ const PAGE_META = {
   '/settings': { title: 'Settings', subtitle: 'Accounts, categories, and preferences' },
 };
 
-function Layout() {
+function Layout({ softwareUpdatesEnabled }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { selectedAccountId, setSelectedAccountId } = useAccount();
+  const { selectedAccountId, setSelectedAccountId, setAvailableAccounts } = useAccount();
   // Consuming the privacy flag here re-renders Layout (and, via the fresh
   // outlet context object, every page that reads useOutletContext) on toggle.
   // Pages that read no outlet context (Bills/Budgets/Investments/Merchants)
@@ -146,6 +146,7 @@ function Layout() {
   useImportFailureNotifications();
 
   const [accounts, setAccounts] = useState([]);
+  useEffect(() => { setAvailableAccounts(accounts); }, [accounts, setAvailableAccounts]);
   const [showCreate, setShowCreate] = useState(false);
   // Settings is a routed page (/settings) rather than a modal.
   const goSettings = () => navigate('/settings');
@@ -198,20 +199,6 @@ function Layout() {
       .then(res => setAccounts(res.data))
       .catch(() => setAccounts([]));
   }, []);
-
-  // Keep the global selection pointing at a real account. Watching `accounts`
-  // (not just the selection) means the first created account gets selected
-  // immediately instead of only after a full page reload. Optimistic temp
-  // entries (string ids) are never auto-selected.
-  useEffect(() => {
-    const real = accounts.filter(a => typeof a.id === 'number');
-    if (real.length === 0) return;
-    // "All accounts" is a valid selection even though no account has that id.
-    const stillExists = selectedAccountId === ALL_ACCOUNTS
-      || real.some(a => a.id === selectedAccountId);
-    if (!selectedAccountId || !stillExists)
-      setSelectedAccountId(real[0].id);
-  }, [accounts, selectedAccountId, setSelectedAccountId]);
 
   const meta = PAGE_META[location.pathname] ?? { title: '' };
   const isInsights = location.pathname === '/insights';
@@ -274,6 +261,7 @@ function Layout() {
   return (
     <div className="app app-fade">
       <Sidebar
+        softwareUpdatesEnabled={softwareUpdatesEnabled}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />

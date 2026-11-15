@@ -21,7 +21,7 @@ const THEME_META = {
 
 const DESKTOP_BREAKPOINT = 1024;
 
-const Sidebar = ({ mobileOpen = false, onMobileClose }) => {
+const Sidebar = ({ mobileOpen = false, onMobileClose, softwareUpdatesEnabled = true }) => {
   const [isOpen, setIsOpen]       = useState(() => typeof window === 'undefined' || window.innerWidth > DESKTOP_BREAKPOINT);
   const [isDashOpen, setDashOpen] = useState(true);
   const [upcomingBills, setUpcomingBills] = useState(0);
@@ -54,10 +54,11 @@ const Sidebar = ({ mobileOpen = false, onMobileClose }) => {
 
   // Software update badge
   useEffect(() => {
+    if (!softwareUpdatesEnabled || role !== 'Admin') return;
     api.get('/update/status')
       .then(res => setHasUpdate(!!res.data?.updateInfo?.isUpdateAvailable))
       .catch(() => setHasUpdate(false));
-  }, []);
+  }, [softwareUpdatesEnabled, role]);
 
   const handleNavClick = () => {
     onMobileClose?.();

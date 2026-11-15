@@ -87,7 +87,7 @@ namespace BankStatementAnalytics.Controllers.Api
             string scopeLabel;
             if (ids.Count == 1)
             {
-                using var session = DbHelper.GetSession();
+                using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
                 var account = await session.GetAsync<Account>(ids[0]);
                 scopeLabel = account != null
                     ? $"{account.BankName} {account.MaskedAccountNumber}".Trim()
@@ -151,7 +151,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet("periods")]
         public async Task<IActionResult> GetPeriods()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
 

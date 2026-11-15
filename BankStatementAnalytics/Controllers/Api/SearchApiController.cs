@@ -31,7 +31,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var query = q.Trim();
             var lower = query.ToLowerInvariant();
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = await session.Query<Account>()
                 .Where(a => a.OwnerUserId == CurrentUserId)

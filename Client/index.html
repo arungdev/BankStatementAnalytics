@@ -10,15 +10,7 @@
     <meta name="theme-color" content="#0d9488" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BankStatement Analytics</title>
-    <script>
-      // Apply the persisted theme before React mounts to avoid a light flash.
-      // usePersistedState JSON-encodes values, hence the JSON.parse.
-      try {
-        var p = JSON.parse(localStorage.getItem('themePreference') || '"system"');
-        if (p === 'dark' || (p === 'system' && matchMedia('(prefers-color-scheme: dark)').matches))
-          document.documentElement.dataset.theme = 'dark';
-      } catch (e) { /* ignore */ }
-    </script>
+    <script src="/theme-init.js"></script>
     <style>
       /* Boot splash — shown before React mounts and reused by AuthGate while
          auth status loads, so opening or refreshing shows an animated, themed

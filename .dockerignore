@@ -33,6 +33,7 @@ cookies.txt
 splits_*
 *.csv
 *.sql
+!BankStatementAnalytics/Tenancy/financial-baseline.sql
 
 .local-analysis/
 .local-docker/

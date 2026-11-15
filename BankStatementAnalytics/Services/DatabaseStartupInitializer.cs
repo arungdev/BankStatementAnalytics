@@ -28,12 +28,21 @@ namespace BankStatementAnalytics.Services
         private readonly StatementPasswordProtector _passwords;
         public DatabaseStartupInitializer(StatementPasswordProtector passwords) => _passwords = passwords;
 
-        public Task StartingAsync(CancellationToken cancellationToken)
+        public async Task StartingAsync(CancellationToken cancellationToken)
         {
             _ = NHibernateHelper.SessionFactory;
+            if (Tenancy.AppTenantRuntime.Enabled) {
+                await Tenancy.AppTenantRuntime.ValidateAuthenticationRoleAsync(cancellationToken);
+                await Tenancy.AppTenantRuntime.Store.MigrateAllAsync(cancellationToken);
+                foreach(var id in Tenancy.AppTenantRuntime.ActiveUserIds()) {
+                    using var scope=Tenancy.AppTenantRuntime.EnterUser(id);
+                    ImportRecovery.RecoverPending();
+                    ImportRecovery.ProtectLegacyPasswords(_passwords);
+                }
+                return;
+            }
             ImportRecovery.RecoverPending();
             ImportRecovery.ProtectLegacyPasswords(_passwords);
-            return Task.CompletedTask;
         }
 
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;

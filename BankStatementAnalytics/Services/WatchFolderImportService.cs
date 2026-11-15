@@ -33,7 +33,7 @@ namespace BankStatementAnalytics.Services
         // recognized as duplicates, or failed. A file edit changes the key, so
         // modified files get retried; everything retries after a service restart.
         // Guarded by _handledLock: request threads call ForgetAccount on revert.
-        private readonly HashSet<(long, string, DateTime, long)> _handled = new();
+        private readonly HashSet<(Guid, long, string, DateTime, long)> _handled = new();
         private readonly object _handledLock = new();
 
         // Folders already reported missing, so an offline drive logs once, not every sweep.
@@ -42,7 +42,8 @@ namespace BankStatementAnalytics.Services
         // Per-account "ignore failures recorded before this instant" marks, set by
         // ForgetAccount. Without them the persisted-failure check below would keep
         // suppressing a file even after the user fixed the reason it failed.
-        private readonly Dictionary<long, DateTime> _retryFailuresFrom = new();
+        private readonly Dictionary<(Guid,long), DateTime> _retryFailuresFrom = new();
+        private static Guid TenantId => Tenancy.AppTenantRuntime.Enabled ? Tenancy.AppTenantRuntime.Context.TenantId : Guid.Empty;
 
         public WatchFolderImportService(IServiceScopeFactory scopeFactory)
         {
@@ -78,8 +79,8 @@ namespace BankStatementAnalytics.Services
         {
             lock (_handledLock)
             {
-                _handled.RemoveWhere(k => k.Item1 == accountId);
-                _retryFailuresFrom[accountId] = DateTime.UtcNow;
+                _handled.RemoveWhere(k => k.Item1 == TenantId && k.Item2 == accountId);
+                _retryFailuresFrom[(TenantId,accountId)] = DateTime.UtcNow;
             }
         }
 
@@ -123,7 +124,14 @@ namespace BankStatementAnalytics.Services
         private async Task SweepAsync(CancellationToken stoppingToken)
         {
             if (SecurityRuntime.PublicHosting) return;
-            var accounts = (await DbHelper.QueryAsync<Account>(
+            if (Tenancy.AppTenantRuntime.Enabled && !Tenancy.AppTenantRuntime.Context.HasScope) {
+                foreach(var userId in Tenancy.AppTenantRuntime.ActiveUserIds()) {
+                    using var tenant=Tenancy.AppTenantRuntime.EnterUser(userId);
+                    await SweepAsync(stoppingToken);
+                }
+                return;
+            }
+            var accounts = (await BankStatementAnalytics.Tenancy.AppDatabase.QueryAsync<Account>(
                     a => a.WatchFolderPath != null && a.WatchFolderPath != ""))
                 .Where(a => a.WatchEnabled != false)   // null == enabled (pre-flag rows)
                 .ToList();
@@ -183,14 +191,14 @@ namespace BankStatementAnalytics.Services
 
         private async Task ImportFileAsync(Account account, string file)
         {
-            (long, string, DateTime, long) key;
+            (Guid, long, string, DateTime, long) key;
             DateTime lastWriteUtc;
             byte[] bytes;
             try
             {
                 var info = new FileInfo(file);
                 lastWriteUtc = info.LastWriteTimeUtc;
-                key = (account.Id, file, lastWriteUtc, info.Length);
+                key = (TenantId, account.Id, file, lastWriteUtc, info.Length);
                 lock (_handledLock)
                 {
                     if (_handled.Contains(key))
@@ -279,12 +287,12 @@ namespace BankStatementAnalytics.Services
         {
             DateTime? retryFrom;
             lock (_handledLock)
-                retryFrom = _retryFailuresFrom.TryGetValue(accountId, out var t) ? t : null;
+                retryFrom = _retryFailuresFrom.TryGetValue((TenantId,accountId), out var t) ? t : null;
 
             try
             {
                 var accId = (int)accountId;
-                var failures = await DbHelper.QueryAsync<ImportHistory>(
+                var failures = await BankStatementAnalytics.Tenancy.AppDatabase.QueryAsync<ImportHistory>(
                     h => h.AccountId == accId && h.SourcePath == file && h.Status == "Failed");
                 if (failures.Count == 0) return false;
 
@@ -310,7 +318,7 @@ namespace BankStatementAnalytics.Services
                 // one of them is reused (so a repeat failure refreshes a single card
                 // instead of stacking another, and a later success clears the card
                 // rather than leaving it beside the success), the rest are dropped.
-                var priorFailures = (await DbHelper.QueryAsync<ImportHistory>(
+                var priorFailures = (await BankStatementAnalytics.Tenancy.AppDatabase.QueryAsync<ImportHistory>(
                         h => h.AccountId == accountId && h.SourcePath == file && h.Status == "Failed"))
                     .OrderByDescending(h => h.CreatedAt)
                     .ToList();
@@ -323,14 +331,14 @@ namespace BankStatementAnalytics.Services
                     row.Error = trimmed;
                     row.CreatedAt = DateTime.UtcNow;
                     row.UploadId = uploadId;
-                    await DbHelper.UpdateAsync(row);
+                    await BankStatementAnalytics.Tenancy.AppDatabase.UpdateAsync(row);
 
                     foreach (var stale in priorFailures.Skip(1))
-                        await DbHelper.DeleteAsync(stale);
+                        await BankStatementAnalytics.Tenancy.AppDatabase.DeleteAsync(stale);
                     return;
                 }
 
-                await DbHelper.SaveAsync(new ImportHistory
+                await BankStatementAnalytics.Tenancy.AppDatabase.SaveAsync(new ImportHistory
                 {
                     Id = Guid.NewGuid(),
                     AccountId = accountId,

@@ -58,7 +58,7 @@ namespace BankStatementAnalytics.Controllers.Api
         // requested" — the service reads that as every owned account ("All accounts").
         private (bool Ok, List<long>? Ids) ResolveScope(long accountId, string? accountIds)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);
             if (status == AccountAccess.ScopeStatus.NotFound)
@@ -81,7 +81,7 @@ namespace BankStatementAnalytics.Controllers.Api
 
             var matchKey = req.MatchKey.Trim();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var deposit = session.Query<Deposit>()
@@ -121,7 +121,7 @@ namespace BankStatementAnalytics.Controllers.Api
             kind = kind.Trim().ToUpperInvariant();
             matchKey = matchKey.Trim();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var deposit = session.Query<Deposit>()

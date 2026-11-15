@@ -18,6 +18,7 @@ $files = @(
     'deploy/common/Templates/Caddyfile', 'deploy/common/README.md'
 )
 if (Test-Path -LiteralPath (Join-Path $ProjectRoot '.env.example')) { $files += '.env.example' }
+if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'deploy/schema-tenancy-compose.yml')) { $files += 'deploy/schema-tenancy-compose.yml' }
 foreach ($relative in $files) {
     if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot $relative) -PathType Leaf)) {
         throw "Required deployment file is missing: $relative"

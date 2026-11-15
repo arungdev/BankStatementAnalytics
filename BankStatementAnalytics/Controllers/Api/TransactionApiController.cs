@@ -19,11 +19,11 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public async Task<IActionResult> GetByAccount(int accountId)
         {
-            var account = await DbHelper.GetByIdAsync<Account>((long)accountId);
+            var account = await BankStatementAnalytics.Tenancy.AppDatabase.GetByIdAsync<Account>((long)accountId);
             if (!Owns(account))
                 return NotFound();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             // Project only the needed columns server-side (async, ordered in SQL) rather than
             // hydrating whole entities and their CounterParty via lazy loads.
@@ -102,11 +102,11 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request == null || string.IsNullOrWhiteSpace(request.BankReference))
                 return BadRequest("Invalid request.");
 
-            var account = DbHelper.GetById<Account>(request.AccountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>(request.AccountId);
             if (!Owns(account))
                 return NotFound();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var transaction = session.Query<BankTransaction>()
@@ -137,11 +137,11 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request == null || string.IsNullOrWhiteSpace(request.BankReference))
                 return BadRequest("Invalid request.");
 
-            var account = DbHelper.GetById<Account>(request.AccountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>(request.AccountId);
             if (!Owns(account))
                 return NotFound();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var transaction = session.Query<BankTransaction>()
@@ -173,11 +173,11 @@ namespace BankStatementAnalytics.Controllers.Api
             if (request == null || string.IsNullOrWhiteSpace(request.BankReference))
                 return BadRequest("Invalid request.");
 
-            var account = DbHelper.GetById<Account>(request.AccountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>(request.AccountId);
             if (!Owns(account))
                 return NotFound();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var transaction = session.Query<BankTransaction>()
@@ -216,7 +216,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (action != "category" && string.IsNullOrEmpty(tagValue))
                 return BadRequest("Tag is required for this action.");
 
-            var account = DbHelper.GetById<Account>(request.AccountId);
+            var account = BankStatementAnalytics.Tenancy.AppDatabase.GetById<Account>(request.AccountId);
             if (!Owns(account))
                 return NotFound();
 
@@ -225,7 +225,7 @@ namespace BankStatementAnalytics.Controllers.Api
                 .Distinct()
                 .ToList();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             // The selection can span more rows than SQLite's parameter limit allows in a
@@ -295,10 +295,10 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string bankType,
             [FromQuery] long accountId)
         {
-            var account = await DbHelper.GetByIdAsync<Account>(accountId);
+            var account = await BankStatementAnalytics.Tenancy.AppDatabase.GetByIdAsync<Account>(accountId);
             if (!Owns(account)) return NotFound();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var splits = await session.Query<TransactionSplit>()
                 .Where(s => s.ParentAccountId == accountId &&
@@ -317,10 +317,10 @@ namespace BankStatementAnalytics.Controllers.Api
             if (req == null || string.IsNullOrWhiteSpace(req.BankReference))
                 return BadRequest("BankReference is required.");
 
-            var account = await DbHelper.GetByIdAsync<Account>(req.AccountId);
+            var account = await BankStatementAnalytics.Tenancy.AppDatabase.GetByIdAsync<Account>(req.AccountId);
             if (!Owns(account)) return NotFound();
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             // Remove existing splits

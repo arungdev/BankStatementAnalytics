@@ -27,7 +27,7 @@ namespace BankStatementAnalytics.Controllers.Api
             [FromQuery] string? kind = null,
             [FromQuery] string? search = null)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var ownedIds = AccountAccess.OwnedIdSet(session, CurrentUserId);
             var (status, ids) = AccountAccess.ResolveScope(ownedIds, accountIds, accountId);

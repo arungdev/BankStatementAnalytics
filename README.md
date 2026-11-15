@@ -8,6 +8,8 @@ instance by default, or your own server via `appsettings`).
 
 ## Features
 
+Optional PostgreSQL schema isolation is available for separate user workspaces. It is disabled by default and requires an explicit database cutover. See the [architecture, migration, backup and verification guide](docs/security/SCHEMA-TENANCY.md). For a fresh isolated local rehearsal, run `Local-Docker.bat -SchemaTenancy`.
+
 - **Statement import** — upload HDFC / HDFC Credit Card / IOB statements as PDF
   (password-protected supported), CSV, or text; parsed transactions are deduped
   and upserted. A background watch-folder service auto-imports statements dropped

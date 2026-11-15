@@ -258,7 +258,7 @@ public sealed partial class GPayEvidenceService
 
     public async Task<AutomaticMatchResult> AutoMatchActivities(long userId, string? profileId = null, bool restrictToProfile = false)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         using var transaction = session.BeginTransaction();
         // Serialize automatic runs for this owner, including repeated browser mounts.
         var accounts = await session.Query<Account>().Where(account => account.OwnerUserId == userId).OrderBy(account => account.Id).ToListAsync();

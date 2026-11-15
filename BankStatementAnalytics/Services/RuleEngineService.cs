@@ -15,7 +15,7 @@ namespace BankStatementAnalytics.Services
         {
             if (transactions == null || transactions.Count == 0) return;
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             ApplyRules(session, userId, transactions);
         }
 
@@ -37,7 +37,7 @@ namespace BankStatementAnalytics.Services
 
         public async Task<int> ApplyAllRulesRetroactivelyAsync(long userId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var accountIds = AccountAccess.OwnedIds(session, userId);
@@ -78,7 +78,7 @@ namespace BankStatementAnalytics.Services
 
         public List<object> TestRule(long userId, CategorizationRule rule, int limit = 15)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = AccountAccess.OwnedIds(session, userId);
             if (accountIds.Count == 0) return new List<object>();

@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Compile Include="../deploy/common/Source/*.cs" Link="Common.Deployment/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Tenancy/financial-baseline.sql" LogicalName="BankStatementAnalytics.Tenancy.financial-baseline.sql" />
     <Content Remove="log4net.config" />
   </ItemGroup>
 

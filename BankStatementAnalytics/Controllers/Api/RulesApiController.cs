@@ -26,7 +26,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpGet]
         public async Task<IActionResult> GetRules()
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var rules = await session.Query<CategorizationRule>()
                 .Where(r => r.OwnerUserId == CurrentUserId)
@@ -43,7 +43,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (req == null || string.IsNullOrWhiteSpace(req.Name))
                 return BadRequest("Rule name is required.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var maxPriority = await session.Query<CategorizationRule>()
@@ -84,7 +84,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (req == null || string.IsNullOrWhiteSpace(req.Name))
                 return BadRequest("Rule name is required.");
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var rule = await session.GetAsync<CategorizationRule>(id);
@@ -114,7 +114,7 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
             using var tx = session.BeginTransaction();
 
             var rule = await session.GetAsync<CategorizationRule>(id);

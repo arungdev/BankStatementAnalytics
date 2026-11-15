@@ -27,7 +27,7 @@ public partial class GPayTakeoutService
         profileId = string.IsNullOrWhiteSpace(profileId) || profileId == "default" ? null : profileId;
         if (profileId != null) _ = await GetProfileAsync(userId, profileId);
         if (page < 0 || pageSize < 1 || pageSize > 100 || (search?.Length ?? 0) > 200) throw new ArgumentException("Invalid details request.");
-        using var session = Common.Framework.Data.DbHelper.GetSession();
+        using var session = Tenancy.AppDatabase.GetSession();
         var rows = new List<GPayProfileDetailRow>();
         if (section == "groups") {
             var groups = await session.Query<BillGroup>().Where(g => g.OwnerUserId == userId && g.GPayProfileId == profileId).ToListAsync();

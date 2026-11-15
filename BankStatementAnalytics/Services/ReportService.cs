@@ -38,7 +38,7 @@ namespace BankStatementAnalytics.Services
         {
             var (start, end) = PeriodBounds(yearly, year, month);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             // Narrow projection: only the fields the report sections read, not whole entities.
             // COALESCE(EffectiveDate, TransactionDate) attributes month-end salaries from
@@ -142,7 +142,7 @@ namespace BankStatementAnalytics.Services
         {
             var (start, end) = PeriodBounds(yearly, year, month);
 
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var query = session.Query<BankTransaction>()
                 .ExcludeOwnMoneyMoves()

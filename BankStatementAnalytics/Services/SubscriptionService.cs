@@ -18,7 +18,7 @@ namespace BankStatementAnalytics.Services
 
         public SubscriptionSummary GetSubscriptions(long userId)
         {
-            using var session = DbHelper.GetSession();
+            using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
 
             var accountIds = AccountAccess.OwnedIds(session, userId);
             if (accountIds.Count == 0)

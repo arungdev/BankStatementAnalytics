@@ -172,7 +172,7 @@ public sealed partial class GPayEvidenceService
 
     public async Task<object> Preview(long userId, GPayBundle bundle)
     {
-        using var session = DbHelper.GetSession();
+        using var session = BankStatementAnalytics.Tenancy.AppDatabase.GetSession();
         var groups = await session.Query<SplitGroup>().Where(g => g.OwnerUserId == userId).ToListAsync();
         var rows = bundle.Expenses.Select(e => {
             var matches = Corresponding(groups, e, bundle.ProfileId);
