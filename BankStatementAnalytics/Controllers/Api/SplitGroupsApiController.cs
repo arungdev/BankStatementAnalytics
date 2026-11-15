@@ -341,6 +341,16 @@ namespace BankStatementAnalytics.Controllers.Api
             return Ok(config);
         }
 
+        // User-owned profile preferences must also work without server-folder privileges.
+        [HttpPut("gpay-profiles/preferences")]
+        public async Task<IActionResult> UpdateProfilePreferences([FromBody] UpdateGPayAutoImportRequest request, string? profileId = null)
+        {
+            if (request == null || request.WatchFolderPath != null || request.WatchEnabled.HasValue)
+                return BadRequest(new { message = "Use server settings to configure watch folders." });
+            try { return Ok(await _takeoutService.UpdateAutoImportConfigAsync(CurrentUserId, request, profileId)); }
+            catch (ArgumentException exception) { return BadRequest(new { message = exception.Message }); }
+        }
+
         // POST: api/split-groups/auto-import/sweep — trigger an immediate sweep of the GPay watch folder
         [HttpPost("auto-import/sweep")]
         public async Task<IActionResult> SweepAutoImport(string? profileId = null)

@@ -6,6 +6,10 @@ From the repository root, run each executable (a nonzero exit means failure):
 dotnet run --project Tests/GPayMatching -p:ValidationBuild=true
 dotnet run --project Tests/SharedBills -p:ValidationBuild=true
 dotnet run --project Tests/ImportReliability -p:ValidationBuild=true
+dotnet run --project Tests/LinuxDeployment -p:ValidationBuild=true
+dotnet run --project Tests/SecurityAudit -p:ValidationBuild=true
+dotnet run --project Tests/SbiStatements -p:ValidationBuild=true
+dotnet run --project Tests/UpdateInstallation -p:ValidationBuild=true
 ```
 
 `ValidationBuild` isolates both intermediate files and binaries under `.build/`
@@ -19,6 +23,13 @@ edits, transaction and merchant rollback, interrupted-import recovery, account
 ownership, batched balances, normalized PDF parsers, reconciliation warnings,
 password protection, restored keys, and path confinement. It never connects to
 the application's normal database.
+
+It also covers account password management, GPay profile preferences, watcher
+shutdown and independent caller cancellation, shared tag normalization, and
+categorization-rule conditions and priority. SecurityAudit starts a disposable
+loopback HTTP listener for synthetic Google-handler checks; it needs permission
+to connect to that listener. Schema-tenancy checks require the separately
+provisioned disposable PostgreSQL database described in `SchemaTenancy/README.md`.
 
 For PostgreSQL, set `BSA_TEST_POSTGRES` to a disposable database connection string.
 The suite refuses database names other than `bsa_regression`. Start with an empty

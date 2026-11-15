@@ -1,3 +1,4 @@
+import { readStoredStringSet, writeStoredStringSet } from '../utils/browserStorage.js';
 import usePagePreference from '../hooks/usePagePreference';
 import { preferenceValidators, oneOf } from '../utils/viewPreferences';
 import { useCallback, useEffect, useState } from "react";
@@ -70,13 +71,7 @@ const pairKey = (p) =>
   [p.from.accountId, p.from.bankReference, p.to.accountId, p.to.bankReference].join("|");
 
 const DISMISSED_KEY = "dismissedTransferPairs";
-const loadDismissed = () => {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) || "[]"));
-  } catch {
-    return new Set();
-  }
-};
+const loadDismissed = () => readStoredStringSet(DISMISSED_KEY);
 
 export default function Transfers() {
   // Re-render on the "hide amounts" toggle (this page reads no outlet context).
@@ -164,7 +159,7 @@ export default function Transfers() {
     next.add(pairKey(p));
     setDismissed(next);
     setSelected(null);
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]));
+    writeStoredStringSet(DISMISSED_KEY, next);
   };
 
   const visibleSuggestions = suggestions.filter((p) => !dismissed.has(pairKey(p)));

@@ -53,19 +53,25 @@ namespace BankStatementAnalytics.Services
         // Completed when the sweep that starts after registration finishes — lets
         // "Import now" hold its HTTP response until results are actually in the DB.
         private TaskCompletionSource? _sweepDone;
+        private readonly object _sweepLock = new();
+        private bool _stopped;
 
         /// <summary>
         /// Ask the loop to run its next sweep immediately instead of waiting out the
         /// interval. The returned task completes when that sweep has finished.
         /// </summary>
-        public Task TriggerSweepAsync()
+        public Task TriggerSweepAsync(CancellationToken cancellationToken = default)
         {
-            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var existing = Interlocked.CompareExchange(ref _sweepDone, tcs, null);
-            if (existing != null) tcs = existing;
-            try { _wake.Release(); }
-            catch (SemaphoreFullException) { /* a sweep is already queued */ }
-            return tcs.Task;
+            if (cancellationToken.IsCancellationRequested) return Task.FromCanceled(cancellationToken);
+            lock (_sweepLock)
+            {
+                if (_stopped) return Task.FromCanceled(new CancellationToken(true));
+                _sweepDone ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                try { _wake.Release(); }
+                catch (SemaphoreFullException) { /* a sweep is already queued */ }
+                // Cancel only this caller's wait, not the sweep shared by other callers.
+                return _sweepDone.Task.WaitAsync(cancellationToken);
+            }
         }
 
         /// <summary>
@@ -86,6 +92,20 @@ namespace BankStatementAnalytics.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            try { await RunSweepsAsync(stoppingToken); }
+            finally
+            {
+                lock (_sweepLock)
+                {
+                    _stopped = true;
+                    _sweepDone?.TrySetCanceled();
+                    _sweepDone = null;
+                }
+            }
+        }
+
+        private async Task RunSweepsAsync(CancellationToken stoppingToken)
+        {
             // Let NHibernate / embedded Postgres finish initializing.
             try { await Task.Delay(StartupDelay, stoppingToken); }
             catch (OperationCanceledException) { return; }
@@ -96,7 +116,12 @@ namespace BankStatementAnalytics.Services
             {
                 // Claim waiters up front: anyone registering mid-sweep re-releases
                 // _wake, so their sweep runs (and completes them) right after this one.
-                var waiter = Interlocked.Exchange(ref _sweepDone, null);
+                TaskCompletionSource? waiter;
+                lock (_sweepLock)
+                {
+                    waiter = _sweepDone;
+                    _sweepDone = null;
+                }
                 try
                 {
                     await SweepAsync(stoppingToken);
@@ -112,7 +137,8 @@ namespace BankStatementAnalytics.Services
                 }
                 finally
                 {
-                    waiter?.TrySetResult();
+                    if (stoppingToken.IsCancellationRequested) waiter?.TrySetCanceled(stoppingToken);
+                    else waiter?.TrySetResult();
                 }
 
                 // Waits out the interval, but returns early when TriggerSweep releases the semaphore.

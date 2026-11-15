@@ -1,3 +1,4 @@
+import { browserStorage } from '../utils/browserStorage.js';
 import useAsyncResource from '../hooks/useAsyncResource';
 import RequestError from '../components/RequestError';
 import SplitGroupChat from "../components/splits/SplitGroupChat";
@@ -60,7 +61,7 @@ export default function Splits() {
   const [splitLinkError, setSplitLinkError] = useState(null);
   const [splitLinkAttempt, setSplitLinkAttempt] = useState(0);
   const [splitFilter, setSplitFilter] = useState(
-    () => localStorage.getItem('bsp_gpay_split_filter') || 'all'
+    () => browserStorage.getItem('bsp_gpay_split_filter') || 'all'
   );
 
   // Navigation tab: 'billGroups' (GPay Style), 'splits' (All Confirmed Splits), 'suggestions' (Auto-detected)
@@ -249,7 +250,7 @@ export default function Splits() {
   const isImportedSplit = split => isImportedGPayExpense(split)
     || isImportedGPayGroup(billGroups.find(group => group.id === split?.billGroupId));
 
-  const configuredUserName = localStorage.getItem('bsp_gpay_user_name') || 'ARUN G';
+  const configuredUserName = browserStorage.getItem('bsp_gpay_user_name') || 'ARUN G';
 
   const selfNameTokens = useMemo(() => {
     const raw = (configuredUserName || 'ARUN G').toLowerCase();
@@ -890,7 +891,7 @@ export default function Splits() {
           <div className="splits-filter-bar">
             <div className="splits-filters" role="group" aria-label="Filter confirmed splits">
               {[['all', 'All Splits', splitCounts.all], ['owed_by_me', 'Owed by Me', splitCounts.owedByMe], ['to_collect', 'To Collect', splitCounts.toCollect], ['created_by_me', 'Created by Me', splitCounts.createdByMe], ['included', 'Involving Me', splitCounts.included]].map(([key, label, count]) => (
-                <button key={key} type="button" aria-pressed={splitFilter === key} onClick={() => { setSplitFilter(key); localStorage.setItem(gpayPreferenceKey('split_filter', gpayProfileId), key); }}>
+                <button key={key} type="button" aria-pressed={splitFilter === key} onClick={() => { setSplitFilter(key); browserStorage.setItem(gpayPreferenceKey('split_filter', gpayProfileId), key); }}>
                   {label}<span>{count}</span>
                 </button>
               ))}

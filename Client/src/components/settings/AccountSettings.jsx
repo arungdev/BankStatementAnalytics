@@ -1,12 +1,15 @@
+import FolderBrowser from "./FolderBrowser";
+import { browserStorage } from '../../utils/browserStorage.js';
 import AccountStatementActions from "./AccountStatementActions";
-import { FiCreditCard, FiEdit2, FiChevronUp, FiChevronDown, FiFolder, FiEyeOff, FiEye, FiDownloadCloud, FiRefreshCw, FiCheckCircle, FiUserCheck } from "react-icons/fi";
+import StatementPasswordSettings from "./StatementPasswordSettings";
+import { FiCreditCard, FiEdit2, FiChevronUp, FiChevronDown, FiFolder, FiDownloadCloud, FiRefreshCw, FiCheckCircle, FiUserCheck } from "react-icons/fi";
 import { formatDate, currencyFormatterFull } from "../../utils/format";
 import { Badge, Switch } from "@common/client";
 import GPayProfileSettings from "../../components/GPayProfileSettings";
 import { gpayPreferenceKey } from "../../utils/gpayPreferences";
 import GPayProfileInsights from '../GPayProfileInsights';
 
-export default function AccountSettings({ onGpayPanelWidthChange, accounts, autoDraft, autoDrafts, autoOpen, browse, cardAccounts, cardDraft, cardDrafts, editAccountName, editingAccountId, gpayAutoOpen, gpayConfig, gpayDraftPath, gpayMessage, gpaySweeping, gpayUserName, handleDeleteAccount, handleImportNow, handleOpenNamePicker, handleSaveAutoImport, handleSaveCardSettings, handleSaveGPayAutoImport, handleSaveGPayUserName, handleSweepGPay, handleToggleAutoImport, handleToggleGPayAutoImport, handleUpdateAccount, canEdit, canManageServer, loadBrowse, onlyLinkCreatedByMe, openBrowse, openBrowseGPay, setAutoDraft, setAutoOpen, setBrowse, setCardDraft, setCardDrafts, setEditAccountName, setEditingAccountId, setGpayAutoOpen, setGpayConfig, setGpayDraftPath, setGpayMessage, setGpayUserName, setOnlyLinkCreatedByMe, setParticipantList, setShowPw, setSplitDisplayFilter, showPw, splitDisplayFilter, sweeping }) {
+export default function AccountSettings({ onGpayPanelWidthChange, onAccountSettingsSaved, accounts, autoDraft, autoDrafts, autoOpen, browse, cardAccounts, cardDraft, cardDrafts, editAccountName, editingAccountId, gpayAutoOpen, gpayConfig, gpayDraftPath, gpayMessage, gpaySweeping, gpayUserName, handleDeleteAccount, handleImportNow, handleOpenNamePicker, handleSaveAutoImport, handleSaveCardSettings, handleSaveGPayAutoImport, handleSaveGPayUserName, handleSweepGPay, handleToggleAutoImport, handleToggleGPayAutoImport, handleUpdateAccount, canEdit, canManageServer, loadBrowse, onlyLinkCreatedByMe, openBrowse, openBrowseGPay, setAutoDraft, setAutoOpen, setBrowse, setCardDraft, setCardDrafts, setEditAccountName, setEditingAccountId, setGpayAutoOpen, setGpayConfig, setGpayDraftPath, setGpayMessage, setGpayUserName, setOnlyLinkCreatedByMe, setParticipantList, setSplitDisplayFilter, splitDisplayFilter, sweeping }) {
   return (accounts.length === 0 ? (
       <div className="settings-empty">
         <FiCreditCard size={36} />
@@ -77,6 +80,8 @@ export default function AccountSettings({ onGpayPanelWidthChange, accounts, auto
                 </div>
               )}
             </div>
+
+            {canEdit && <StatementPasswordSettings account={acc} onSaved={onAccountSettingsSaved} />}
 
             {/* Credit-card-only metadata: usually auto-filled from the PDF
                 statement; editable here as the manual fallback. */}
@@ -237,27 +242,7 @@ export default function AccountSettings({ onGpayPanelWidthChange, accounts, auto
                       <button type="button" className="btn small" onClick={() => openBrowse(acc)}>
                         <FiFolder size={13} /> Browse…
                       </button>
-                      <label className="settings-field md">
-                        <span className="settings-field-label">Statement PDF password</span>
-                        <span className="field-affix">
-                          <input
-                            type={showPw[acc.id] ? "text" : "password"}
-                            placeholder={acc.hasStatementPassword ? "••••• (saved)" : "optional"}
-                            value={autoDraft(acc).statementPassword}
-                            onChange={(e) => setAutoDraft(acc.id, { statementPassword: e.target.value })}
-                            className="field-input"
-                          />
-                          <button
-                            type="button"
-                            className="field-affix-btn"
-                            title={showPw[acc.id] ? "Hide password" : "Show password"}
-                            aria-label={showPw[acc.id] ? "Hide password" : "Show password"}
-                            onClick={() => setShowPw(prev => ({ ...prev, [acc.id]: !prev[acc.id] }))}
-                          >
-                            {showPw[acc.id] ? <FiEyeOff size={14} /> : <FiEye size={14} />}
-                          </button>
-                        </span>
-                      </label>
+
                     </div>
 
                     <div className="account-panel-actions">
@@ -277,57 +262,16 @@ export default function AccountSettings({ onGpayPanelWidthChange, accounts, auto
                           {sweeping[acc.id] ? 'Checking folder…' : 'Import now'}
                         </button>
                       )}
-                      {acc.hasStatementPassword && (
-                        <button className="btn small ghost" onClick={() => handleSaveAutoImport(acc, { clearPassword: true })}>
-                          Clear saved password
-                        </button>
-                      )}
+
                     </div>
 
-                    {browse?.accId === acc.id && (
-                      <div className="folder-browser">
-                        <div className="folder-browser-head">
-                          <span className="folder-browser-path">
-                            {browse.path || 'Quick access & drives'}
-                          </span>
-                          {browse.path && (
-                            <button type="button" className="btn small" onClick={() => loadBrowse(acc.id, browse.parent)}>Up</button>
-                          )}
-                          <button type="button" className="btn small" onClick={() => setBrowse(null)}>Close</button>
-                        </div>
-                        {browse.error && (
-                          <div className="folder-browser-error">{browse.error}</div>
-                        )}
-                        <div className="folder-browser-list">
-                          {browse.folders.length === 0 ? (
-                            <div className="folder-browser-empty">No subfolders</div>
-                          ) : browse.folders.map(f => (
-                            <button
-                              key={f.path}
-                              type="button"
-                              className="btn small folder-browser-item"
-                              onClick={() => loadBrowse(acc.id, f.path)}
-                            >
-                              <FiFolder size={12} style={{ flexShrink: 0 }} /> {f.name}
-                            </button>
-                          ))}
-                        </div>
-                        {browse.path && (
-                          <button
-                            type="button"
-                            className="btn primary small"
-                            style={{ marginTop: 'var(--space-2)' }}
-                            onClick={() => { setAutoDraft(acc.id, { watchFolderPath: browse.path }); setBrowse(null); }}
-                          >
-                            Use this folder
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    {browse?.accId === acc.id && <FolderBrowser browse={browse}
+                      onNavigate={path => loadBrowse(acc.id, path)} onClose={() => setBrowse(null)}
+                      onSelect={path => { setAutoDraft(acc.id, { watchFolderPath: path }); setBrowse(null); }} />}
 
                     <p className="setting-note">
                       New statement files land in your transactions about a minute after they appear in this
-                      folder. The password is stored on this computer and used to open protected PDFs.
+                      folder. Protected PDFs use the saved statement password above.
                       Tip: in Explorer, right-click a folder → “Copy as path” and paste it here.
                     </p>
                   </>
@@ -460,46 +404,9 @@ export default function AccountSettings({ onGpayPanelWidthChange, accounts, auto
                     </button>
                   </div>
 
-                  {browse?.accId === 'gpay' && (
-                    <div className="folder-browser">
-                      <div className="folder-browser-head">
-                        <span className="folder-browser-path">
-                          {browse.path || 'Quick access & drives'}
-                        </span>
-                        {browse.path && (
-                          <button type="button" className="btn small" onClick={() => loadBrowse('gpay', browse.parent)}>Up</button>
-                        )}
-                        <button type="button" className="btn small" onClick={() => setBrowse(null)}>Close</button>
-                      </div>
-                      {browse.error && (
-                        <div className="folder-browser-error">{browse.error}</div>
-                      )}
-                      <div className="folder-browser-list">
-                        {browse.folders.length === 0 ? (
-                          <div className="folder-browser-empty">No subfolders</div>
-                        ) : browse.folders.map(f => (
-                          <button
-                            key={f.path}
-                            type="button"
-                            className="btn small folder-browser-item"
-                            onClick={() => loadBrowse('gpay', f.path)}
-                          >
-                            <FiFolder size={12} style={{ flexShrink: 0 }} /> {f.name}
-                          </button>
-                        ))}
-                      </div>
-                      {browse.path && (
-                        <button
-                          type="button"
-                          className="btn primary small"
-                          style={{ marginTop: 'var(--space-2)' }}
-                          onClick={() => { setGpayDraftPath(browse.path); setBrowse(null); }}
-                        >
-                          Use this folder
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {browse?.accId === 'gpay' && <FolderBrowser browse={browse}
+                    onNavigate={path => loadBrowse('gpay', path)} onClose={() => setBrowse(null)}
+                    onSelect={path => { setGpayDraftPath(path); setBrowse(null); }} />}
 
                   <p className="setting-note">
                     <span>
@@ -581,7 +488,7 @@ export default function AccountSettings({ onGpayPanelWidthChange, accounts, auto
                     value={splitDisplayFilter}
                     onChange={(e) => {
                       setSplitDisplayFilter(e.target.value);
-                      localStorage.setItem(gpayPreferenceKey('split_filter', gpayConfig?.profileId), e.target.value);
+                      browserStorage.setItem(gpayPreferenceKey('split_filter', gpayConfig?.profileId), e.target.value);
                     }}
                     className="field-input"
                   >
@@ -612,7 +519,7 @@ export default function AccountSettings({ onGpayPanelWidthChange, accounts, auto
                     checked={onlyLinkCreatedByMe}
                     onChange={(checked) => {
                       setOnlyLinkCreatedByMe(checked);
-                      localStorage.setItem(gpayPreferenceKey('only_link_created_by_me', gpayConfig?.profileId), checked ? 'true' : 'false');
+                      browserStorage.setItem(gpayPreferenceKey('only_link_created_by_me', gpayConfig?.profileId), checked ? 'true' : 'false');
                     }}
                     label="Only link splits created by me"
                   />

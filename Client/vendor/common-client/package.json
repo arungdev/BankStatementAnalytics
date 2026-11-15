@@ -8,6 +8,7 @@
   "module": "./dist/common-client.js",
   "exports": {
     ".": "./dist/common-client.js",
+    "./core": "./dist/core.js",
     "./styles.css": "./dist/common-client.css"
   },
   "sideEffects": [

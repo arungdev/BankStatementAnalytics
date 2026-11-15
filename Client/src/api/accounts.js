@@ -5,6 +5,9 @@ import api from "./client";
 export const updateAutoImport = (accountId, body) =>
   api.put(`/accounts/${accountId}/auto-import`, body);
 
+export const updateStatementPassword = (accountId, password) =>
+  api.put(`/accounts/${accountId}/statement-password`, { password });
+
 // Server-side folder browser for the auto-import folder picker.
 // No path lists drives; otherwise lists that folder's subfolders.
 export const browseFolders = (path) =>

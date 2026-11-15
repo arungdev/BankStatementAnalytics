@@ -234,6 +234,26 @@ namespace BankStatementAnalytics.Controllers.Api
             });
         }
 
+        // Account passwords are available independently of host-folder access.
+        [HttpPut("{id}/statement-password")]
+        public async Task<IActionResult> UpdateStatementPassword(int id, [FromBody] StatementPasswordRequest request,
+            [FromServices] WatchFolderImportService watcher)
+        {
+            var account = Tenancy.AppDatabase.GetById<Account>((long)id);
+            if (account is null || !Owns(account)) return NotFound();
+            if (request?.Password == null || request.Password.Length > 200)
+                return BadRequest(new { message = "Supply a password of at most 200 characters, or an empty string to clear it." });
+            account.StatementPassword = _passwords.Protect(request.Password.Length == 0 ? null : request.Password);
+            await Tenancy.AppDatabase.UpdateAsync(account);
+            watcher.ForgetAccount(account.Id);
+            return Ok(new { HasStatementPassword = !string.IsNullOrEmpty(account.StatementPassword) });
+        }
+
+        public sealed class StatementPasswordRequest
+        {
+            public string? Password { get; set; }
+        }
+
         // PUT: api/accounts/{id}/auto-import  — configure the watch folder the
         // background importer sweeps for this account, plus the optional PDF password.
         [HttpPut("{id}/auto-import")]

@@ -1,3 +1,4 @@
+import { readStoredStringSet, writeStoredStringSet } from '../utils/browserStorage.js';
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FiBell, FiCalendar, FiCheck, FiRotateCcw, FiAlertCircle } from "react-icons/fi";
@@ -38,17 +39,8 @@ const notificationKey = (n) =>
     ? `anomaly.${n.id}`
     : reminderKey(n);
 
-const loadReadSet = () => {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(READ_KEY) || "[]"));
-  } catch {
-    return new Set();
-  }
-};
-
-const saveReadSet = (set) => {
-  localStorage.setItem(READ_KEY, JSON.stringify([...set]));
-};
+const loadReadSet = () => readStoredStringSet(READ_KEY);
+const saveReadSet = set => writeStoredStringSet(READ_KEY, set);
 
 /**
  * Header bell: opens a right-hand-side panel listing bills due soon and statement

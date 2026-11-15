@@ -1,3 +1,6 @@
+import { apiErrorMessage } from '../utils/apiError';
+import { startGuardedRequest } from '../utils/guardedRequest';
+import { browserStorage } from '../utils/browserStorage.js';
 import { canEditWorkspace } from '../utils/workspacePermissions';
 import useAuthenticationOptions from '../hooks/useAuthenticationOptions';
 import AppearanceSettings from "../components/settings/AppearanceSettings";
@@ -194,7 +197,7 @@ export default function Settings() {
   const { isAdmin, role } = useAuth();
   const canEdit = canEditWorkspace(role);
   const authenticationOptions = useAuthenticationOptions();
-  const canManageServer = isAdmin && !authenticationOptions.cloudGoogleOnly;
+  const canManageServer = isAdmin && !authenticationOptions.loading && !authenticationOptions.unavailable && !authenticationOptions.publicHosting;
   const { preference, setPreference, fontSize, setFontSize } = useTheme();
   const { maskAmounts, setMaskAmounts, maskNamesEnabled, setMaskNamesEnabled } = usePrivacy();
   const [rememberedTab, setRememberedTab] = usePagePreference('settings', 'section', 'accounts', { scope: 'workspace', validate: value => SECTIONS.some(section => section.id === value) });
@@ -286,7 +289,7 @@ export default function Settings() {
       // The API normalizes the link (e.g. joins the target's existing group),
       // so reflect what it saved rather than what was sent.
       const res = await updateCardSettings(acc.id, body);
-      setAccounts(accounts.map(a =>
+      setAccounts(current => current.map(a =>
         a.id === acc.id
           ? { ...a, creditLimit: res.data.creditLimit, statementDay: res.data.statementDay, sharedLimitAccountId: res.data.sharedLimitAccountId }
           : a));
@@ -297,8 +300,7 @@ export default function Settings() {
     }
   };
 
-  // Auto-import drafts (watch folder / statement PDF password), keyed by account id.
-  // The password is write-only: the API never echoes it, only hasStatementPassword.
+  // Watch-folder drafts are independent of account password settings.
   const [autoDrafts, setAutoDrafts] = useState({});
   // Collapsed by default; toggled open per account.
   const [autoOpen, setAutoOpen] = useState({});
@@ -311,13 +313,13 @@ export default function Settings() {
   const [gpaySweeping, setGpaySweeping] = useState(false);
   const [gpayMessage, setGpayMessage] = useState(null);
   const [splitDisplayFilter, setSplitDisplayFilter] = useState(
-    () => localStorage.getItem('bsp_gpay_split_filter') || 'all'
+    () => browserStorage.getItem('bsp_gpay_split_filter') || 'all'
   );
   const [onlyLinkCreatedByMe, setOnlyLinkCreatedByMe] = useState(
-    () => localStorage.getItem('bsp_gpay_only_link_created_by_me') !== 'false'
+    () => browserStorage.getItem('bsp_gpay_only_link_created_by_me') !== 'false'
   );
   const [gpayUserName, setGpayUserName] = useState(
-    () => localStorage.getItem('bsp_gpay_user_name') || ''
+    () => browserStorage.getItem('bsp_gpay_user_name') || ''
   );
   const [namePickerOpen, setNamePickerOpen] = useState(false);
   const [namePickerSearch, setNamePickerSearch] = useState('');
@@ -330,25 +332,25 @@ export default function Settings() {
   }, [gpayConfig?.profileId]);
 
   useEffect(() => {
-    getGPayAutoImportConfig().then(res => {
+    return startGuardedRequest(signal => getGPayAutoImportConfig(undefined, signal), res => {
       setGpayConfig(res.data);
       setGpayDraftPath(res.data?.watchFolderPath || 'D:\\BankStatements\\Gpay');
       if (res.data?.userName) {
         setGpayUserName(res.data.userName);
-        localStorage.setItem('bsp_gpay_user_name', res.data.userName);
+        browserStorage.setItem('bsp_gpay_user_name', res.data.userName);
       }
-    }).catch(() => {});
+    }, error => setGpayMessage(apiErrorMessage(error, "Unable to load Google Pay settings.")));
   }, []);
 
   const handleSaveGPayUserName = async (val) => {
     const trimmed = (val || '').trim();
-    setGpayUserName(trimmed);
-    if (!gpayConfig?.profileId) localStorage.setItem('bsp_gpay_user_name', trimmed);
     try {
       const res = await updateGPayAutoImportConfig({ userName: trimmed }, gpayConfig?.profileId);
       setGpayConfig(res.data);
+      setGpayUserName(res.data.userName || "");
+      if (!gpayConfig?.profileId) browserStorage.setItem('bsp_gpay_user_name', res.data.userName || "");
     } catch (err) {
-      console.error("Failed to update split user name", err);
+      setGpayMessage(apiErrorMessage(err, "Unable to save your Google Pay name."));
     }
   };
 
@@ -429,26 +431,26 @@ export default function Settings() {
       }
     }
   };
-  // Defaults first so a partial draft (e.g. only the folder picked via Browse…)
-  // never leaves the other field undefined/uncontrolled.
+  // Keep a controlled folder input before the account has a draft.
   const autoDraft = (acc) => ({
     watchFolderPath: acc.watchFolderPath ?? "",
-    statementPassword: "",
     ...(autoDrafts[acc.id] ?? {}),
   });
   const setAutoDraft = (id, patch) =>
-    setAutoDrafts(prev => ({ ...prev, [id]: { ...(prev[id] ?? autoDrafts[id] ?? {}), ...patch } }));
+    setAutoDrafts(prev => ({ ...prev, [id]: { ...(prev[id] ?? {}), ...patch } }));
 
-  const handleSaveAutoImport = async (acc, { clearPassword = false } = {}) => {
+  const handleAccountSettingsSaved = (id, patch) => {
+    setAccounts(current => current.map(account => account.id === id ? { ...account, ...patch } : account));
+  };
+
+  const handleSaveAutoImport = async (acc) => {
     const d = autoDraft(acc);
     const body = {
       watchFolderPath: d.watchFolderPath.trim(),
-      // null = leave the saved password unchanged, "" = clear it.
-      statementPassword: clearPassword ? "" : (d.statementPassword === "" ? null : d.statementPassword),
     };
     try {
       const res = await updateAutoImport(acc.id, body);
-      setAccounts(accounts.map(a =>
+      setAccounts(current => current.map(a =>
         a.id === acc.id
           ? { ...a, watchFolderPath: res.data.watchFolderPath, watchEnabled: res.data.watchEnabled, hasStatementPassword: res.data.hasStatementPassword }
           : a));
@@ -466,7 +468,7 @@ export default function Settings() {
         watchFolderPath: acc.watchFolderPath ?? "",
         enabled: !acc.watchEnabled,
       });
-      setAccounts(accounts.map(a =>
+      setAccounts(current => current.map(a =>
         a.id === acc.id
           ? { ...a, watchFolderPath: res.data.watchFolderPath, watchEnabled: res.data.watchEnabled, hasStatementPassword: res.data.hasStatementPassword }
           : a));
@@ -476,8 +478,6 @@ export default function Settings() {
     }
   };
 
-  // Per-account show/hide for the statement-password input.
-  const [showPw, setShowPw] = useState({});
 
   // "Checking…" feedback while Import now runs; the request resolves only once
   // the server-side sweep has finished, so other pages refetch up-to-date data.
@@ -557,15 +557,15 @@ export default function Settings() {
   };
 
   // Reminder states (client-side preferences persisted in localStorage)
-  const [remEnabled, setRemEnabled] = useState(() => localStorage.getItem(REMINDERS_ENABLED_KEY) === "true");
-  const [remWindow, setRemWindow] = useState(() => Number(localStorage.getItem(REMINDER_WINDOW_KEY)) || 7);
+  const [remEnabled, setRemEnabled] = useState(() => browserStorage.getItem(REMINDERS_ENABLED_KEY) === "true");
+  const [remWindow, setRemWindow] = useState(() => Number(browserStorage.getItem(REMINDER_WINDOW_KEY)) || 7);
   const [notifPermission, setNotifPermission] = useState(
     typeof Notification !== "undefined" ? Notification.permission : "unsupported"
   );
 
   const toggleReminders = async () => {
     if (remEnabled) {
-      localStorage.setItem(REMINDERS_ENABLED_KEY, "false");
+      browserStorage.setItem(REMINDERS_ENABLED_KEY, "false");
       setRemEnabled(false);
       return;
     }
@@ -580,7 +580,7 @@ export default function Settings() {
       alert("Please allow notifications in your browser to enable desktop reminders.");
       return;
     }
-    localStorage.setItem(REMINDERS_ENABLED_KEY, "true");
+    browserStorage.setItem(REMINDERS_ENABLED_KEY, "true");
     setRemEnabled(true);
     // Immediately confirm it works so the user sees a toast the moment they opt in.
     sendTestNotification();
@@ -589,7 +589,7 @@ export default function Settings() {
   const updateWindow = (days) => {
     const n = Math.max(1, Math.min(31, Number(days) || 7));
     setRemWindow(n);
-    localStorage.setItem(REMINDER_WINDOW_KEY, String(n));
+    browserStorage.setItem(REMINDER_WINDOW_KEY, String(n));
   };
 
   const handleTestNotification = async () => {
@@ -818,7 +818,7 @@ export default function Settings() {
     if (!editAccountName.trim()) return;
     try {
       await api.put(`/accounts/${id}`, { accountHolderName: editAccountName.trim() });
-      setAccounts(accounts.map(a => a.id === id ? { ...a, accountHolderName: editAccountName.trim() } : a));
+      setAccounts(current => current.map(a => a.id === id ? { ...a, accountHolderName: editAccountName.trim() } : a));
       setEditingAccountId(null);
       onAccountCreated?.();
     } catch (err) {
@@ -836,7 +836,7 @@ export default function Settings() {
       onConfirm: async () => {
         try {
           await api.delete(`/accounts/${id}`);
-          setAccounts(accounts.filter(a => a.id !== id));
+          setAccounts(current => current.filter(a => a.id !== id));
           if (selectedAccountId === id) setSelectedAccountId(null);
           onAccountCreated?.();
         } catch (err) {
@@ -1172,7 +1172,7 @@ export default function Settings() {
 
   const renderUpdates = () => <UpdateSettings SettingCard={SettingCard} applyingUpdate={applyingUpdate} manualInstallation={manualInstallation} checkingUpdate={checkingUpdate} formatBytes={formatBytes} handleApplyUpdate={handleApplyUpdate} handleCancelDownload={handleCancelDownload} handleCheckUpdate={handleCheckUpdate} handleDownloadUpdate={handleDownloadUpdate} handleSaveFileDirectly={handleSaveFileDirectly} updateError={updateError} updateMessage={updateMessage} updateStatus={updateStatus} />;
 
-  const renderAccounts = () => <AccountSettings onGpayPanelWidthChange={setGpayPanelWidth} accounts={accounts} autoDraft={autoDraft} autoDrafts={autoDrafts} autoOpen={autoOpen} browse={browse} cardAccounts={cardAccounts} cardDraft={cardDraft} cardDrafts={cardDrafts} editAccountName={editAccountName} editingAccountId={editingAccountId} gpayAutoOpen={gpayAutoOpen} gpayConfig={gpayConfig} gpayDraftPath={gpayDraftPath} gpayMessage={gpayMessage} gpaySweeping={gpaySweeping} gpayUserName={gpayUserName} handleDeleteAccount={handleDeleteAccount} handleImportNow={handleImportNow} handleOpenNamePicker={handleOpenNamePicker} handleSaveAutoImport={handleSaveAutoImport} handleSaveCardSettings={handleSaveCardSettings} handleSaveGPayAutoImport={handleSaveGPayAutoImport} handleSaveGPayUserName={handleSaveGPayUserName} handleSweepGPay={handleSweepGPay} handleToggleAutoImport={handleToggleAutoImport} handleToggleGPayAutoImport={handleToggleGPayAutoImport} handleUpdateAccount={handleUpdateAccount} canEdit={canEdit} canManageServer={canManageServer} loadBrowse={loadBrowse} onlyLinkCreatedByMe={onlyLinkCreatedByMe} openBrowse={openBrowse} openBrowseGPay={openBrowseGPay} openHistory={openHistory} setAutoDraft={setAutoDraft} setAutoOpen={setAutoOpen} setBrowse={setBrowse} setCardDraft={setCardDraft} setCardDrafts={setCardDrafts} setEditAccountName={setEditAccountName} setEditingAccountId={setEditingAccountId} setGpayAutoOpen={setGpayAutoOpen} setGpayConfig={setGpayConfig} setGpayDraftPath={setGpayDraftPath} setGpayMessage={setGpayMessage} setGpayUserName={setGpayUserName} setOnlyLinkCreatedByMe={setOnlyLinkCreatedByMe} setParticipantList={setParticipantList} setShowPw={setShowPw} setSplitDisplayFilter={setSplitDisplayFilter} showPw={showPw} splitDisplayFilter={splitDisplayFilter} sweeping={sweeping} />;
+  const renderAccounts = () => <AccountSettings onAccountSettingsSaved={handleAccountSettingsSaved} onGpayPanelWidthChange={setGpayPanelWidth} accounts={accounts} autoDraft={autoDraft} autoDrafts={autoDrafts} autoOpen={autoOpen} browse={browse} cardAccounts={cardAccounts} cardDraft={cardDraft} cardDrafts={cardDrafts} editAccountName={editAccountName} editingAccountId={editingAccountId} gpayAutoOpen={gpayAutoOpen} gpayConfig={gpayConfig} gpayDraftPath={gpayDraftPath} gpayMessage={gpayMessage} gpaySweeping={gpaySweeping} gpayUserName={gpayUserName} handleDeleteAccount={handleDeleteAccount} handleImportNow={handleImportNow} handleOpenNamePicker={handleOpenNamePicker} handleSaveAutoImport={handleSaveAutoImport} handleSaveCardSettings={handleSaveCardSettings} handleSaveGPayAutoImport={handleSaveGPayAutoImport} handleSaveGPayUserName={handleSaveGPayUserName} handleSweepGPay={handleSweepGPay} handleToggleAutoImport={handleToggleAutoImport} handleToggleGPayAutoImport={handleToggleGPayAutoImport} handleUpdateAccount={handleUpdateAccount} canEdit={canEdit} canManageServer={canManageServer} loadBrowse={loadBrowse} onlyLinkCreatedByMe={onlyLinkCreatedByMe} openBrowse={openBrowse} openBrowseGPay={openBrowseGPay} openHistory={openHistory} setAutoDraft={setAutoDraft} setAutoOpen={setAutoOpen} setBrowse={setBrowse} setCardDraft={setCardDraft} setCardDrafts={setCardDrafts} setEditAccountName={setEditAccountName} setEditingAccountId={setEditingAccountId} setGpayAutoOpen={setGpayAutoOpen} setGpayConfig={setGpayConfig} setGpayDraftPath={setGpayDraftPath} setGpayMessage={setGpayMessage} setGpayUserName={setGpayUserName} setOnlyLinkCreatedByMe={setOnlyLinkCreatedByMe} setParticipantList={setParticipantList} setSplitDisplayFilter={setSplitDisplayFilter} splitDisplayFilter={splitDisplayFilter} sweeping={sweeping} />;
 
   const renderCategories = () => <CategorySettings activeSubCatInputId={activeSubCatInputId} categories={categories} editCatName={editCatName} editCatNameError={editCatNameError} editingCatId={editingCatId} handleAddCategory={handleAddCategory} handleAddSubCategory={handleAddSubCategory} handleDeleteCategory={handleDeleteCategory} handleDeleteSubCategory={handleDeleteSubCategory} handleUpdateCategory={handleUpdateCategory} canEdit={canEdit} newCatName={newCatName} newCatNameError={newCatNameError} newSubCatName={newSubCatName} newSubCatNameError={newSubCatNameError} setActiveSubCatInputId={setActiveSubCatInputId} setEditCatName={setEditCatName} setEditCatNameError={setEditCatNameError} setEditingCatId={setEditingCatId} setNewCatName={setNewCatName} setNewCatNameError={setNewCatNameError} setNewSubCatName={setNewSubCatName} setNewSubCatNameError={setNewSubCatNameError} />;
 

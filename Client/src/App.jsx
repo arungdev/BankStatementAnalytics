@@ -1,3 +1,4 @@
+import { browserStorage } from './utils/browserStorage.js';
 import usePagePreference from './hooks/usePagePreference';
 import { oneOf } from './utils/viewPreferences';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -129,15 +130,15 @@ function Layout({ softwareUpdatesEnabled }) {
   // Auto-opens once per user (flag kept in localStorage, keyed by username);
   // the header ? button reopens it anytime.
   const guideSeenKey = username ? `guideSeen:${username}` : null;
-  const [guideOpen, setGuideOpen] = useState(() => !!guideSeenKey && !localStorage.getItem(guideSeenKey));
+  const [guideOpen, setGuideOpen] = useState(() => !!guideSeenKey && !browserStorage.getItem(guideSeenKey));
   const [previousGuideKey, setPreviousGuideKey] = useState(guideSeenKey);
   if (previousGuideKey !== guideSeenKey) {
     setPreviousGuideKey(guideSeenKey);
-    setGuideOpen(!!guideSeenKey && !localStorage.getItem(guideSeenKey));
+    setGuideOpen(!!guideSeenKey && !browserStorage.getItem(guideSeenKey));
   }
   const closeGuide = () => {
     setGuideOpen(false);
-    if (guideSeenKey) localStorage.setItem(guideSeenKey, "1");
+    if (guideSeenKey) browserStorage.setItem(guideSeenKey, "1");
   };
 
   // Fire desktop reminders for bills due soon and for failed auto-imports

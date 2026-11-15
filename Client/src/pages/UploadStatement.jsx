@@ -265,7 +265,7 @@ export default function UploadStatement({ onUploaded, showHistory = true, accoun
                   className="field-input"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Leave blank if the PDF isn't protected"
+                    placeholder="Leave blank to use the account's saved password"
                   autoComplete="off"
                 />
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>

@@ -387,9 +387,13 @@ namespace BankStatementAnalytics.Controllers.Api
         [HttpPost("auto-imports/sweep")]
         public async Task<IActionResult> TriggerSweep([FromServices] WatchFolderImportService watcher)
         {
-            var sweep = watcher.TriggerSweepAsync();
-            var completed = await Task.WhenAny(sweep, Task.Delay(TimeSpan.FromSeconds(90))) == sweep;
-            return Ok(new { completed });
+            try
+            {
+                await watcher.TriggerSweepAsync(HttpContext.RequestAborted)
+                    .WaitAsync(TimeSpan.FromSeconds(90), HttpContext.RequestAborted);
+                return Ok(new { completed = true });
+            }
+            catch (TimeoutException) { return Ok(new { completed = false }); }
         }
 
         // POST: api/statements/auto-imports/{historyId}/retry — re-attempt one
@@ -533,7 +537,8 @@ namespace BankStatementAnalytics.Controllers.Api
             await using var stream = file.OpenReadStream();
             var bytes = await BoundedUpload.ReadAsync(stream, StatementImportService.MaxFileBytes, HttpContext.RequestAborted);
 
-            var result = await _importer.ImportAsync(account, bytes, file.FileName, password, autoImported: false);
+            var effectivePassword = string.IsNullOrEmpty(password) ? _passwords.Unprotect(account.StatementPassword) : password;
+            var result = await _importer.ImportAsync(account, bytes, file.FileName, effectivePassword, autoImported: false);
 
             // Friendly parse errors become explicit 400s (the global middleware
             // would flatten them into generic 500s); unexpected failures rethrow

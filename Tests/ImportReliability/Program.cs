@@ -174,6 +174,36 @@ var controller = new StatementApiController(importer, protector) {
 Check(await controller.GetTransactions((int)other.Id) is NotFoundResult, "transaction endpoint refuses another user's account");
 Check(await controller.Upload(null!, (int)other.Id) is NotFoundResult, "upload endpoint checks ownership before processing a file");
 Check(controller.GetUploads((int)other.Id) is NotFoundResult, "upload history endpoint refuses another user's account");
+var passwordController = new AccountApiController(protector) { ControllerContext = controller.ControllerContext };
+using var watcherServices = new ServiceCollection().BuildServiceProvider();
+var passwordWatcher = new WatchFolderImportService(watcherServices.GetRequiredService<IServiceScopeFactory>());
+Check(await passwordController.UpdateStatementPassword((int)other.Id, new() { Password = "test" }, passwordWatcher) is NotFoundResult,
+    "password settings refuse another user's account");
+Check(await passwordController.UpdateStatementPassword((int)account.Id, new() { Password = new string('x', 201) }, passwordWatcher) is BadRequestObjectResult,
+    "password settings reject oversized passwords");
+Check(await passwordController.UpdateStatementPassword((int)account.Id, new() { Password = "upload-secret" }, passwordWatcher) is OkObjectResult,
+    "account owner can save a password without host-folder permissions");
+using (var session = DbHelper.GetSession()) {
+    var saved = session.Get<Account>(account.Id).StatementPassword!;
+    Check(protector.IsProtected(saved) && protector.Unprotect(saved) == "upload-secret", "password endpoint persists encrypted values");
+}
+Check(await passwordController.UpdateStatementPassword((int)account.Id, new() { Password = "" }, passwordWatcher) is OkObjectResult,
+    "account owner can clear a saved password");
+using (var session = DbHelper.GetSession())
+    Check(string.IsNullOrEmpty(session.Get<Account>(account.Id).StatementPassword), "clearing removes the saved secret");
+using (var lifecycleWatcher = new WatchFolderImportService(watcherServices.GetRequiredService<IServiceScopeFactory>()))
+{
+    await lifecycleWatcher.StartAsync(CancellationToken.None);
+    var sharedSweep = lifecycleWatcher.TriggerSweepAsync();
+    using var cancelledWait = new CancellationTokenSource();
+    var callerSweep = lifecycleWatcher.TriggerSweepAsync(cancelledWait.Token);
+    cancelledWait.Cancel();
+    try { await callerSweep; throw new Exception("cancelled sweep wait completed normally"); }
+    catch (OperationCanceledException) { Check(!sharedSweep.IsCompleted, "cancelling one import-now caller preserves the shared sweep"); }
+    await lifecycleWatcher.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
+    Check(sharedSweep.IsCanceled, "watcher shutdown cancels queued import-now requests during startup");
+    Check(lifecycleWatcher.TriggerSweepAsync().IsCanceled, "a stopped watcher never queues requests that cannot finish");
+}
 Check(await controller.GetAccounts() is OkObjectResult, "account endpoint executes batched summaries with tenant scope");
 var card = new Account { OwnerUserId = 101, BankName = Bank.HDFCCreditCard, AccountNumber = "synthetic-card", AccountHolderName = "Synthetic" };
 var emptyCard = new Account { OwnerUserId = 101, BankName = Bank.HDFCCreditCard, AccountNumber = "synthetic-empty", AccountHolderName = "Synthetic" };
@@ -224,6 +254,15 @@ Check((await importer.ImportAsync(account, "MZsynthetic"u8.ToArray(), "fake.csv"
 Check((await importer.ImportAsync(account, "not a PDF"u8.ToArray(), "fake.pdf", null, false)).Outcome == ImportOutcome.InvalidFile,
     "PDF extension requires PDF content");
 var gpay = new GPayTakeoutService();
+var profileController = new SplitGroupsApiController(null!, gpay) { ControllerContext = controller.ControllerContext };
+Check(await profileController.UpdateProfilePreferences(new() { UserName = "Cloud Alice", BankAccountIds = [account.Id] }) is OkObjectResult,
+    "cloud user can update profile preferences through the public API");
+Check(await profileController.UpdateProfilePreferences(new() { WatchFolderPath = scratch }) is BadRequestObjectResult,
+    "profile preferences endpoint refuses server-folder changes");
+Check(await profileController.UpdateProfilePreferences(new() { WatchEnabled = false }) is BadRequestObjectResult,
+    "profile preferences endpoint refuses watcher changes including disabling");
+Check(await profileController.UpdateProfilePreferences(new() { BankAccountIds = [other.Id] }) is BadRequestObjectResult,
+    "profile preferences endpoint refuses another user's accounts");
 await gpay.UpdateAutoImportConfigAsync(101, new UpdateGPayAutoImportRequest { UserName = "Synthetic Alice", BankAccountIds = [account.Id] });
 await gpay.UpdateAutoImportConfigAsync(202, new UpdateGPayAutoImportRequest { UserName = "Synthetic Bob", BankAccountIds = [other.Id] });
 Check((await gpay.GetAutoImportConfigAsync(101)).UserName == "Synthetic Alice" &&
@@ -360,6 +399,32 @@ async Task<bool> PasswordRequestDenied(bool cloud, string scheme)
 Check(await PasswordRequestDenied(true, "https"), "public HTTPS cloud password login is blocked on the server");
 Check(!await PasswordRequestDenied(false, "https"), "local installations retain normal password login");
 Check(!await PasswordRequestDenied(true, "http"), "private SSH-tunnel recovery is retained without enabling public password login");
+Check(TransactionTags.Normalize(new string?[] { null, " ", " FOOD ", "food", "travel,,Travel" }, lowercase: true) == "food,travel",
+    "manual tags normalize nulls, whitespace, separators and case-insensitive duplicates");
+Check(TransactionTags.Normalize(new string?[] { null, " , " }) == null, "empty manual tags clear the saved value");
+Check(TransactionTags.Merge("Food,travel", "food, Travel, Bills") == "Food,travel,Bills",
+    "rule tags preserve first spelling and order without duplicates");
+var priorCulture = System.Globalization.CultureInfo.CurrentCulture;
+try {
+    System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
+    Check(TransactionTags.Normalize(new[] { "INVESTMENT" }, lowercase: true) == "investment", "tag normalization is independent of server culture");
+} finally { System.Globalization.CultureInfo.CurrentCulture = priorCulture; }
+using (var ruleSession = DbHelper.GetSession()) using (var ruleTransaction = ruleSession.BeginTransaction()) {
+    ruleSession.Save(new CategorizationRule { OwnerUserId = 101, Name = "Invalid regex", Priority = 1, Enabled = true, NarrationRegex = "[", SetCategory = "Invalid" });
+    ruleSession.Save(new CategorizationRule { OwnerUserId = 101, Name = "Wrong amount", Priority = 2, Enabled = true, MinAmount = 1000, SetCategory = "Wrong amount" });
+    ruleSession.Save(new CategorizationRule { OwnerUserId = 101, Name = "Wrong mode", Priority = 3, Enabled = true, ModeEquals = "NEFT", SetCategory = "Wrong mode" });
+    ruleSession.Save(new CategorizationRule { OwnerUserId = 101, Name = "Wrong bank", Priority = 4, Enabled = true, BankEquals = "IOB", SetCategory = "Wrong bank" });
+    ruleSession.Save(new CategorizationRule { OwnerUserId = 101, Name = "Matching rule", Priority = 5, Enabled = true, NarrationContains = "coffee", NarrationRegex = "c[o]+ffee", ModeEquals = "upi", BankEquals = "hdfc", MinAmount = 10, MaxAmount = 100, SetCategory = "Dining", SetTags = "Food, food, Coffee" });
+    ruleSession.Save(new CategorizationRule { OwnerUserId = 101, Name = "Lower priority", Priority = 6, Enabled = true, SetCategory = "Wrong priority" });
+    ruleSession.Flush();
+    var ruleInput = new BankTransaction { Description = "COFFEE shop", Mode = "UPI", BankType = "HDFC", Debit = 50, Tags = "Food" };
+    var noNarration = new BankTransaction { Debit = 50 };
+    new RuleEngineService().ApplyRules(ruleSession, 101, new[] { ruleInput, noNarration });
+    Check(ruleInput.CategoryOverride == "Dining" && ruleInput.Tags == "Food,Coffee",
+        "rules preserve priority, case-insensitive matching and amount/mode/bank conditions while ignoring invalid regex");
+    Check(noNarration.CategoryOverride == "Wrong priority", "rules without narration conditions still apply to transactions without text");
+    ruleTransaction.Rollback();
+}
 Console.WriteLine($"Passed {checks} import reliability checks ({(postgres == null ? "SQLite" : "PostgreSQL")}). Synthetic artifacts: {scratch}");
 
 sealed class RegressionEnvironment : Microsoft.AspNetCore.Hosting.IWebHostEnvironment

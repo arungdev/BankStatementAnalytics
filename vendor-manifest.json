@@ -7,7 +7,8 @@
     },
     "CommonClient": {
       "buildCommand": "npm run release",
-      "sourceRevision": null
+      "sourceRevision": "93978f98cc752840636d5ddeff49a69e081c94eb",
+      "sourceState": "Committed Common.Client source, including reusable utilities, hooks, shared UI and accessibility fixes."
     }
   },
   "artifacts": [
@@ -16,16 +17,24 @@
       "path": "BankStatementAnalytics/lib/Common.Framework.dll"
     },
     {
-      "sha256": "b82d20dbe61c5d3b694d2722f50379c6b3e819d577eeef448ef56b1dd826aa77",
-      "path": "Client/vendor/common-client/dist/common-client.js"
+      "path": "Client/vendor/common-client/package.json",
+      "sha256": "2e129342aacf6f9fd3c8513dca7155fd7f493891049f17575c3ea41dde8e657b"
     },
     {
-      "sha256": "9d4fb01f7940dbdaa8865d551854763f62939d2b87224b342738142b16a0dccc",
-      "path": "Client/vendor/common-client/dist/common-client.css"
+      "path": "Client/vendor/common-client/dist/common-client.css",
+      "sha256": "0dd6e2592ff947ce3d968c9dae551dfe37ed43a5b892a3c1e50d012ee938828d"
     },
     {
-      "sha256": "9acf427963af740b0507838dbc0df7932cb184e4c07a449168b2d25eeb6a94be",
-      "path": "Client/vendor/common-client/package.json"
+      "path": "Client/vendor/common-client/dist/common-client.js",
+      "sha256": "ddf0d05949f119273711eb6907fef5246163cb33bfaa900b30cee0bc676a28d8"
+    },
+    {
+      "path": "Client/vendor/common-client/dist/core-C3yyRqfR.js",
+      "sha256": "b319b9c06414dacfdd7a6b6c88f8e1868e1246b2f008644a6a486a9304fe7d9f"
+    },
+    {
+      "path": "Client/vendor/common-client/dist/core.js",
+      "sha256": "c7ce8dffc3a2e6344ce3456f4e709e402b2583cb24061238cad52ca3f079ca78"
     }
   ]
 }

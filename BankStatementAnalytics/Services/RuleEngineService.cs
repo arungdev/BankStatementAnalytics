@@ -101,7 +101,7 @@ namespace BankStatementAnalytics.Services
                     amount = t.Debit > 0 ? t.Debit : t.Credit,
                     currentCategory = t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : "Uncategorized"),
                     newCategory = rule.SetCategory ?? (t.CategoryOverride ?? (t.CounterParty != null ? t.CounterParty.Category : "Uncategorized")),
-                    tags = CombineTags(t.Tags, rule.SetTags)
+                    tags = TransactionTags.Merge(t.Tags, rule.SetTags)
                 })
                 .Cast<object>()
                 .ToList();
@@ -111,9 +111,10 @@ namespace BankStatementAnalytics.Services
 
         private static void ApplyRulesToTransaction(BankTransaction tx, List<CategorizationRule> rules)
         {
+            string? narration = null;
             foreach (var rule in rules)
             {
-                if (MatchesRule(tx, rule))
+                if (MatchesRule(tx, rule, ref narration))
                 {
                     if (!string.IsNullOrWhiteSpace(rule.SetCategory))
                         tx.CategoryOverride = rule.SetCategory.Trim();
@@ -122,7 +123,7 @@ namespace BankStatementAnalytics.Services
                         tx.SubCategoryOverride = rule.SetSubCategory.Trim();
 
                     if (!string.IsNullOrWhiteSpace(rule.SetTags))
-                        tx.Tags = CombineTags(tx.Tags, rule.SetTags);
+                        tx.Tags = TransactionTags.Merge(tx.Tags, rule.SetTags);
 
                     if (!string.IsNullOrWhiteSpace(rule.SetNote))
                         tx.Note = rule.SetNote.Trim();
@@ -134,13 +135,29 @@ namespace BankStatementAnalytics.Services
 
         private static bool MatchesRule(BankTransaction tx, CategorizationRule rule)
         {
-            var narration = $"{tx.Description} {tx.Narration} {(tx.CounterParty != null ? tx.CounterParty.Name : "")}";
+            string? narration = null;
+            return MatchesRule(tx, rule, ref narration);
+        }
+
+        private static bool MatchesRule(BankTransaction tx, CategorizationRule rule, ref string? narration)
+        {
+            // Reject inexpensive conditions before allocating narration or running regex.
+            var amount = tx.Debit > 0 ? tx.Debit : tx.Credit;
+            if (rule.MinAmount.HasValue && amount < rule.MinAmount.Value) return false;
+            if (rule.MaxAmount.HasValue && amount > rule.MaxAmount.Value) return false;
+            if (!string.IsNullOrWhiteSpace(rule.ModeEquals) &&
+                !string.Equals(tx.Mode?.Trim(), rule.ModeEquals.Trim(), StringComparison.OrdinalIgnoreCase)) return false;
+            if (!string.IsNullOrWhiteSpace(rule.BankEquals) &&
+                !string.Equals(tx.BankType?.Trim(), rule.BankEquals.Trim(), StringComparison.OrdinalIgnoreCase)) return false;
+
+            if (!string.IsNullOrWhiteSpace(rule.NarrationContains) || !string.IsNullOrWhiteSpace(rule.NarrationRegex))
+                narration ??= $"{tx.Description} {tx.Narration} {(tx.CounterParty != null ? tx.CounterParty.Name : "")}";
 
             // Narration contains
             if (!string.IsNullOrWhiteSpace(rule.NarrationContains))
             {
                 var phrase = rule.NarrationContains.Trim();
-                if (narration.IndexOf(phrase, StringComparison.OrdinalIgnoreCase) < 0)
+                if (narration!.IndexOf(phrase, StringComparison.OrdinalIgnoreCase) < 0)
                     return false;
             }
 
@@ -149,7 +166,7 @@ namespace BankStatementAnalytics.Services
             {
                 try
                 {
-                    if (rule.NarrationRegex.Length > 500 || !Regex.IsMatch(narration, rule.NarrationRegex.Trim(), RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100)))
+                    if (rule.NarrationRegex.Length > 500 || !Regex.IsMatch(narration!, rule.NarrationRegex.Trim(), RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100)))
                         return false;
                 }
                 catch
@@ -159,44 +176,8 @@ namespace BankStatementAnalytics.Services
                 }
             }
 
-            var amount = tx.Debit > 0 ? tx.Debit : tx.Credit;
-
-            // Min amount
-            if (rule.MinAmount.HasValue && amount < rule.MinAmount.Value)
-                return false;
-
-            // Max amount
-            if (rule.MaxAmount.HasValue && amount > rule.MaxAmount.Value)
-                return false;
-
-            // Mode
-            if (!string.IsNullOrWhiteSpace(rule.ModeEquals))
-            {
-                if (!string.Equals(tx.Mode?.Trim(), rule.ModeEquals.Trim(), StringComparison.OrdinalIgnoreCase))
-                    return false;
-            }
-
-            // Bank
-            if (!string.IsNullOrWhiteSpace(rule.BankEquals))
-            {
-                if (!string.Equals(tx.BankType?.Trim(), rule.BankEquals.Trim(), StringComparison.OrdinalIgnoreCase))
-                    return false;
-            }
-
             return true;
         }
 
-        private static string CombineTags(string? existing, string? newTags)
-        {
-            if (string.IsNullOrWhiteSpace(newTags)) return existing ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(existing)) return newTags.Trim();
-
-            var set = new HashSet<string>(existing.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()), StringComparer.OrdinalIgnoreCase);
-            foreach (var t in newTags.Split(',', StringSplitOptions.RemoveEmptyEntries))
-            {
-                set.Add(t.Trim());
-            }
-            return string.Join(",", set);
-        }
     }
 }

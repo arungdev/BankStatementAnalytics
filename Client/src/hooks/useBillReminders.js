@@ -1,3 +1,4 @@
+import { browserStorage, readStoredStringSet, writeStoredStringSet } from '../utils/browserStorage.js';
 import { useEffect } from "react";
 import { showDesktopNotification } from "@common/client";
 import api from "../api/client";
@@ -9,10 +10,10 @@ export const REMINDERS_ENABLED_KEY = "bills.remindersEnabled";
 export const REMINDER_WINDOW_KEY = "bills.reminderWindow";
 
 export const remindersEnabled = () =>
-  typeof window !== "undefined" && localStorage.getItem(REMINDERS_ENABLED_KEY) === "true";
+  typeof window !== "undefined" && browserStorage.getItem(REMINDERS_ENABLED_KEY) === "true";
 
 export const reminderWindow = () => {
-  const raw = typeof window !== "undefined" ? localStorage.getItem(REMINDER_WINDOW_KEY) : null;
+  const raw = typeof window !== "undefined" ? browserStorage.getItem(REMINDER_WINDOW_KEY) : null;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : 7;
 };
@@ -48,7 +49,7 @@ export default function useBillReminders() {
         for (const bill of res.data || []) {
           const cycle = new Date(bill.nextDueDate);
           const dedupeKey = `bills.notified.${bill.id}.${cycle.getFullYear()}-${cycle.getMonth() + 1}`;
-          if (localStorage.getItem(dedupeKey)) continue;
+          if (browserStorage.getItem(dedupeKey)) continue;
 
           const days = bill.daysUntilDue;
           const when = days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
@@ -57,7 +58,7 @@ export default function useBillReminders() {
             `${maskName(bill.name)} ${currencyFormatter.format(bill.expectedAmount)} due ${when}`,
             dedupeKey
           ).then((res2) => {
-            if (res2.ok) localStorage.setItem(dedupeKey, "1");
+            if (res2.ok) browserStorage.setItem(dedupeKey, "1");
           });
         }
       })
@@ -79,20 +80,9 @@ const NOTIFIED_IMPORTS_CAP = 100;
 // refreshes CreatedAt, so a retry that fails again is a new, notifiable failure.
 const importKey = (h) => `import.${h.id}.${h.createdAt}`;
 
-const loadNotifiedImports = () => {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(NOTIFIED_IMPORTS_KEY) || "[]"));
-  } catch {
-    return new Set();
-  }
-};
+const loadNotifiedImports = () => readStoredStringSet(NOTIFIED_IMPORTS_KEY);
 
-const saveNotifiedImports = (set) => {
-  localStorage.setItem(
-    NOTIFIED_IMPORTS_KEY,
-    JSON.stringify([...set].slice(-NOTIFIED_IMPORTS_CAP))
-  );
-};
+const saveNotifiedImports = set => writeStoredStringSet(NOTIFIED_IMPORTS_KEY, set, NOTIFIED_IMPORTS_CAP);
 
 /**
  * Fires a desktop toast for each watch-folder import that failed, once per attempt.

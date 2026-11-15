@@ -152,10 +152,7 @@ namespace BankStatementAnalytics.Controllers.Api
             if (transaction == null)
                 return NotFound();
 
-            // Convert list to comma-separated string, or null if empty
-            transaction.Tags = request.Tags != null && request.Tags.Count > 0
-                ? string.Join(",", request.Tags.Select(t => t.Trim().ToLower()))
-                : null;
+            transaction.Tags = TransactionTags.Normalize(request.Tags, lowercase: true);
 
             await session.UpdateAsync(transaction);
             await tx.CommitAsync();
